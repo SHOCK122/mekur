@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22-alpine AS base
+WORKDIR /repo
+
+# ---- deps: install full workspace deps once, reused by build ----
+FROM base AS deps
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/crypto/package.json packages/crypto/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci
+
+# ---- build: compile TypeScript for shared, crypto, and api ----
+FROM deps AS build
+COPY packages/shared packages/shared
+COPY packages/crypto packages/crypto
+COPY apps/api apps/api
+COPY tsconfig.base.json ./
+RUN npm run build --workspace=@schedule-app/shared \
+ && npm run build --workspace=@schedule-app/crypto \
+ && npm run build --workspace=@schedule-app/api
+
+# ---- prune: install only production deps for the final image ----
+FROM base AS prod-deps
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/crypto/package.json packages/crypto/package.json
+COPY apps/api/package.json apps/api/package.json
+RUN npm ci --omit=dev --workspace=@schedule-app/api --workspace=@schedule-app/shared --workspace=@schedule-app/crypto --include-workspace-root
+
+# ---- runtime: minimal final image ----
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /repo
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=prod-deps /repo/node_modules ./node_modules
+COPY --from=prod-deps /repo/package.json ./package.json
+COPY --from=build /repo/packages/shared/dist packages/shared/dist
+COPY --from=build /repo/packages/shared/package.json packages/shared/package.json
+COPY --from=build /repo/packages/crypto/dist packages/crypto/dist
+COPY --from=build /repo/packages/crypto/package.json packages/crypto/package.json
+COPY --from=build /repo/apps/api/dist apps/api/dist
+COPY --from=build /repo/apps/api/package.json apps/api/package.json
+
+USER app
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "apps/api/dist/server.js"]
