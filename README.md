@@ -64,7 +64,7 @@ docker compose up --build
 
 This builds and starts:
 - `api` — the backend, internal port 3000 (not published to the host)
-- `web` — the PWA served by nginx, published at http://localhost:8080,
+- `web` — the PWA served by nginx, published at http://localhost:3080,
   which reverse-proxies `/api/*` to the `api` service
 
 > Note: the Dockerfiles and compose file have been validated by manually
