@@ -89,7 +89,7 @@ describe("EventContentSchema", () => {
       startTime: new Date().toISOString(),
       endTime: new Date(Date.now() + 3600_000).toISOString(),
     };
-    expect(EventContentSchema.parse(content)).toEqual({ ...content, priority: "medium" });
+    expect(EventContentSchema.parse(content)).toEqual({ ...content, priority: 0 });
   });
 
   it("rejects an empty title", () => {
@@ -122,32 +122,53 @@ describe("EventContentSchema", () => {
     ).toThrow();
   });
 
-  it("defaults priority to medium when not specified", () => {
+  it("defaults priority to 0 when not specified", () => {
     const parsed = EventContentSchema.parse({
       title: "Standup",
       startTime: "2026-08-01T09:00:00.000Z",
       endTime: "2026-08-01T09:15:00.000Z",
     });
-    expect(parsed.priority).toBe("medium");
+    expect(parsed.priority).toBe(0);
   });
 
-  it("accepts an explicit priority", () => {
+  it("accepts an explicit integer priority", () => {
     const parsed = EventContentSchema.parse({
       title: "Launch",
       startTime: "2026-08-01T09:00:00.000Z",
       endTime: "2026-08-01T09:15:00.000Z",
-      priority: "high",
+      priority: 5,
     });
-    expect(parsed.priority).toBe("high");
+    expect(parsed.priority).toBe(5);
   });
 
-  it("rejects an invalid priority", () => {
+  it("accepts a negative priority", () => {
+    const parsed = EventContentSchema.parse({
+      title: "Low-stakes reminder",
+      startTime: "2026-08-01T09:00:00.000Z",
+      endTime: "2026-08-01T09:15:00.000Z",
+      priority: -2,
+    });
+    expect(parsed.priority).toBe(-2);
+  });
+
+  it("rejects a non-integer priority", () => {
     expect(() =>
       EventContentSchema.parse({
         title: "Bad priority",
         startTime: "2026-08-01T09:00:00.000Z",
         endTime: "2026-08-01T09:15:00.000Z",
-        priority: "urgent",
+        priority: 1.5,
+      })
+    ).toThrow();
+  });
+
+  it("rejects a non-numeric priority", () => {
+    expect(() =>
+      EventContentSchema.parse({
+        title: "Bad priority",
+        startTime: "2026-08-01T09:00:00.000Z",
+        endTime: "2026-08-01T09:15:00.000Z",
+        priority: "high",
       })
     ).toThrow();
   });

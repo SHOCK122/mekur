@@ -76,8 +76,9 @@ export type RecurrenceRule = z.infer<typeof RecurrenceRuleSchema>;
 
 /** How important the user considers this event -- distinct from, and unrelated
  * to, the per-slot preference ranking used in group-scheduling (docs/ARCHITECTURE.md);
- * this is a personal attribute of a single event. */
-export const EventPrioritySchema = z.enum(["low", "medium", "high"]);
+ * this is a personal attribute of a single event. Higher is more important;
+ * no fixed range is enforced, so users/clients can adopt whatever scale suits them. */
+export const EventPrioritySchema = z.number().int().default(0);
 export type EventPriority = z.infer<typeof EventPrioritySchema>;
 
 /**
@@ -92,7 +93,7 @@ export const EventContentSchema = z
     location: z.string().max(500).optional(),
     startTime: z.string().datetime(),
     endTime: z.string().datetime(),
-    priority: EventPrioritySchema.default("medium"),
+    priority: EventPrioritySchema,
     recurrence: RecurrenceRuleSchema.optional(),
   })
   .refine((event) => new Date(event.endTime) > new Date(event.startTime), {

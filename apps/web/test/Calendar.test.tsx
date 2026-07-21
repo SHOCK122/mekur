@@ -96,7 +96,8 @@ describe("Calendar", () => {
     await user.type(screen.getByPlaceholderText(/event title/i), "Check the oven");
     await user.type(screen.getByLabelText(/start time/i), "2026-08-01T09:00");
     await user.type(screen.getByLabelText(/end time/i), "2026-08-01T09:05");
-    await user.selectOptions(screen.getByText("Medium").closest("select")!, "high");
+    await user.clear(screen.getByLabelText(/^priority$/i));
+    await user.type(screen.getByLabelText(/^priority$/i), "5");
     await user.selectOptions(screen.getByText("Does not repeat").closest("select")!, "custom");
     const intervalInput = await screen.findByLabelText(/custom repeat interval/i);
     await user.clear(intervalInput);

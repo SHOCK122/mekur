@@ -57,9 +57,10 @@ and the Docker stack builds and runs before moving to the next.
       encrypted event content, expanded client-side for display via
       `rrule`. Simplification: editing/deleting acts on the whole
       series, not a single occurrence -- revisit if that's needed.
-- [x] Priority: low/medium/high, user-selectable per event (distinct
-      from, and unrelated to, the per-slot ranking used in group
-      scheduling -- see docs/ARCHITECTURE.md)
+- [x] Priority: a plain integer, default 0, user-adjustable per event (no
+      fixed low/medium/high scale imposed -- distinct from, and unrelated
+      to, the per-slot ranking used in group scheduling -- see
+      docs/ARCHITECTURE.md)
 - [ ] OpenAPI spec published for the API surface that exists so far
 - [ ] Passkey/WebAuthn as an additional (preferred) login method
 - [ ] Revisit the scrypt cost parameter (`N=2^17`) against real low-end

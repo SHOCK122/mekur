@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { EventPriority, RecurrenceRule } from "@schedule-app/shared";
+import type { RecurrenceRule } from "@schedule-app/shared";
 import { listEvents, createEvent, deleteEvent, type DecryptedEvent } from "../lib/api.js";
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
 import type { Session } from "../lib/session.js";
@@ -47,7 +47,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [priority, setPriority] = useState<EventPriority>("medium");
+  const [priority, setPriority] = useState(0);
   const [repeatPreset, setRepeatPreset] = useState<RepeatPreset>("none");
   const [customInterval, setCustomInterval] = useState(37);
   const [customUnit, setCustomUnit] = useState<CustomUnit>("MINUTELY");
@@ -103,7 +103,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       setTitle("");
       setStart("");
       setEnd("");
-      setPriority("medium");
+      setPriority(0);
       setRepeatPreset("none");
       await refresh();
     } catch (err) {
@@ -156,11 +156,13 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         <div className="event-form-row">
           <label className="inline-label">
             Priority
-            <select value={priority} onChange={(e) => setPriority(e.target.value as EventPriority)}>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+            <input
+              type="number"
+              step={1}
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+              aria-label="Priority"
+            />
           </label>
 
           <label className="inline-label">
@@ -218,7 +220,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       ) : (
         <ul className="event-list">
           {occurrences.map(({ event, occurrence }, index) => (
-            <li key={`${event.id}-${index}`} className={`event-item priority-${event.priority}`}>
+            <li key={`${event.id}-${index}`} className="event-item">
               <div>
                 <strong>{event.title}</strong>
                 <div className="event-time">{formatDateTime(occurrence.start)}</div>
@@ -227,7 +229,9 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                 )}
               </div>
               <div className="event-item-actions">
-                <span className={`priority-badge priority-badge-${event.priority}`}>{event.priority}</span>
+                {event.priority !== 0 && (
+                  <span className="priority-badge">Priority {event.priority}</span>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDelete(event.id)}
