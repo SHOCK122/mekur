@@ -1,6 +1,8 @@
 import { x25519 } from "@noble/curves/ed25519";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { scryptAsync } from "@noble/hashes/scrypt";
+import { hkdf } from "@noble/hashes/hkdf";
+import { sha256 } from "@noble/hashes/sha2";
 import { randomBytes as nobleRandomBytes } from "@noble/hashes/utils";
 import type { EncryptedEnvelope } from "@schedule-app/shared";
 
@@ -66,6 +68,52 @@ export async function deriveKeyFromPassword(
     dkLen: KEY_LENGTH,
   });
   return { key: toBase64(key), salt: toBase64(usedSalt) };
+}
+
+/**
+ * Derives two independent keys from one password: an `authKey` (proves
+ * knowledge of the password to the server during login) and an
+ * `encryptionKey` (encrypts the user's data, and is NEVER sent to the
+ * server in any form). Both come from a single expensive scrypt run
+ * (cheap on low-end devices to only pay that cost once), then split via
+ * HKDF with different domain-separation labels so neither key can be
+ * derived from the other.
+ */
+export interface AuthAndEncryptionKeys {
+  authKey: string; // base64 — sent to the server only at login, over TLS
+  encryptionKey: string; // base64 — never leaves the client
+  salt: string; // base64 — must be stored to re-derive the same keys later
+}
+
+export async function deriveAuthAndEncryptionKeys(
+  password: string,
+  salt?: Uint8Array
+): Promise<AuthAndEncryptionKeys> {
+  const usedSalt = salt ?? randomBytes(16);
+  const master = await scryptAsync(password.normalize("NFKC"), usedSalt, {
+    N: 2 ** 17,
+    r: 8,
+    p: 1,
+    dkLen: 32,
+  });
+  const authKey = hkdf(sha256, master, usedSalt, "schedule-app:auth-key:v1", KEY_LENGTH);
+  const encryptionKey = hkdf(
+    sha256,
+    master,
+    usedSalt,
+    "schedule-app:encryption-key:v1",
+    KEY_LENGTH
+  );
+  return {
+    authKey: toBase64(authKey),
+    encryptionKey: toBase64(encryptionKey),
+    salt: toBase64(usedSalt),
+  };
+}
+
+/** Hashes a base64 key with SHA-256, for server-side storage of the auth verifier. */
+export function sha256Base64(keyBase64: string): string {
+  return toBase64(sha256(fromBase64(keyBase64)));
 }
 
 /**

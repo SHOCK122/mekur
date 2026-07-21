@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   generateKeyPair,
   deriveKeyFromPassword,
+  deriveAuthAndEncryptionKeys,
+  sha256Base64,
   encryptEnvelope,
   decryptEnvelope,
   toBase64,
@@ -51,6 +53,44 @@ describe("deriveKeyFromPassword", () => {
     expect(fromBase64(derived.key)).toHaveLength(32);
   });
 }, 20_000);
+
+describe("deriveAuthAndEncryptionKeys", () => {
+  it("derives distinct authKey and encryptionKey from the same password", async () => {
+    const keys = await deriveAuthAndEncryptionKeys("correct horse battery staple");
+    expect(keys.authKey).not.toEqual(keys.encryptionKey);
+    expect(fromBase64(keys.authKey)).toHaveLength(32);
+    expect(fromBase64(keys.encryptionKey)).toHaveLength(32);
+  });
+
+  it("is deterministic given the same password and salt", async () => {
+    const salt = randomBytes(16);
+    const a = await deriveAuthAndEncryptionKeys("hunter2", salt);
+    const b = await deriveAuthAndEncryptionKeys("hunter2", salt);
+    expect(a.authKey).toEqual(b.authKey);
+    expect(a.encryptionKey).toEqual(b.encryptionKey);
+  });
+
+  it("produces different keys for different passwords", async () => {
+    const salt = randomBytes(16);
+    const a = await deriveAuthAndEncryptionKeys("password one", salt);
+    const b = await deriveAuthAndEncryptionKeys("password two", salt);
+    expect(a.authKey).not.toEqual(b.authKey);
+    expect(a.encryptionKey).not.toEqual(b.encryptionKey);
+  });
+}, 20_000);
+
+describe("sha256Base64", () => {
+  it("is deterministic", () => {
+    const input = toBase64(randomBytes(32));
+    expect(sha256Base64(input)).toEqual(sha256Base64(input));
+  });
+
+  it("produces different output for different input", () => {
+    const a = toBase64(randomBytes(32));
+    const b = toBase64(randomBytes(32));
+    expect(sha256Base64(a)).not.toEqual(sha256Base64(b));
+  });
+});
 
 describe("encryptEnvelope / decryptEnvelope", () => {
   it("round-trips arbitrary JSON payloads", async () => {

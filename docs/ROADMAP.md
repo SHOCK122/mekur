@@ -27,16 +27,24 @@ and the Docker stack builds and runs before moving to the next.
 
 ## Phase 1 — Core single-user scheduling
 
-- [ ] Account creation/login: passkey (WebAuthn) as the primary flow,
-      password + scrypt-derived key as a fallback for devices without
-      passkey support
-- [ ] Postgres added to the stack; user table (public key, auth
-      credential, no plaintext secrets)
-- [ ] Event CRUD: create/read/update/delete personal events, stored as
-      `EncryptedEnvelope`s, encrypted/decrypted entirely client-side
+- [x] Account creation/login: password-based auth implemented (client derives
+      `authKey`/`encryptionKey` via domain-separated HKDF from one scrypt
+      run; server hashes the submitted `authKey` itself rather than trusting
+      a client-supplied hash, so a DB leak alone isn't a replayable
+      credential). Passkey/WebAuthn as an additional login method is
+      deferred — tracked below, not blocking.
+- [x] Postgres added to the stack; `users` table (public key, auth salt,
+      auth hash — no plaintext secrets, no encryption keys)
+- [x] Event CRUD: create/read/update/delete personal events, stored as
+      `EncryptedEnvelope`s, encrypted/decrypted entirely client-side.
+      Verified with a dedicated cross-user isolation test.
+- [x] All of the above TDD'd against a real local Postgres instance (not
+      mocks) and smoke-tested against the exact pruned production
+      Docker build/runtime (compiled output + production-only deps)
 - [ ] PWA: local calendar view, create/edit event UI, offline local
       cache (IndexedDB) so a user's own calendar works with no network
 - [ ] OpenAPI spec published for the API surface that exists so far
+- [ ] Passkey/WebAuthn as an additional (preferred) login method
 - [ ] Revisit the scrypt cost parameter (`N=2^17`) against real low-end
       device timing — currently tuned for security, may need to be
       adaptive per device class
@@ -45,6 +53,9 @@ and the Docker stack builds and runs before moving to the next.
 add/edit/delete events, and see them persist across a refresh and across
 a server restart — all without the server ever being able to read event
 content. `docker compose up` serves this end to end.
+**Status:** backend is done and tested; the PWA UI piece (calendar view,
+login/register forms, local event editing) is the remaining piece before
+this phase's exit criteria are fully met.
 
 ## Phase 2 — Multi-user & group scheduling
 

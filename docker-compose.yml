@@ -1,12 +1,34 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=scheduleapp
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scheduleapp}
+      - POSTGRES_DB=scheduleapp
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scheduleapp -d scheduleapp"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   api:
     build:
       context: .
       dockerfile: infra/Dockerfile.api
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - PORT=3000
       - HOST=0.0.0.0
+      - DATABASE_URL=postgres://scheduleapp:${POSTGRES_PASSWORD:-scheduleapp}@postgres:5432/scheduleapp
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in a .env file -- see .env.example}
+      - NODE_ENV=production
     expose:
       - "3000"
     healthcheck:
@@ -26,3 +48,6 @@ services:
         condition: service_healthy
     ports:
       - "3080:80"
+
+volumes:
+  postgres-data:

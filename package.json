@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "test -d packages/shared/src && npm run build --workspace=@schedule-app/shared --workspace=@schedule-app/crypto || true",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
