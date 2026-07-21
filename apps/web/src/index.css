@@ -157,6 +157,64 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+.event-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.inline-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.inline-label select,
+.inline-label input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: white;
+}
+
+.event-recurrence {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+
+.event-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.priority-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.priority-badge-low {
+  background: #eef0ee;
+  color: var(--text-muted);
+}
+
+.priority-badge-medium {
+  background: #e4ecfd;
+  color: var(--accent);
+}
+
+.priority-badge-high {
+  background: #fce8e6;
+  color: var(--danger);
+}
+
 .empty-state {
   color: var(--text-muted);
 }

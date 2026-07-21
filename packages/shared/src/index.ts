@@ -43,15 +43,60 @@ export const EventRecordSchema = z.object({
 export type EventRecord = z.infer<typeof EventRecordSchema>;
 
 /**
+ * A recurrence rule, modeled after the widely-used iCalendar RRULE
+ * subset (FREQ/INTERVAL/BYDAY/COUNT/UNTIL) rather than a bespoke format,
+ * so arbitrary intervals ("every 37 minutes"), daily/weekly repeats, and
+ * "every weekday" (BYDAY=MO,TU,WE,TH,FR) are all expressible with one
+ * well-understood shape. Expansion into actual occurrences happens
+ * client-side (see apps/web/src/lib/recurrence.ts) using the `rrule`
+ * library; the server never interprets this -- it's just more content
+ * inside the EncryptedEnvelope.
+ */
+export const RecurrenceFrequencySchema = z.enum([
+  "MINUTELY",
+  "HOURLY",
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY",
+  "YEARLY",
+]);
+export type RecurrenceFrequency = z.infer<typeof RecurrenceFrequencySchema>;
+
+export const WeekdaySchema = z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
+export type Weekday = z.infer<typeof WeekdaySchema>;
+
+export const RecurrenceRuleSchema = z.object({
+  freq: RecurrenceFrequencySchema,
+  interval: z.number().int().positive().default(1), // e.g. every 37 minutes -> freq MINUTELY, interval 37
+  byDay: z.array(WeekdaySchema).optional(), // e.g. every weekday -> [MO,TU,WE,TH,FR]
+  count: z.number().int().positive().optional(), // stop after N occurrences
+  until: z.string().datetime().optional(), // stop after this date (mutually used with count, not both)
+});
+export type RecurrenceRule = z.infer<typeof RecurrenceRuleSchema>;
+
+/** How important the user considers this event -- distinct from, and unrelated
+ * to, the per-slot preference ranking used in group-scheduling (docs/ARCHITECTURE.md);
+ * this is a personal attribute of a single event. */
+export const EventPrioritySchema = z.enum(["low", "medium", "high"]);
+export type EventPriority = z.infer<typeof EventPrioritySchema>;
+
+/**
  * The plaintext shape of an event, as it exists only on the client after
  * decryption. This is what gets encrypted into an EncryptedEnvelope before
  * ever touching the network.
  */
-export const EventContentSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(10_000).optional(),
-  location: z.string().max(500).optional(),
-  startTime: z.string().datetime(),
-  endTime: z.string().datetime(),
-});
+export const EventContentSchema = z
+  .object({
+    title: z.string().min(1).max(500),
+    description: z.string().max(10_000).optional(),
+    location: z.string().max(500).optional(),
+    startTime: z.string().datetime(),
+    endTime: z.string().datetime(),
+    priority: EventPrioritySchema.default("medium"),
+    recurrence: RecurrenceRuleSchema.optional(),
+  })
+  .refine((event) => new Date(event.endTime) > new Date(event.startTime), {
+    message: "endTime must be after startTime",
+    path: ["endTime"],
+  });
 export type EventContent = z.infer<typeof EventContentSchema>;

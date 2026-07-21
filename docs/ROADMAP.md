@@ -49,6 +49,17 @@ and the Docker stack builds and runs before moving to the next.
 - [ ] Offline local cache of event data itself (IndexedDB), so a user's
       calendar is viewable/editable with no network, not just the app
       shell
+- [x] Event validation: end time must be after start time (enforced in
+      the shared Zod schema, so both client validation and any future
+      consumer get it for free)
+- [x] Recurrence: RRULE-style rules (arbitrary interval like "every 37
+      minutes", daily/weekly, every weekday) stored as part of the
+      encrypted event content, expanded client-side for display via
+      `rrule`. Simplification: editing/deleting acts on the whole
+      series, not a single occurrence -- revisit if that's needed.
+- [x] Priority: low/medium/high, user-selectable per event (distinct
+      from, and unrelated to, the per-slot ranking used in group
+      scheduling -- see docs/ARCHITECTURE.md)
 - [ ] OpenAPI spec published for the API surface that exists so far
 - [ ] Passkey/WebAuthn as an additional (preferred) login method
 - [ ] Revisit the scrypt cost parameter (`N=2^17`) against real low-end
