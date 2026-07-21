@@ -41,21 +41,38 @@ and the Docker stack builds and runs before moving to the next.
 - [x] All of the above TDD'd against a real local Postgres instance (not
       mocks) and smoke-tested against the exact pruned production
       Docker build/runtime (compiled output + production-only deps)
-- [ ] PWA: local calendar view, create/edit event UI, offline local
-      cache (IndexedDB) so a user's own calendar works with no network
+- [x] PWA: login/register forms, calendar view (list/create/delete
+      events), session persisted across refresh. App-shell offline
+      caching (from Phase 0's service worker) still applies, but event
+      *data* itself is fetched live and is NOT yet cached for offline
+      viewing/editing — that's still open, see below.
+- [ ] Offline local cache of event data itself (IndexedDB), so a user's
+      calendar is viewable/editable with no network, not just the app
+      shell
 - [ ] OpenAPI spec published for the API surface that exists so far
 - [ ] Passkey/WebAuthn as an additional (preferred) login method
 - [ ] Revisit the scrypt cost parameter (`N=2^17`) against real low-end
       device timing — currently tuned for security, may need to be
       adaptive per device class
+- [ ] **Known trade-off to revisit:** the encryption key currently lives
+      in `localStorage` (plaintext, for simplicity) so a page refresh
+      doesn't log the user out. This is readable by any script that gets
+      injected via XSS. Hardening options for a later pass: keep the key
+      only in memory (require re-entering the password each session), or
+      wrap it with a non-extractable WebCrypto key tied to the origin.
+      Not fixed now to avoid adding complexity before the core flow is
+      proven out, but flagged rather than silently accepted.
 
 **Exit criteria:** a single user can install the PWA, create an account,
 add/edit/delete events, and see them persist across a refresh and across
 a server restart — all without the server ever being able to read event
 content. `docker compose up` serves this end to end.
-**Status:** backend is done and tested; the PWA UI piece (calendar view,
-login/register forms, local event editing) is the remaining piece before
-this phase's exit criteria are fully met.
+**Status:** Backend and the core PWA UI are both done and tested
+(register, login, create/list/delete events, session persisted across
+refresh, against a real Postgres instance and the exact production
+Docker build). Still open before this phase is fully "done": offline
+caching of event data itself, an OpenAPI spec, and the two deliberately
+deferred items above (passkeys, localStorage hardening).
 
 ## Phase 2 — Multi-user & group scheduling
 

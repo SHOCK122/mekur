@@ -1,40 +1,28 @@
-import { useEffect, useState } from "react";
-
-type ApiStatus = "checking" | "online" | "offline";
-
-async function checkApiHealth(): Promise<ApiStatus> {
-  try {
-    const response = await fetch("/api/health");
-    if (!response.ok) return "offline";
-    const body: unknown = await response.json();
-    return body && typeof body === "object" && (body as { status?: string }).status === "ok"
-      ? "online"
-      : "offline";
-  } catch {
-    return "offline";
-  }
-}
+import { useState } from "react";
+import { AuthForm } from "./components/AuthForm.js";
+import { Calendar } from "./components/Calendar.js";
+import { loadSession, saveSession, clearSession, type Session } from "./lib/session.js";
 
 export function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const [session, setSession] = useState<Session | null>(() => loadSession());
 
-  useEffect(() => {
-    let cancelled = false;
-    checkApiHealth().then((status) => {
-      if (!cancelled) setApiStatus(status);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  function handleAuthenticated(newSession: Session) {
+    saveSession(newSession);
+    setSession(newSession);
+  }
+
+  function handleLogout() {
+    clearSession();
+    setSession(null);
+  }
 
   return (
-    <main>
-      <h1>Schedule App</h1>
-      <p>Open-source, end-to-end encrypted scheduling.</p>
-      <p data-testid="api-status">
-        API status: {apiStatus === "checking" ? "checking\u2026" : apiStatus}
-      </p>
+    <main className="app-shell">
+      {session ? (
+        <Calendar session={session} onLogout={handleLogout} />
+      ) : (
+        <AuthForm onAuthenticated={handleAuthenticated} />
+      )}
     </main>
   );
 }
