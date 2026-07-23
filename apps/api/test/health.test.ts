@@ -26,3 +26,27 @@ describe("GET /health", () => {
     expect(response.json()).toEqual({ status: "ok" });
   });
 });
+
+describe("GET /openapi.json", () => {
+  let app: FastifyInstance;
+  let db: Database;
+
+  beforeAll(async () => {
+    ({ app, db } = await setupTestApp());
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await db.end();
+  });
+
+  it("returns a valid-looking OpenAPI document describing the real routes", async () => {
+    const response = await app.inject({ method: "GET", url: "/openapi.json" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.openapi).toBe("3.0.3");
+    expect(body.paths).toHaveProperty("/events");
+    expect(body.paths).toHaveProperty("/users");
+    expect(body.paths).toHaveProperty("/sessions");
+  });
+});

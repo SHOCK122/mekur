@@ -5,6 +5,7 @@ import { createUserRepository } from "./repositories/userRepository.js";
 import { createEventRepository } from "./repositories/eventRepository.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerEventRoutes } from "./routes/eventRoutes.js";
+import { openApiSpec } from "./openapi.js";
 
 export interface BuildAppOptions {
   db: Database;
@@ -20,6 +21,7 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   const events = createEventRepository(opts.db);
 
   app.get("/health", async () => ({ status: "ok" }));
+  app.get("/openapi.json", async () => openApiSpec);
 
   app.register(async (instance) => {
     registerAuthRoutes(instance, users);

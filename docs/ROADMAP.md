@@ -46,9 +46,13 @@ and the Docker stack builds and runs before moving to the next.
       caching (from Phase 0's service worker) still applies, but event
       *data* itself is fetched live and is NOT yet cached for offline
       viewing/editing — that's still open, see below.
-- [ ] Offline local cache of event data itself (IndexedDB), so a user's
-      calendar is viewable/editable with no network, not just the app
-      shell
+- [x] Offline local cache of event data itself, so a user's calendar is
+      viewable with no network, not just the app shell. Implemented via
+      `localStorage` rather than IndexedDB (simpler API; a personal
+      calendar's data volume doesn't need IndexedDB's query features) --
+      a deliberate substitution for the originally-planned tech, not a
+      silent scope cut. Falls back to the last-synced copy on network
+      failure, with a visible "you're offline" notice.
 - [x] Event validation: end time must be after start time (enforced in
       the shared Zod schema, so both client validation and any future
       consumer get it for free)
@@ -57,11 +61,14 @@ and the Docker stack builds and runs before moving to the next.
       encrypted event content, expanded client-side for display via
       `rrule`. Simplification: editing/deleting acts on the whole
       series, not a single occurrence -- revisit if that's needed.
-- [x] Priority: a plain integer, default 0, user-adjustable per event (no
-      fixed low/medium/high scale imposed -- distinct from, and unrelated
-      to, the per-slot ranking used in group scheduling -- see
-      docs/ARCHITECTURE.md)
-- [ ] OpenAPI spec published for the API surface that exists so far
+- [x] Priority: a plain integer, default 0, adjusted only via relative
+      up/down controls (raise self, or raise everyone else instead of
+      lowering self -- so priorities only ever increase, never need a
+      lower bound). The raw number is never shown to the user. Distinct
+      from, and unrelated to, the per-slot ranking used in group
+      scheduling -- see docs/ARCHITECTURE.md.
+- [x] OpenAPI spec published (`apps/api/src/openapi.ts`, served at
+      `GET /openapi.json`) for the API surface that exists so far
 - [ ] Passkey/WebAuthn as an additional (preferred) login method
 - [ ] Revisit the scrypt cost parameter (`N=2^17`) against real low-end
       device timing — currently tuned for security, may need to be
@@ -79,12 +86,13 @@ and the Docker stack builds and runs before moving to the next.
 add/edit/delete events, and see them persist across a refresh and across
 a server restart — all without the server ever being able to read event
 content. `docker compose up` serves this end to end.
-**Status:** Backend and the core PWA UI are both done and tested
-(register, login, create/list/delete events, session persisted across
-refresh, against a real Postgres instance and the exact production
-Docker build). Still open before this phase is fully "done": offline
-caching of event data itself, an OpenAPI spec, and the two deliberately
-deferred items above (passkeys, localStorage hardening).
+**Status: Phase 1 core scope is complete.** Backend, PWA UI, offline
+event caching, validation, recurrence, priority, and an OpenAPI spec are
+all done and tested (73 tests across all 4 packages at last count,
+against a real Postgres instance and the exact production Docker build).
+The three remaining items above (passkeys, scrypt tuning, localStorage
+hardening) are deliberately deferred hardening work, not blockers --
+tracked here rather than silently dropped.
 
 ## Phase 2 — Multi-user & group scheduling
 

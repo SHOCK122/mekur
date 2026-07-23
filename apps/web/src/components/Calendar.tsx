@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RecurrenceRule } from "@schedule-app/shared";
-import { listEvents, createEvent, deleteEvent, type DecryptedEvent } from "../lib/api.js";
+import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
+import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent } from "../lib/api.js";
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
+import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -40,14 +41,14 @@ function formatDateTime(date: Date): string {
 const DISPLAY_WINDOW_DAYS = 90;
 
 export function Calendar({ session, onLogout }: CalendarProps) {
-  const [events, setEvents] = useState<DecryptedEvent[]>([]);
+  const [events, setEvents] = useState<DecryptedEvent[]>(() => loadEventCache(session.userId) ?? []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
 
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [priority, setPriority] = useState(0);
   const [repeatPreset, setRepeatPreset] = useState<RepeatPreset>("none");
   const [customInterval, setCustomInterval] = useState(37);
   const [customUnit, setCustomUnit] = useState<CustomUnit>("MINUTELY");
@@ -58,8 +59,18 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     try {
       const list = await listEvents(session);
       setEvents(list);
+      saveEventCache(session.userId, list);
+      setOffline(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load events");
+      // A cached copy is still shown (if we have one) so the calendar stays
+      // usable offline; this is a status note, not a blocking error.
+      const cached = loadEventCache(session.userId);
+      if (cached) {
+        setEvents(cached);
+        setOffline(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Could not load events");
+      }
     } finally {
       setLoading(false);
     }
@@ -97,17 +108,49 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         title,
         startTime: startIso,
         endTime: endIso,
-        priority,
+        priority: 0,
         recurrence: buildRecurrence(repeatPreset, customInterval, customUnit),
       });
       setTitle("");
       setStart("");
       setEnd("");
-      setPriority(0);
       setRepeatPreset("none");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create event");
+    }
+  }
+
+  function toContent(event: DecryptedEvent): EventContent {
+    const { id, ...content } = event;
+    return content;
+  }
+
+  /** Moves this event up in priority. */
+  async function handlePriorityUp(id: string) {
+    const target = events.find((e) => e.id === id);
+    if (!target) return;
+    try {
+      await updateEvent(session, id, { ...toContent(target), priority: target.priority + 1 });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update priority");
+    }
+  }
+
+  /** Moves this event down in priority by raising every other event instead --
+   * priorities only ever increase, so we never need a lower bound or negative
+   * numbers to represent "less important". */
+  async function handlePriorityDown(id: string) {
+    const others = events.filter((e) => e.id !== id);
+    if (others.length === 0) return;
+    try {
+      await Promise.all(
+        others.map((e) => updateEvent(session, e.id, { ...toContent(e), priority: e.priority + 1 }))
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update priority");
     }
   }
 
@@ -128,6 +171,12 @@ export function Calendar({ session, onLogout }: CalendarProps) {
           Sign out
         </button>
       </header>
+
+      {offline && (
+        <p className="offline-banner" role="status">
+          You&rsquo;re offline &mdash; showing your last synced events.
+        </p>
+      )}
 
       <form onSubmit={handleCreate} className="event-form">
         <input
@@ -154,17 +203,6 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         </div>
 
         <div className="event-form-row">
-          <label className="inline-label">
-            Priority
-            <input
-              type="number"
-              step={1}
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
-              aria-label="Priority"
-            />
-          </label>
-
           <label className="inline-label">
             Repeat
             <select
@@ -229,9 +267,26 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                 )}
               </div>
               <div className="event-item-actions">
-                {event.priority !== 0 && (
-                  <span className="priority-badge">Priority {event.priority}</span>
-                )}
+                <div className="priority-controls">
+                  <button
+                    type="button"
+                    className="priority-arrow"
+                    onClick={() => handlePriorityUp(event.id)}
+                    aria-label={`Raise priority of ${event.title}`}
+                    title="More important"
+                  >
+                    &#9650;
+                  </button>
+                  <button
+                    type="button"
+                    className="priority-arrow"
+                    onClick={() => handlePriorityDown(event.id)}
+                    aria-label={`Lower priority of ${event.title}`}
+                    title="Less important"
+                  >
+                    &#9660;
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => handleDelete(event.id)}

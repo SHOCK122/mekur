@@ -191,16 +191,34 @@ button:disabled {
   gap: 0.6rem;
 }
 
-.priority-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: #eef0ee;
+.priority-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.priority-arrow {
+  background: none;
   color: var(--text-muted);
-  white-space: nowrap;
+  padding: 0.05rem 0.4rem;
+  line-height: 1;
+  font-size: 0.7rem;
+  border-radius: 4px;
+}
+
+.priority-arrow:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.offline-banner {
+  background: #fff7e6;
+  color: #8a5a00;
+  border: 1px solid #f0dca3;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
 }
 
 .empty-state {
