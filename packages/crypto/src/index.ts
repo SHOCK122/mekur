@@ -116,6 +116,38 @@ export function sha256Base64(keyBase64: string): string {
   return toBase64(sha256(fromBase64(keyBase64)));
 }
 
+/** Generates a fresh random 32-byte symmetric key (e.g. a per-event key to be
+ * wrapped and shared with invitees -- see wrapKey/unwrapKey below). */
+export function generateSymmetricKey(): string {
+  return toBase64(randomBytes(KEY_LENGTH));
+}
+
+/**
+ * Derives a shared wrapping key between two people from an X25519 ECDH
+ * exchange: my private key + their public key. By ECDH's symmetry, the
+ * other person computes the identical key from their private key + my
+ * public key -- neither side ever transmits it, and the server (which
+ * only ever sees public keys) can't derive it either.
+ */
+export function deriveSharedWrapKey(myPrivateKeyBase64: string, theirPublicKeyBase64: string): string {
+  const shared = x25519.getSharedSecret(fromBase64(myPrivateKeyBase64), fromBase64(theirPublicKeyBase64));
+  const derived = hkdf(sha256, shared, undefined, "schedule-app:wrap-key:v1", KEY_LENGTH);
+  return toBase64(derived);
+}
+
+/** Encrypts a symmetric key (e.g. a per-event key) under a shared wrap key,
+ * so it can be handed to one specific invitee via the (untrusted) server. */
+export function wrapKey(keyToWrapBase64: string, wrapKeyBase64: string): EncryptedEnvelope {
+  return encryptEnvelope({ key: keyToWrapBase64 }, wrapKeyBase64, "wrap-key");
+}
+
+/** Recovers a symmetric key previously wrapped with wrapKey(). Throws if the
+ * wrap key is wrong or the envelope was tampered with (same AEAD guarantee
+ * as decryptEnvelope). */
+export function unwrapKey(envelope: EncryptedEnvelope, wrapKeyBase64: string): string {
+  return decryptEnvelope<{ key: string }>(envelope, wrapKeyBase64).key;
+}
+
 /**
  * Encrypts an arbitrary JSON-serializable payload into an EncryptedEnvelope.
  * `keyId` is opaque metadata identifying which key was used (so the client

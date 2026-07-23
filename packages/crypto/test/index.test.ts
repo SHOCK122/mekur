@@ -4,6 +4,10 @@ import {
   deriveKeyFromPassword,
   deriveAuthAndEncryptionKeys,
   sha256Base64,
+  generateSymmetricKey,
+  deriveSharedWrapKey,
+  wrapKey,
+  unwrapKey,
   encryptEnvelope,
   decryptEnvelope,
   toBase64,
@@ -89,6 +93,80 @@ describe("sha256Base64", () => {
     const a = toBase64(randomBytes(32));
     const b = toBase64(randomBytes(32));
     expect(sha256Base64(a)).not.toEqual(sha256Base64(b));
+  });
+});
+
+describe("generateSymmetricKey", () => {
+  it("produces a 32-byte key", () => {
+    expect(fromBase64(generateSymmetricKey())).toHaveLength(32);
+  });
+
+  it("produces a different key each call", () => {
+    expect(generateSymmetricKey()).not.toEqual(generateSymmetricKey());
+  });
+});
+
+describe("deriveSharedWrapKey / wrapKey / unwrapKey", () => {
+  it("two parties derive the identical shared key from each other's keypairs (ECDH symmetry)", () => {
+    const organizer = generateKeyPair();
+    const invitee = generateKeyPair();
+
+    const organizerSide = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
+    const inviteeSide = deriveSharedWrapKey(invitee.secretKey, organizer.publicKey);
+
+    expect(organizerSide).toEqual(inviteeSide);
+  });
+
+  it("a third party's keypair derives a different shared key", () => {
+    const organizer = generateKeyPair();
+    const invitee = generateKeyPair();
+    const eavesdropper = generateKeyPair();
+
+    const real = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
+    const wrong = deriveSharedWrapKey(eavesdropper.secretKey, invitee.publicKey);
+
+    expect(real).not.toEqual(wrong);
+  });
+
+  it("wraps and unwraps a symmetric key end to end between two parties", () => {
+    const organizer = generateKeyPair();
+    const invitee = generateKeyPair();
+    const eventKey = generateSymmetricKey();
+
+    const wrapKeyForInvitee = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
+    const wrapped = wrapKey(eventKey, wrapKeyForInvitee);
+
+    const unwrapKeyOnInviteeSide = deriveSharedWrapKey(invitee.secretKey, organizer.publicKey);
+    const recovered = unwrapKey(wrapped, unwrapKeyOnInviteeSide);
+
+    expect(recovered).toEqual(eventKey);
+  });
+
+  it("fails to unwrap with a key derived from the wrong keypair", () => {
+    const organizer = generateKeyPair();
+    const invitee = generateKeyPair();
+    const eavesdropper = generateKeyPair();
+    const eventKey = generateSymmetricKey();
+
+    const wrapped = wrapKey(eventKey, deriveSharedWrapKey(organizer.secretKey, invitee.publicKey));
+    const eavesdropperKey = deriveSharedWrapKey(eavesdropper.secretKey, invitee.publicKey);
+
+    expect(() => unwrapKey(wrapped, eavesdropperKey)).toThrow();
+  });
+
+  it("lets the wrapped key encrypt/decrypt real event content end to end", () => {
+    const organizer = generateKeyPair();
+    const invitee = generateKeyPair();
+    const eventKey = generateSymmetricKey();
+
+    const content = { slots: { slot_1: "2026-08-10T10:00:00.000Z" }, title: "Team offsite" };
+    const contentEnvelope = encryptEnvelope(content, eventKey, "group-event-key");
+
+    const wrapped = wrapKey(eventKey, deriveSharedWrapKey(organizer.secretKey, invitee.publicKey));
+    const recoveredEventKey = unwrapKey(wrapped, deriveSharedWrapKey(invitee.secretKey, organizer.publicKey));
+    const decryptedContent = decryptEnvelope(contentEnvelope, recoveredEventKey);
+
+    expect(decryptedContent).toEqual(content);
   });
 });
 

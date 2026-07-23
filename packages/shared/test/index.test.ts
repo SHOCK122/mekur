@@ -4,6 +4,10 @@ import {
   UserPublicSchema,
   EventRecordSchema,
   EventContentSchema,
+  SlotSchema,
+  GroupEventContentSchema,
+  GroupEventRecordSchema,
+  SubmitVotesRequestSchema,
 } from "../src/index.js";
 
 describe("EncryptedEnvelopeSchema", () => {
@@ -201,6 +205,90 @@ describe("EventContentSchema", () => {
         endTime: "2026-08-01T09:15:00.000Z",
         recurrence: { freq: "DAILY", interval: 0 },
       })
+    ).toThrow();
+  });
+});
+
+describe("SlotSchema", () => {
+  it("accepts a valid slot", () => {
+    const slot = { startTime: "2026-08-10T10:00:00.000Z", endTime: "2026-08-10T10:30:00.000Z" };
+    expect(SlotSchema.parse(slot)).toEqual(slot);
+  });
+
+  it("rejects a slot with endTime before startTime", () => {
+    expect(() =>
+      SlotSchema.parse({ startTime: "2026-08-10T10:30:00.000Z", endTime: "2026-08-10T10:00:00.000Z" })
+    ).toThrow();
+  });
+});
+
+describe("GroupEventContentSchema", () => {
+  it("accepts valid content with candidate slots", () => {
+    const content = {
+      title: "Team offsite",
+      slots: {
+        slot_1: { startTime: "2026-08-10T10:00:00.000Z", endTime: "2026-08-10T11:00:00.000Z" },
+        slot_2: { startTime: "2026-08-11T10:00:00.000Z", endTime: "2026-08-11T11:00:00.000Z" },
+      },
+    };
+    expect(GroupEventContentSchema.parse(content)).toEqual(content);
+  });
+
+  it("rejects content with zero candidate slots", () => {
+    expect(() => GroupEventContentSchema.parse({ title: "Empty", slots: {} })).toThrow();
+  });
+});
+
+describe("GroupEventRecordSchema", () => {
+  it("accepts a valid open group event record", () => {
+    const record = {
+      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      organizerId: "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+      slotIds: ["slot_1", "slot_2"],
+      contentEnvelope: {
+        v: 1,
+        algo: "xchacha20poly1305",
+        keyId: "group-event-key",
+        nonce: "bm9uY2U=",
+        ciphertext: "Y2lwaGVydGV4dA==",
+      },
+      status: "open",
+      resolvedSlotId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      myWrappedKey: {
+        v: 1,
+        algo: "xchacha20poly1305",
+        keyId: "wrap-key",
+        nonce: "bm9uY2U=",
+        ciphertext: "Y2lwaGVydGV4dA==",
+      },
+    };
+    expect(GroupEventRecordSchema.parse(record)).toEqual(record);
+  });
+});
+
+describe("SubmitVotesRequestSchema", () => {
+  it("accepts a valid ranking", () => {
+    const request = { rankings: [{ slotId: "slot_1", rank: 1 }, { slotId: "slot_2", rank: 2 }] };
+    expect(SubmitVotesRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("rejects duplicate slotIds", () => {
+    expect(() =>
+      SubmitVotesRequestSchema.parse({
+        rankings: [{ slotId: "slot_1", rank: 1 }, { slotId: "slot_1", rank: 2 }],
+      })
+    ).toThrow();
+  });
+
+  it("rejects an empty ranking list", () => {
+    expect(() => SubmitVotesRequestSchema.parse({ rankings: [] })).toThrow();
+  });
+
+  it("rejects a non-positive rank", () => {
+    expect(() =>
+      SubmitVotesRequestSchema.parse({ rankings: [{ slotId: "slot_1", rank: 0 }] })
     ).toThrow();
   });
 });

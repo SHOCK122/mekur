@@ -101,3 +101,79 @@ export const EventContentSchema = z
     path: ["endTime"],
   });
 export type EventContent = z.infer<typeof EventContentSchema>;
+
+/**
+ * Group scheduling: the organizer proposes candidate time slots, invites
+ * participants (including themselves -- see GroupEventParticipantSchema),
+ * and everyone votes. The server only ever sees opaque slot IDs and
+ * ranks -- never the real times, title, or description, which live only
+ * inside GroupEventContent, encrypted under a per-event key that's
+ * wrapped individually to each participant (see docs/ARCHITECTURE.md and
+ * packages/crypto's wrapKey/unwrapKey/deriveSharedWrapKey).
+ */
+export const SlotSchema = z
+  .object({
+    startTime: z.string().datetime(),
+    endTime: z.string().datetime(),
+  })
+  .refine((slot) => new Date(slot.endTime) > new Date(slot.startTime), {
+    message: "endTime must be after startTime",
+    path: ["endTime"],
+  });
+export type Slot = z.infer<typeof SlotSchema>;
+
+/** The plaintext payload encrypted under the per-event key. Slot IDs here
+ * are the same opaque strings the server tracks in the group_events row. */
+export const GroupEventContentSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().max(10_000).optional(),
+  location: z.string().max(500).optional(),
+  slots: z.record(z.string(), SlotSchema).refine((slots) => Object.keys(slots).length > 0, {
+    message: "at least one candidate slot is required",
+  }),
+});
+export type GroupEventContent = z.infer<typeof GroupEventContentSchema>;
+
+export const GroupEventStatusSchema = z.enum(["open", "resolved"]);
+export type GroupEventStatus = z.infer<typeof GroupEventStatusSchema>;
+
+/** One participant's wrapped copy of the event key. The organizer is a
+ * participant of their own event too (self-wrapped), so there's no special
+ * case for "am I the organizer" when fetching/decrypting -- everyone goes
+ * through the same wrappedKey -> eventKey -> content pipeline. */
+export const GroupEventParticipantSchema = z.object({
+  userId: z.string().uuid(),
+  wrappedKey: EncryptedEnvelopeSchema,
+});
+export type GroupEventParticipant = z.infer<typeof GroupEventParticipantSchema>;
+
+export const GroupEventRecordSchema = z.object({
+  id: z.string().uuid(),
+  organizerId: z.string().uuid(),
+  slotIds: z.array(z.string()).min(1),
+  contentEnvelope: EncryptedEnvelopeSchema,
+  status: GroupEventStatusSchema,
+  resolvedSlotId: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  /** This requesting user's own wrapped copy of the event key. */
+  myWrappedKey: EncryptedEnvelopeSchema,
+});
+export type GroupEventRecord = z.infer<typeof GroupEventRecordSchema>;
+
+/** One voter's ranking of the proposed slots (1 = most preferred). Ranks
+ * need not be contiguous or cover every slot -- a voter can rank only the
+ * slots they care about. */
+export const VoteRankingSchema = z.object({
+  slotId: z.string().min(1),
+  rank: z.number().int().positive(),
+});
+export const SubmitVotesRequestSchema = z.object({
+  rankings: z
+    .array(VoteRankingSchema)
+    .min(1)
+    .refine((rankings) => new Set(rankings.map((r) => r.slotId)).size === rankings.length, {
+      message: "duplicate slotId in rankings",
+    }),
+});
+export type SubmitVotesRequest = z.infer<typeof SubmitVotesRequestSchema>;
