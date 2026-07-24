@@ -56,6 +56,20 @@ export function registerAuthRoutes(app: FastifyInstance, users: UserRepository) 
     return reply.send({ user: publicUser(user), token });
   });
 
+  // Directory lookup: find a contact's public key to invite them to a
+  // group event. Requires auth (must be a registered user of this
+  // instance) to reduce casual enumeration/scraping, even though the
+  // data itself is meant to be shared -- a modest, cheap mitigation.
+  app.get<{ Params: { username: string } }>(
+    "/users/:username",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const user = await users.findByUsername(request.params.username);
+      if (!user) return reply.code(404).send({ error: "Not found" });
+      return reply.send({ user: publicUser(user) });
+    }
+  );
+
   // Returns the auth salt for a username, so a client can re-derive its
   // keys before attempting login. Deliberately public (no auth required)
   // since a user needs it before they have a token — but note this does

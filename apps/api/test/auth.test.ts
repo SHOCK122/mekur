@@ -4,6 +4,18 @@ import type { Database } from "../src/db/pool.js";
 import { deriveAuthAndEncryptionKeys, generateKeyPair, toBase64 } from "@schedule-app/crypto";
 import { setupTestApp, truncateAll } from "./testHelpers.js";
 
+async function registerPayload(username: string, password: string) {
+  const keys = await deriveAuthAndEncryptionKeys(password);
+  const { publicKey } = generateKeyPair();
+  return {
+    username,
+    displayName: "Ada Lovelace",
+    publicKey,
+    authKey: keys.authKey,
+    authSalt: keys.salt,
+  };
+}
+
 describe("auth routes", () => {
   let app: FastifyInstance;
   let db: Database;
@@ -20,18 +32,6 @@ describe("auth routes", () => {
     await app.close();
     await db.end();
   });
-
-  async function registerPayload(username: string, password: string) {
-    const keys = await deriveAuthAndEncryptionKeys(password);
-    const { publicKey } = generateKeyPair();
-    return {
-      username,
-      displayName: "Ada Lovelace",
-      publicKey,
-      authKey: keys.authKey,
-      authSalt: keys.salt,
-    };
-  }
 
   it("registers a new user and returns a token", async () => {
     const payload = await registerPayload("ada", "correct horse battery staple");
@@ -96,5 +96,61 @@ describe("auth routes", () => {
       payload: { username: "does-not-exist", authKey: toBase64(new Uint8Array(32)) },
     });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe("GET /users/:username (directory lookup)", () => {
+  let app: FastifyInstance;
+  let db: Database;
+
+  beforeAll(async () => {
+    ({ app, db } = await setupTestApp());
+  });
+
+  beforeEach(async () => {
+    await truncateAll(db);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await db.end();
+  });
+
+  it("requires authentication", async () => {
+    const response = await app.inject({ method: "GET", url: "/users/anyone" });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("returns a public profile (no auth secrets) for an authenticated lookup", async () => {
+    const payload = await registerPayload("bob", "some password");
+    const registerResp = await app.inject({ method: "POST", url: "/users", payload });
+    const requester = await registerPayload("alice", "another password");
+    const requesterResp = await app.inject({ method: "POST", url: "/users", payload: requester });
+    const token = requesterResp.json().token;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/users/bob",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.user.username).toBe("bob");
+    expect(body.user.publicKey).toBe(payload.publicKey);
+    expect(body.user).not.toHaveProperty("authHash");
+    expect(body.user).not.toHaveProperty("authSalt");
+  });
+
+  it("returns 404 for an unknown username", async () => {
+    const requester = await registerPayload("alice2", "another password");
+    const requesterResp = await app.inject({ method: "POST", url: "/users", payload: requester });
+    const token = requesterResp.json().token;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/users/nobody-here",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(404);
   });
 });

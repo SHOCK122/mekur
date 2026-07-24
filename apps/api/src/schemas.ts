@@ -31,3 +31,25 @@ export type CreateEventRequest = z.infer<typeof CreateEventRequestSchema>;
 
 export const UpdateEventRequestSchema = CreateEventRequestSchema;
 export type UpdateEventRequest = z.infer<typeof UpdateEventRequestSchema>;
+
+const participantSchema = z.object({
+  userId: z.string().uuid(),
+  wrappedKey: EncryptedEnvelopeSchema,
+});
+
+export const CreateGroupEventRequestSchema = z.object({
+  slotIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate slotId" }),
+  contentEnvelope: EncryptedEnvelopeSchema,
+  // Must include the organizer themself (self-wrapped) -- see
+  // docs/ARCHITECTURE.md and packages/shared's design note.
+  participants: z
+    .array(participantSchema)
+    .min(1)
+    .refine((ps) => new Set(ps.map((p) => p.userId)).size === ps.length, {
+      message: "duplicate participant userId",
+    }),
+});
+export type CreateGroupEventRequest = z.infer<typeof CreateGroupEventRequestSchema>;

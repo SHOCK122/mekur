@@ -48,5 +48,8 @@ describe("GET /openapi.json", () => {
     expect(body.paths).toHaveProperty("/events");
     expect(body.paths).toHaveProperty("/users");
     expect(body.paths).toHaveProperty("/sessions");
+    expect(body.paths).toHaveProperty("/group-events");
+    expect(body.paths).toHaveProperty("/group-events/{id}/votes");
+    expect(body.paths).toHaveProperty("/group-events/{id}/resolve");
   });
 });
