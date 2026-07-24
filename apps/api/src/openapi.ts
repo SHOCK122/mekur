@@ -333,5 +333,39 @@ export const openApiSpec = {
         },
       },
     },
+    "/api-keys": {
+      post: {
+        summary: "Mint a new API key (for agentic/programmatic clients)",
+        description:
+          "The raw key is returned exactly once in the response and is never recoverable again -- only its hash is stored.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: { name: { type: "string", description: "Label to tell keys apart later" } },
+              },
+            },
+          },
+        },
+        responses: { "201": { description: "Created" } },
+      },
+      get: {
+        summary: "List the authenticated user's own API keys (prefix only, never the full key)",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "OK" } },
+      },
+    },
+    "/api-keys/{id}": {
+      delete: {
+        summary: "Revoke an API key",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: { "204": { description: "Revoked" }, "404": { description: "Not found" } },
+      },
+    },
   },
 } as const;
