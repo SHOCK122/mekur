@@ -1,6 +1,5 @@
 import {
   deriveAuthAndEncryptionKeys,
-  generateKeyPair,
   encryptEnvelope,
   decryptEnvelope,
 } from "@schedule-app/crypto";
@@ -23,14 +22,13 @@ export async function register(
   password: string
 ): Promise<Session> {
   const keys = await deriveAuthAndEncryptionKeys(password);
-  const { publicKey } = generateKeyPair();
   const response = await fetch(`${API_BASE}/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username,
       displayName,
-      publicKey,
+      publicKey: keys.identityKeyPair.publicKey,
       authKey: keys.authKey,
       authSalt: keys.salt,
     }),
@@ -41,6 +39,8 @@ export async function register(
     username: body.user.username,
     token: body.token,
     encryptionKey: keys.encryptionKey,
+    identityPublicKey: keys.identityKeyPair.publicKey,
+    identitySecretKey: keys.identityKeyPair.secretKey,
   };
 }
 
@@ -61,6 +61,8 @@ export async function login(username: string, password: string): Promise<Session
     username: body.user.username,
     token: body.token,
     encryptionKey: keys.encryptionKey,
+    identityPublicKey: keys.identityKeyPair.publicKey,
+    identitySecretKey: keys.identityKeyPair.secretKey,
   };
 }
 

@@ -71,17 +71,23 @@ export async function deriveKeyFromPassword(
 }
 
 /**
- * Derives two independent keys from one password: an `authKey` (proves
- * knowledge of the password to the server during login) and an
+ * Derives three independent things from one password: an `authKey`
+ * (proves knowledge of the password to the server during login), an
  * `encryptionKey` (encrypts the user's data, and is NEVER sent to the
- * server in any form). Both come from a single expensive scrypt run
- * (cheap on low-end devices to only pay that cost once), then split via
- * HKDF with different domain-separation labels so neither key can be
- * derived from the other.
+ * server in any form), and an `identityKeyPair` (X25519, used to wrap
+ * per-event keys for group scheduling -- see wrapKey/unwrapKey below).
+ * All three come from a single expensive scrypt run (cheap on low-end
+ * devices to only pay that cost once), then split via HKDF with
+ * different domain-separation labels so none can be derived from another.
+ * Deriving the identity keypair from the password (rather than generating
+ * it randomly at registration) means the private key never needs separate
+ * backup/storage -- it's always re-derivable from the password + salt,
+ * the same way encryptionKey is.
  */
 export interface AuthAndEncryptionKeys {
   authKey: string; // base64 — sent to the server only at login, over TLS
   encryptionKey: string; // base64 — never leaves the client
+  identityKeyPair: KeyPair; // X25519 — publicKey is registered with the server, secretKey never leaves the client
   salt: string; // base64 — must be stored to re-derive the same keys later
 }
 
@@ -104,9 +110,18 @@ export async function deriveAuthAndEncryptionKeys(
     "schedule-app:encryption-key:v1",
     KEY_LENGTH
   );
+  const identitySeed = hkdf(sha256, master, usedSalt, "schedule-app:identity-key:v1", KEY_LENGTH);
+  // X25519 clamps the scalar internally on every use, so any 32-byte seed
+  // is a valid private key input -- no separate "is this a valid key"
+  // check is needed here.
+  const identityPublicKey = x25519.getPublicKey(identitySeed);
   return {
     authKey: toBase64(authKey),
     encryptionKey: toBase64(encryptionKey),
+    identityKeyPair: {
+      publicKey: toBase64(identityPublicKey),
+      secretKey: toBase64(identitySeed),
+    },
     salt: toBase64(usedSalt),
   };
 }

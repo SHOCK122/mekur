@@ -3,6 +3,8 @@ export interface Session {
   username: string;
   token: string;
   encryptionKey: string; // base64 — stored locally only, never sent to the server
+  identityPublicKey: string; // base64 — also registered with the server, not secret
+  identitySecretKey: string; // base64 — stored locally only, never sent to the server
 }
 
 const STORAGE_KEY = "schedule-app:session";

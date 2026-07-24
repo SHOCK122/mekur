@@ -24,6 +24,8 @@ describe("api client", () => {
       username: "ada",
       token: "jwt-token",
       encryptionKey: expect.any(String),
+      identityPublicKey: expect.any(String),
+      identitySecretKey: expect.any(String),
     });
     const [, requestInit] = fetchMock.mock.calls[0];
     const sentBody = JSON.parse(requestInit.body);

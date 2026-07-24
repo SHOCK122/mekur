@@ -81,6 +81,27 @@ describe("deriveAuthAndEncryptionKeys", () => {
     expect(a.authKey).not.toEqual(b.authKey);
     expect(a.encryptionKey).not.toEqual(b.encryptionKey);
   });
+
+  it("derives a deterministic identity keypair usable for ECDH", async () => {
+    const salt = randomBytes(16);
+    const a = await deriveAuthAndEncryptionKeys("correct horse battery staple", salt);
+    const b = await deriveAuthAndEncryptionKeys("correct horse battery staple", salt);
+    expect(a.identityKeyPair.publicKey).toEqual(b.identityKeyPair.publicKey);
+    expect(a.identityKeyPair.secretKey).toEqual(b.identityKeyPair.secretKey);
+    expect(fromBase64(a.identityKeyPair.publicKey)).toHaveLength(32);
+  });
+
+  it("the derived identity keypair actually works for ECDH key wrapping", async () => {
+    const alice = await deriveAuthAndEncryptionKeys("alice's password");
+    const bob = await deriveAuthAndEncryptionKeys("bob's password");
+
+    const eventKey = generateSymmetricKey();
+    const aliceSideKey = deriveSharedWrapKey(alice.identityKeyPair.secretKey, bob.identityKeyPair.publicKey);
+    const wrapped = wrapKey(eventKey, aliceSideKey);
+
+    const bobSideKey = deriveSharedWrapKey(bob.identityKeyPair.secretKey, alice.identityKeyPair.publicKey);
+    expect(unwrapKey(wrapped, bobSideKey)).toEqual(eventKey);
+  });
 }, 20_000);
 
 describe("sha256Base64", () => {
