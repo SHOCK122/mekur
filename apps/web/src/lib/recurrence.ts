@@ -25,6 +25,13 @@ export interface Occurrence {
   end: Date;
 }
 
+/** Hard ceiling on how many occurrences a single event can contribute to a
+ * display window. Without this, a rule like "every 1 minute" expanded over
+ * a multi-month window would generate hundreds of thousands of rows and
+ * freeze the UI. 500 is generous for any real calendar use while staying
+ * cheap to render. */
+const MAX_OCCURRENCES_PER_EVENT = 500;
+
 /**
  * Expands a single event + its optional recurrence rule into concrete
  * occurrences within [rangeStart, rangeEnd]. All occurrences share the
@@ -54,10 +61,26 @@ export function expandOccurrences(
     dtstart: start,
   });
 
-  return rule.between(rangeStart, rangeEnd, true).map((occurrenceStart) => ({
+  return collectBounded(rule, rangeStart, rangeEnd).map((occurrenceStart) => ({
     start: occurrenceStart,
     end: new Date(occurrenceStart.getTime() + durationMs),
   }));
+}
+
+/** Iterates the rule in chronological order and stops as soon as either the
+ * window is exhausted or MAX_OCCURRENCES_PER_EVENT matches are found --
+ * unlike RRule.between(), which always fully enumerates before returning,
+ * this bounds the actual computation cost, not just the result size. That
+ * matters on low-end devices, where enumerating hundreds of thousands of
+ * dates synchronously can visibly freeze the UI. */
+function collectBounded(rule: RRule, rangeStart: Date, rangeEnd: Date): Date[] {
+  const results: Date[] = [];
+  rule.all((date) => {
+    if (date > rangeEnd) return false;
+    if (date >= rangeStart) results.push(date);
+    return results.length < MAX_OCCURRENCES_PER_EVENT;
+  });
+  return results;
 }
 
 /** Short human-readable summary of a recurrence rule, for display. */

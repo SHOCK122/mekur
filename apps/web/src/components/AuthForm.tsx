@@ -44,8 +44,13 @@ export function AuthForm({ onAuthenticated }: AuthFormProps) {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
+            pattern="[a-z0-9_.\-]{3,64}"
+            title="Lowercase letters, numbers, and _ . - only (3-64 characters)"
             required
           />
+          {mode === "register" && (
+            <span className="field-hint">Lowercase letters, numbers, and _ . - only</span>
+          )}
         </label>
         {mode === "register" && (
           <label>

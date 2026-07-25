@@ -8,16 +8,9 @@ import {
 } from "@schedule-app/crypto";
 import type { GroupEventContent, Slot } from "@schedule-app/shared";
 import type { Session } from "./session.js";
+import { parseJsonOrThrow } from "./http.js";
 
 const API_BASE = "/api";
-
-async function parseJsonOrThrow(response: Response): Promise<any> {
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body.error ?? `Request failed with status ${response.status}`);
-  }
-  return body;
-}
 
 function authHeaders(session: Session) {
   return { authorization: `Bearer ${session.token}` };

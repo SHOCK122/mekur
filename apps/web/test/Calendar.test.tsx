@@ -81,7 +81,7 @@ describe("Calendar", () => {
     expect(fetchMock.mock.calls.length).toBe(callsBefore); // no POST /events happened
   }, 15_000);
 
-  it("submits a custom recurrence interval", async () => {
+  it("submits a custom recurrence interval via the repeat toggle", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
     const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
     const fetchMock = vi
@@ -98,10 +98,17 @@ describe("Calendar", () => {
     await user.type(screen.getByPlaceholderText(/event title/i), "Check the oven");
     await user.type(screen.getByLabelText(/start time/i), "2026-08-01T09:00");
     await user.type(screen.getByLabelText(/end time/i), "2026-08-01T09:05");
-    await user.selectOptions(screen.getByText("Does not repeat").closest("select")!, "custom");
-    const intervalInput = await screen.findByLabelText(/custom repeat interval/i);
+
+    // Repeat options are collapsed by default, revealed by the toggle button.
+    expect(screen.queryByLabelText(/repeat interval/i)).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: /^repeat/i });
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: /^repeating/i })).toBeInTheDocument();
+
+    const intervalInput = screen.getByLabelText(/repeat interval/i);
     await user.clear(intervalInput);
     await user.type(intervalInput, "37");
+    await user.selectOptions(screen.getByLabelText(/^unit$/i), "MINUTELY");
     await user.click(screen.getByRole("button", { name: /add event/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
@@ -226,5 +233,54 @@ describe("Calendar", () => {
 
     await waitFor(() => expect(screen.getByText("Cached meeting")).toBeInTheDocument());
     expect(screen.getByRole("status")).toHaveTextContent(/offline/i);
+  }, 15_000);
+
+  it("clicking the repeat toggle again hides the panel and reverts the button label", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
+    );
+
+    const user = userEvent.setup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
+
+    const toggle = screen.getByRole("button", { name: /^repeat/i });
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: /^repeating/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/repeat interval/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^repeating/i }));
+    expect(screen.getByRole("button", { name: /^repeat\s/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/repeat interval/i)).not.toBeInTheDocument();
+  }, 15_000);
+
+  it("regression: an event whose start time has already passed by the time the list renders still shows up", async () => {
+    // This reproduces the reported bug: the display window used to start
+    // at exactly "new Date()" at render time, so an event created for a
+    // moment that had already ticked past "now" (e.g. picked a couple of
+    // minutes before hitting submit) was silently excluded.
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const justPassed = new Date(Date.now() - 5 * 60_000); // 5 minutes ago
+    const content = {
+      title: "Just missed it",
+      startTime: justPassed.toISOString(),
+      endTime: new Date(justPassed.getTime() + 30 * 60_000).toISOString(),
+      priority: 0,
+    };
+    const envelope = encryptEnvelope(content, encryptionKey, "user-key-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ events: [{ id: "event-1", envelope }] }),
+      })
+    );
+
+    render(<Calendar session={session} onLogout={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Just missed it")).toBeInTheDocument());
   }, 15_000);
 });

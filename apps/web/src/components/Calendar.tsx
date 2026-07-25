@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
+import type { EventContent } from "@schedule-app/shared";
 import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent } from "../lib/api.js";
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
@@ -10,27 +10,7 @@ interface CalendarProps {
   onLogout: () => void;
 }
 
-type RepeatPreset = "none" | "daily" | "weekly" | "weekdays" | "custom";
 type CustomUnit = "MINUTELY" | "HOURLY" | "DAILY" | "WEEKLY";
-
-function buildRecurrence(
-  preset: RepeatPreset,
-  customInterval: number,
-  customUnit: CustomUnit
-): RecurrenceRule | undefined {
-  switch (preset) {
-    case "none":
-      return undefined;
-    case "daily":
-      return { freq: "DAILY", interval: 1 };
-    case "weekly":
-      return { freq: "WEEKLY", interval: 1 };
-    case "weekdays":
-      return { freq: "WEEKLY", interval: 1, byDay: ["MO", "TU", "WE", "TH", "FR"] };
-    case "custom":
-      return { freq: customUnit, interval: Math.max(1, customInterval) };
-  }
-}
 
 function formatDateTime(date: Date): string {
   const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -38,7 +18,12 @@ function formatDateTime(date: Date): string {
   return `${dateFmt.format(date)} \u00b7 ${timeFmt.format(date)}`;
 }
 
-const DISPLAY_WINDOW_DAYS = 90;
+// The display window is deliberately NOT anchored tightly to "this exact
+// instant" on the lower end: an event created moments ago (or earlier
+// today) should still show up rather than silently vanish because its
+// start time is a few minutes in the past by the time the list re-renders.
+const DISPLAY_WINDOW_PAST_DAYS = 30;
+const DISPLAY_WINDOW_FUTURE_DAYS = 90;
 
 export function Calendar({ session, onLogout }: CalendarProps) {
   const [events, setEvents] = useState<DecryptedEvent[]>(() => loadEventCache(session.userId) ?? []);
@@ -49,9 +34,9 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [repeatPreset, setRepeatPreset] = useState<RepeatPreset>("none");
-  const [customInterval, setCustomInterval] = useState(37);
-  const [customUnit, setCustomUnit] = useState<CustomUnit>("MINUTELY");
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [customInterval, setCustomInterval] = useState(1);
+  const [customUnit, setCustomUnit] = useState<CustomUnit>("DAILY");
 
   async function refresh() {
     setLoading(true);
@@ -82,8 +67,9 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   }, []);
 
   const occurrences = useMemo(() => {
-    const rangeStart = new Date();
-    const rangeEnd = new Date(rangeStart.getTime() + DISPLAY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const rangeStart = new Date(now.getTime() - DISPLAY_WINDOW_PAST_DAYS * 24 * 60 * 60 * 1000);
+    const rangeEnd = new Date(now.getTime() + DISPLAY_WINDOW_FUTURE_DAYS * 24 * 60 * 60 * 1000);
     return events
       .flatMap((event) =>
         expandOccurrences(event, rangeStart, rangeEnd).map((occurrence) => ({ event, occurrence }))
@@ -109,12 +95,12 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         startTime: startIso,
         endTime: endIso,
         priority: 0,
-        recurrence: buildRecurrence(repeatPreset, customInterval, customUnit),
+        recurrence: repeatEnabled ? { freq: customUnit, interval: Math.max(1, customInterval) } : undefined,
       });
       setTitle("");
       setStart("");
       setEnd("");
-      setRepeatPreset("none");
+      setRepeatEnabled(false);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create event");
@@ -202,24 +188,17 @@ export function Calendar({ session, onLogout }: CalendarProps) {
           />
         </div>
 
-        <div className="event-form-row">
-          <label className="inline-label">
-            Repeat
-            <select
-              value={repeatPreset}
-              onChange={(e) => setRepeatPreset(e.target.value as RepeatPreset)}
-            >
-              <option value="none">Does not repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="weekdays">Every weekday</option>
-              <option value="custom">Custom interval\u2026</option>
-            </select>
-          </label>
-        </div>
+        <button
+          type="button"
+          className="repeat-toggle"
+          aria-expanded={repeatEnabled}
+          onClick={() => setRepeatEnabled((v) => !v)}
+        >
+          {repeatEnabled ? "Repeating \u25be" : "Repeat \u25b8"}
+        </button>
 
-        {repeatPreset === "custom" && (
-          <div className="event-form-row">
+        {repeatEnabled && (
+          <div className="event-form-row repeat-panel">
             <label className="inline-label">
               Every
               <input
@@ -227,7 +206,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                 min={1}
                 value={customInterval}
                 onChange={(e) => setCustomInterval(Number(e.target.value))}
-                aria-label="Custom repeat interval"
+                aria-label="Repeat interval"
               />
             </label>
             <label className="inline-label">

@@ -113,6 +113,12 @@ button:disabled {
   text-decoration: underline;
 }
 
+.field-hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
 .auth-error {
   color: var(--danger);
   font-size: 0.85rem;
@@ -155,6 +161,39 @@ button:disabled {
   padding-bottom: 1.5rem;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--border);
+}
+
+.repeat-toggle {
+  background: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 0.3rem 0;
+  text-align: left;
+  width: fit-content;
+}
+
+.repeat-toggle:hover {
+  background: none;
+  color: var(--text);
+}
+
+.repeat-toggle[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.repeat-panel {
+  animation: repeat-panel-reveal 0.15s ease-out;
+}
+
+@keyframes repeat-panel-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .event-form-row {

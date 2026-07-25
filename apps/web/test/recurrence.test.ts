@@ -71,6 +71,23 @@ describe("expandOccurrences", () => {
     );
     expect(occurrences).toHaveLength(3);
   });
+
+  it("caps the number of occurrences for a high-frequency rule over a wide window, instead of freezing on hundreds of thousands of rows", () => {
+    const event = {
+      startTime: "2026-01-01T00:00:00.000Z",
+      endTime: "2026-01-01T00:01:00.000Z",
+      recurrence: { freq: "MINUTELY" as const, interval: 1 },
+    };
+    // A 120-day window at 1-minute intervals would be ~172,800 occurrences
+    // without a cap.
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2026-05-01T00:00:00.000Z")
+    );
+    expect(occurrences.length).toBeLessThanOrEqual(500);
+    expect(occurrences.length).toBeGreaterThan(0);
+  });
 });
 
 describe("describeRecurrence", () => {

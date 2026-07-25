@@ -4,6 +4,13 @@ Phases are ordered core-first, complexity-in-the-middle, polish-last, as
 agreed. Each phase should leave the repo in a state where all tests pass
 and the Docker stack builds and runs before moving to the next.
 
+**Standing process, every phase from here on:** after a phase's features
+are built and tested, do a dedicated bughunt pass -- actually exercise
+what was built (not just re-read the code), fix what's found, add a
+regression test for each fix, then re-run the full suite and both
+production builds before calling the phase done. First applied after
+Phase 2 (see that section below for what it found).
+
 ## Phase 0 — Scaffolding ✅ (this session)
 
 - [x] Monorepo structure (`apps/`, `packages/`, npm workspaces)
@@ -143,10 +150,41 @@ tracked here rather than silently dropped.
   now to avoid adding a human-only-auth special case before it's clear
   it's needed.
 
-**Status: Phase 2 is complete.** 125 tests passing across all 4 packages
-(crypto 24, shared 27, api 37, web 37) at last count, including real
-cross-keypair ECDH tests against actual Postgres (not mocked), and all
-migrations verified to apply cleanly to a fresh database.
+**Post-Phase-2 bughunt (found by actually using the app, not just
+re-reading it):**
+- **Real bug:** the personal calendar's display window started at
+  exactly `new Date()` at render time, so an event whose start time had
+  already ticked into the past by the time the list re-rendered (e.g.
+  created for a time a few minutes before submitting) was silently
+  excluded -- this was the reported "events added don't show up" issue.
+  Fixed by widening the window to include the last 30 days, not just
+  the next 90. Regression test added.
+- **Real bug, found while fixing the above:** widening that window
+  exposed a latent performance problem -- a high-frequency recurrence
+  (e.g. "every 1 minute") expanded across a multi-month window could
+  generate hundreds of thousands of occurrences and freeze the UI,
+  which matters directly for this app's stated low-end-device audience.
+  Fixed with an early-stopping iterator (bounds the actual computation,
+  not just the returned array size) and a hard cap. Verified the fix
+  actually helps: the same test dropped from ~1.4s to a few ms.
+- **Real bug:** validation errors from the API (wrong username format,
+  etc.) were shown to users as a bare "Invalid request" with the
+  specific reason silently dropped, because the client only read
+  `body.error` and never `body.details`. Fixed in one place
+  (`lib/http.ts`, extracted from two duplicated copies) so every
+  validation error everywhere in the app is now readable.
+- UX improvement in the same area: added a matching client-side pattern
+  hint on the username field, so most people never hit the server
+  validation error at all.
+- Redesigned the repeat UI per request: removed the preset dropdown,
+  replaced with a single "Repeat" toggle button that expands a custom
+  interval/unit panel and relabels itself "Repeating" while open.
+
+**Status: Phase 2 is complete.** 133 tests passing across all 4 packages
+(crypto 24, shared 27, api 37, web 45) after the bughunt pass above,
+including real cross-keypair ECDH tests against actual Postgres (not
+mocked), and all migrations verified to apply cleanly to a fresh
+database.
 
 ## Phase 3 — Scale & offline resilience
 
