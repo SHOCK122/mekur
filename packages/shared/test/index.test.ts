@@ -244,6 +244,7 @@ describe("GroupEventRecordSchema", () => {
     const record = {
       id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
       organizerId: "6c84fb90-12c4-11e1-840d-7b25c5ee775a",
+      organizerPublicKey: "cHVibGljS2V5",
       slotIds: ["slot_1", "slot_2"],
       contentEnvelope: {
         v: 1,
@@ -263,6 +264,7 @@ describe("GroupEventRecordSchema", () => {
         nonce: "bm9uY2U=",
         ciphertext: "Y2lwaGVydGV4dA==",
       },
+      myVotes: [{ slotId: "slot_1", rank: 1 }],
     };
     expect(GroupEventRecordSchema.parse(record)).toEqual(record);
   });

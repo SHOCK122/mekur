@@ -147,9 +147,22 @@ export const GroupEventParticipantSchema = z.object({
 });
 export type GroupEventParticipant = z.infer<typeof GroupEventParticipantSchema>;
 
+/** One voter's ranking of the proposed slots (1 = most preferred). Ranks
+ * need not be contiguous or cover every slot -- a voter can rank only the
+ * slots they care about. */
+export const VoteRankingSchema = z.object({
+  slotId: z.string().min(1),
+  rank: z.number().int().positive(),
+});
+
 export const GroupEventRecordSchema = z.object({
   id: z.string().uuid(),
   organizerId: z.string().uuid(),
+  /** Denormalized onto the record so an invitee can derive the shared
+   * wrap key without a separate lookup -- it's already public information
+   * the server knows, and the invitee is already sharing an event with
+   * this organizer, so there's no new exposure in including it here. */
+  organizerPublicKey: z.string(),
   slotIds: z.array(z.string()).min(1),
   contentEnvelope: EncryptedEnvelopeSchema,
   status: GroupEventStatusSchema,
@@ -158,16 +171,11 @@ export const GroupEventRecordSchema = z.object({
   updatedAt: z.string().datetime(),
   /** This requesting user's own wrapped copy of the event key. */
   myWrappedKey: EncryptedEnvelopeSchema,
+  /** This requesting user's own current rankings, if they've voted. */
+  myVotes: z.array(VoteRankingSchema),
 });
 export type GroupEventRecord = z.infer<typeof GroupEventRecordSchema>;
 
-/** One voter's ranking of the proposed slots (1 = most preferred). Ranks
- * need not be contiguous or cover every slot -- a voter can rank only the
- * slots they care about. */
-export const VoteRankingSchema = z.object({
-  slotId: z.string().min(1),
-  rank: z.number().int().positive(),
-});
 export const SubmitVotesRequestSchema = z.object({
   rankings: z
     .array(VoteRankingSchema)

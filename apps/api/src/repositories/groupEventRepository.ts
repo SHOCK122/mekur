@@ -6,9 +6,15 @@ export interface GroupEventParticipantInput {
   wrappedKey: EncryptedEnvelope;
 }
 
+export interface VoteRankingRow {
+  slotId: string;
+  rank: number;
+}
+
 export interface GroupEventRow {
   id: string;
   organizerId: string;
+  organizerPublicKey: string;
   slotIds: string[];
   contentEnvelope: EncryptedEnvelope;
   status: GroupEventStatus;
@@ -16,11 +22,13 @@ export interface GroupEventRow {
   createdAt: string;
   updatedAt: string;
   myWrappedKey: EncryptedEnvelope;
+  myVotes: VoteRankingRow[];
 }
 
 interface RawRow {
   id: string;
   organizer_id: string;
+  organizer_public_key: string;
   slot_ids: string[];
   content_envelope: EncryptedEnvelope;
   status: GroupEventStatus;
@@ -28,12 +36,14 @@ interface RawRow {
   created_at: Date;
   updated_at: Date;
   my_wrapped_key: EncryptedEnvelope;
+  my_votes: VoteRankingRow[];
 }
 
 function toGroupEventRow(row: RawRow): GroupEventRow {
   return {
     id: row.id,
     organizerId: row.organizer_id,
+    organizerPublicKey: row.organizer_public_key,
     slotIds: row.slot_ids,
     contentEnvelope: row.content_envelope,
     status: row.status,
@@ -41,16 +51,27 @@ function toGroupEventRow(row: RawRow): GroupEventRow {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     myWrappedKey: row.my_wrapped_key,
+    myVotes: row.my_votes,
   };
 }
 
+// $1 is always the requesting userId (used both to find their participant
+// row and to find their own votes).
 const SELECT_FOR_USER = `
-  SELECT ge.id, ge.organizer_id, ge.slot_ids, ge.content_envelope, ge.status,
+  SELECT ge.id, ge.organizer_id, u.public_key AS organizer_public_key,
+         ge.slot_ids, ge.content_envelope, ge.status,
          ge.resolved_slot_id, ge.created_at, ge.updated_at,
-         gep.wrapped_key AS my_wrapped_key
+         gep.wrapped_key AS my_wrapped_key,
+         COALESCE(votes.my_votes, '[]'::json) AS my_votes
   FROM group_events ge
   JOIN group_event_participants gep
     ON gep.group_event_id = ge.id AND gep.user_id = $1
+  JOIN users u ON u.id = ge.organizer_id
+  LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object('slotId', gev.slot_id, 'rank', gev.rank)) AS my_votes
+    FROM group_event_votes gev
+    WHERE gev.group_event_id = ge.id AND gev.voter_id = $1
+  ) votes ON true
 `;
 
 export function createGroupEventRepository(db: Database) {

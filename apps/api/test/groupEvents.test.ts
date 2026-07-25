@@ -328,4 +328,60 @@ describe("group event routes", () => {
     });
     expect(response.statusCode).toBe(409);
   });
+
+  it("includes the organizer's public key and the requester's own votes on the record", async () => {
+    const organizer = await registerUser(app, "organizer9");
+    const voter = await registerUser(app, "voter9");
+    const slots = {
+      slot_1: { startTime: "2026-08-10T10:00:00.000Z", endTime: "2026-08-10T11:00:00.000Z" },
+      slot_2: { startTime: "2026-08-11T10:00:00.000Z", endTime: "2026-08-11T11:00:00.000Z" },
+    };
+    const { slotIds, contentEnvelope, participants } = buildGroupEventPayload(organizer, [voter], slots);
+    const createResp = await app.inject({
+      method: "POST",
+      url: "/group-events",
+      headers: auth(organizer.token),
+      payload: { slotIds, contentEnvelope, participants },
+    });
+    const groupEventId = createResp.json().groupEvent.id;
+    expect(createResp.json().groupEvent.organizerPublicKey).toBe(organizer.keyPair.publicKey);
+
+    // Before voting, myVotes is empty for the voter.
+    const beforeVote = await app.inject({
+      method: "GET",
+      url: `/group-events/${groupEventId}`,
+      headers: auth(voter.token),
+    });
+    expect(beforeVote.json().groupEvent.myVotes).toEqual([]);
+    expect(beforeVote.json().groupEvent.organizerPublicKey).toBe(organizer.keyPair.publicKey);
+
+    await app.inject({
+      method: "POST",
+      url: `/group-events/${groupEventId}/votes`,
+      headers: auth(voter.token),
+      payload: { rankings: [{ slotId: "slot_1", rank: 2 }, { slotId: "slot_2", rank: 1 }] },
+    });
+
+    const afterVote = await app.inject({
+      method: "GET",
+      url: `/group-events/${groupEventId}`,
+      headers: auth(voter.token),
+    });
+    const myVotes = afterVote.json().groupEvent.myVotes;
+    expect(myVotes).toHaveLength(2);
+    expect(myVotes).toEqual(
+      expect.arrayContaining([
+        { slotId: "slot_1", rank: 2 },
+        { slotId: "slot_2", rank: 1 },
+      ])
+    );
+
+    // The organizer's own myVotes stays separate/empty -- votes are per-voter.
+    const organizerView = await app.inject({
+      method: "GET",
+      url: `/group-events/${groupEventId}`,
+      headers: auth(organizer.token),
+    });
+    expect(organizerView.json().groupEvent.myVotes).toEqual([]);
+  });
 });
