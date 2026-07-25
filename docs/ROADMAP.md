@@ -96,14 +96,57 @@ tracked here rather than silently dropped.
 
 ## Phase 2 — Multi-user & group scheduling
 
-- [ ] Public-key directory (so users can look up contacts to invite)
-- [ ] Event sharing/invites: per-event key generation + wrapping to
-      invitee public keys (see `docs/ARCHITECTURE.md`)
-- [ ] Slot-based group scheduling: propose slots, submit rankings, server
-      selection algorithm (pluggable strategy, Borda-count default)
-- [ ] In-app notifications (invite received, event resolved)
-- [ ] API keys / OAuth client-credentials flow for agentic AI clients,
-      with the same OpenAPI contract
+- [x] Public-key directory: `GET /users/:username` (auth-required, to
+      reduce casual enumeration), returns public profile + key for
+      inviting contacts
+- [x] Event sharing/invites: per-event symmetric key, wrapped
+      individually to each participant via X25519 ECDH + HKDF
+      (`deriveSharedWrapKey`/`wrapKey`/`unwrapKey` in `packages/crypto`).
+      The organizer is a participant of their own event too (self-ECDH),
+      so there's no special-casing anywhere in the fetch/decrypt path.
+      Required fixing a real gap found mid-phase: registration was
+      generating a random identity keypair and discarding the private
+      key immediately -- the identity keypair is now derived
+      deterministically from the password instead, so it's always
+      re-derivable and never needs separate storage.
+- [x] Slot-based group scheduling: propose slots, submit/replace ranked
+      preferences, resolve via a pluggable strategy (default: minimize
+      total rank sum, Borda-count style; alternative: minimize the worst
+      individual rank, available but not wired as default). The server
+      only ever handles opaque slot IDs and rank numbers -- never real
+      times or content.
+- [x] API keys for agentic/programmatic clients: mint/list/revoke,
+      same `Authorization: Bearer` header as human JWT sessions,
+      distinguished by a fixed prefix. Only a hash is stored server-side.
+- [x] **Notifications — simplified, not a separate system.** Rather than
+      building a dedicated notifications table/delivery mechanism, the
+      existing `GET /group-events` response includes each participant's
+      own vote status (`myVotes`), and the web UI derives a "N awaiting
+      your vote" badge from that directly. This covers the actual need
+      (know when something needs your attention) without new
+      infrastructure. Push/email notifications remain a Phase 3+ concern
+      if ever needed.
+- [x] Web UI: create/invite form (candidate time slots + invitee
+      usernames), group event list with ranked voting, resolve button
+      (organizer only), pending-vote badge. Tab switcher between
+      "My Calendar" and "Group Events" (no router library added).
+
+**Simplifications made and documented, not silently cut:**
+- Vote submission replaces a voter's entire ranking each time (drops
+  stale votes for slots no longer ranked) rather than merging.
+- No UI yet for revoking API keys or managing them beyond minting --
+  the API supports it (`GET`/`DELETE /api-keys`), just not wired into
+  the PWA. Low priority since this is aimed at agentic/programmatic use.
+- Minting a new API key is authenticated the same way as any other
+  request (JWT or existing API key) -- meaning a leaked API key could
+  mint further keys. Noted as a hardening item for Phase 6, not fixed
+  now to avoid adding a human-only-auth special case before it's clear
+  it's needed.
+
+**Status: Phase 2 is complete.** 125 tests passing across all 4 packages
+(crypto 24, shared 27, api 37, web 37) at last count, including real
+cross-keypair ECDH tests against actual Postgres (not mocked), and all
+migrations verified to apply cleanly to a fresh database.
 
 ## Phase 3 — Scale & offline resilience
 

@@ -96,6 +96,17 @@ available as a config option.
   re-architecture. This is deferred to a later phase and will get its own
   scale-testing pass before being claimed as production-ready at scale.
 
+## Implementation status (Phase 2)
+
+The group-scheduling design above is implemented as described: a
+per-event symmetric key wrapped via X25519 ECDH to each participant
+(organizer included, self-wrapped), server only ever seeing opaque slot
+IDs and rank numbers. See `docs/ROADMAP.md`'s Phase 2 section for the
+full list of what shipped and the simplifications made along the way
+(vote-replace semantics, no dedicated notifications system -- derived
+from vote status instead, API key minting not yet restricted to
+human-only auth).
+
 ## Client design
 
 - The web client is a Progressive Web App (Vite + React), offline-first
