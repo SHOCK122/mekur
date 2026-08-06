@@ -191,12 +191,54 @@ database.
 - [ ] CRDT-based local edit sync (e.g. Yjs) for real offline editing with
       conflict resolution, not just read caching
 - [ ] Push notifications (Web Push/VAPID)
-- [ ] Redis-backed queue for background work (notifications, large-event
-      slot selection)
-- [ ] Load testing against realistic concurrency targets; document actual
-      tested scale vs. aspirational scale
-- [ ] Horizontal-scaling hardening: confirm no in-process state blocks
-      running multiple API replicas
+- [ ] Redis-backed queue for background work -- not needed yet (nothing
+      is slow enough at current scale to justify it); revisit if
+      large-group-event resolution or notification fan-out becomes a
+      real bottleneck
+- [x] Load testing against realistic concurrency targets; document actual
+      tested scale vs. aspirational scale. Real numbers, single instance:
+      `GET /health` ~1,300 req/s, `POST /events` ~465 req/s,
+      `GET /events` ~212 req/s (p50 93.7ms). See `docs/ARCHITECTURE.md`'s
+      Scaling strategy section for the full table and honest caveats
+      (single machine, not network-realistic). Built a minimal
+      dependency-free load generator (`apps/api/scripts/loadtest.ts`)
+      after autocannon pulled in vulnerable transitive dependencies for
+      what didn't need a third-party tool.
+- [x] Horizontal-scaling hardening: audited for in-process state (none
+      found), then *proved* statelessness rather than just asserting it
+      -- two independent API instances against one shared database:
+      both boot, a JWT from one works on the other, data written via
+      one is immediately visible via the other.
+
+**Bugs found and fixed this phase (bughunt cycle, per the standing
+process):**
+1. **Real crash bug:** two API instances starting *simultaneously*
+   against a fresh database raced on migration bookkeeping (`CREATE
+   TABLE IF NOT EXISTS schema_migrations`) and one crashed with a
+   Postgres duplicate-key error -- a completely realistic scenario in
+   any real horizontal rollout. Fixed with a Postgres advisory lock
+   serializing concurrent migration runs. Regression test added
+   (3 pools racing against a fresh database, concurrently).
+2. **Real scalability bug, found by load testing:** `GET /events` and
+   `GET /group-events` had no `LIMIT` -- response cost grew unbounded
+   with how many events a user had ever created. Measured impact:
+   ~34 req/s / 625ms avg latency before the fix, ~212-260 req/s /
+   ~80-95ms after (~7x). Capped at 200 most recent; a user with more
+   needs real pagination, which isn't built yet -- documented, not
+   hidden.
+3. Corrected inaccurate documentation: `docs/ARCHITECTURE.md` had
+   claimed session state "lives in... Redis" and background work "goes
+   through a queue" -- neither was ever actually built. Fixed to
+   describe what's actually true today.
+
+**Process note:** partway through this phase, the sandbox environment
+fully reset (entire filesystem wiped) between conversation turns,
+losing everything committed locally but not yet pushed to origin (two
+checkpoints' worth of work). Recovered by re-cloning from GitHub and
+redoing the lost work from detailed records of what had been built.
+Lesson applied going forward: push after every checkpoint commit
+instead of batching several before asking for a token, since
+unpushed work has no protection against this kind of environment loss.
 
 ## Phase 4 — Integrations & richness
 

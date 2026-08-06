@@ -117,9 +117,11 @@ export function createGroupEventRepository(db: Database) {
       }
     },
 
+    // Same reasoning as eventRepository's listByOwner LIMIT -- caught by
+    // the same load-testing pass.
     async listForUser(userId: string): Promise<GroupEventRow[]> {
       const result = await db.query<RawRow>(
-        `${SELECT_FOR_USER} ORDER BY ge.created_at DESC`,
+        `${SELECT_FOR_USER} ORDER BY ge.created_at DESC LIMIT 200`,
         [userId]
       );
       return result.rows.map(toGroupEventRow);

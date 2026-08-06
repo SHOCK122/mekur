@@ -33,10 +33,17 @@ export function createEventRepository(db: Database) {
       return toEventRecord(row);
     },
 
+    // LIMIT 200: caught by load testing -- with no bound, this query's
+    // cost and response size grow linearly with how many events a user
+    // has ever created, which measurably tanked throughput once a test
+    // user accumulated a few thousand events. 200 is generous for a
+    // real personal calendar's *upcoming/recent* view; a user with more
+    // history than that needs real pagination (cursor-based, most
+    // likely), which is a natural follow-up, not implemented here.
     async listByOwner(ownerId: string): Promise<EventRecord[]> {
       const result = await db.query<EventRow>(
         `SELECT id, owner_id, envelope, created_at, updated_at
-         FROM events WHERE owner_id = $1 ORDER BY created_at DESC`,
+         FROM events WHERE owner_id = $1 ORDER BY created_at DESC LIMIT 200`,
         [ownerId]
       );
       return result.rows.map(toEventRecord);

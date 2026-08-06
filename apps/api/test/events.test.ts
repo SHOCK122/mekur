@@ -161,4 +161,18 @@ describe("event routes", () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it("caps the number of events returned, so response size can't grow unbounded with account age (found via load testing)", async () => {
+    const { token } = await registerAndGetToken(app, "owner4");
+    const auth = { authorization: `Bearer ${token}` };
+    const envelope = { v: 1, algo: "xchacha20poly1305", keyId: "k", nonce: "bm9uY2U=", ciphertext: "Y2lwaGVy" };
+
+    for (let i = 0; i < 210; i++) {
+      await app.inject({ method: "POST", url: "/events", headers: auth, payload: { envelope } });
+    }
+
+    const response = await app.inject({ method: "GET", url: "/events", headers: auth });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().events.length).toBeLessThanOrEqual(200);
+  }, 20_000);
 });

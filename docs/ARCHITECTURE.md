@@ -80,21 +80,59 @@ available as a config option.
 
 ## Scaling strategy
 
-- All API instances are stateless; session/auth state lives in
-  short-lived, signed tokens or Redis, not in-process memory, so instances
-  can be added/removed freely behind a load balancer.
+- **Statelessness: verified, not just claimed.** All API instances are
+  stateless -- auth is JWT or API-key verification against Postgres, no
+  server-side session store, no in-process caches or singletons (audited
+  directly; see `docs/ROADMAP.md`'s Phase 3 bughunt). Proven concretely:
+  two independently-started API instances pointed at the same fresh
+  database both boot cleanly, a JWT issued by one is accepted by the
+  other, and data written via one is immediately visible via the other.
+  This also surfaced and fixed a real bug: two instances starting
+  *simultaneously* against a fresh database used to race on migration
+  bookkeeping and crash (see `apps/api/src/db/migrate.ts`'s advisory
+  lock).
 - PostgreSQL is the source of truth. The data model is designed so it can
   be partitioned/sharded by user ID later without a schema rewrite (no
   cross-shard joins required for the common read/write paths).
-- Background work (notifications, slot-selection computation for large
-  events) goes through a queue (Redis-backed), not inline in the request
-  path.
+- **Background work is currently synchronous, not queued.** There is no
+  Redis or job queue yet, despite earlier drafts of this document
+  assuming one -- corrected here. Every request does its own work
+  inline (including the slot-selection computation on resolve, and push
+  notification delivery). This is fine at today's scale; a queue is a
+  real Phase 3+ item if large-group-event resolution or notification
+  fan-out ever becomes slow enough to matter, not before.
+- **Real load-test numbers** (measured with `apps/api/scripts/loadtest.ts`
+  -- a minimal, dependency-free load generator; see that file for why
+  autocannon was tried and dropped), single API instance, single
+  Postgres instance, both on the same machine as the load generator
+  (so treat these as a rough baseline, not a network-realistic
+  production number):
+
+  | Endpoint | Throughput | p50 latency | p99 latency |
+  |---|---|---|---|
+  | `GET /health` | ~1,300 req/s | 12.0ms | 60.5ms |
+  | `POST /events` (write) | ~465 req/s | 37.0ms | 127.5ms |
+  | `GET /events` (read) | ~212 req/s | 93.7ms | 173.5ms |
+
+  These numbers already reflect one real fix the load test caught:
+  `GET /events` initially measured ~34 req/s with 625ms average latency,
+  because the query had no `LIMIT` -- response cost grew unbounded with
+  how many events a user had ever created. Adding a bound (200 most
+  recent) brought it to the numbers above, a ~7x improvement. A user
+  with more than 200 events only sees their most recent 200 until real
+  pagination is built -- a known, documented gap, not a silent one.
+
 - The Docker Compose setup here is for small deployments (self-hosting,
-  up to ~hundreds of users). Scaling to very large deployments is a matter
-  of horizontal scaling of the same stateless design (e.g. moving to
-  Kubernetes, adding read replicas, sharding Postgres) — not a
-  re-architecture. This is deferred to a later phase and will get its own
-  scale-testing pass before being claimed as production-ready at scale.
+  up to ~hundreds of users) on a single machine. Scaling further is
+  horizontal scaling of the same stateless design (multiple API
+  containers behind a load balancer, Postgres read replicas, eventually
+  sharding) -- not a re-architecture, and the statelessness claim above
+  is now actually verified rather than assumed. What's *not* yet
+  verified: behavior under real multi-machine network latency, Postgres
+  connection-pool exhaustion under much higher concurrency than tested
+  here, and true multi-region deployment. Those remain open for a later
+  scale-testing pass before claiming production-readiness at very large
+  scale.
 
 ## Implementation status (Phase 2)
 

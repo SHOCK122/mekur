@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "loadtest": "tsx scripts/loadtest.ts"
   },
   "dependencies": {
     "@fastify/jwt": "^10.2.0",
