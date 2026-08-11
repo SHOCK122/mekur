@@ -460,3 +460,23 @@ button:disabled {
   background: none;
   text-decoration: underline;
 }
+
+.calendar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.notification-button {
+  background: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.85rem;
+  padding: 0.3rem 0;
+}
+
+.notification-button:hover {
+  background: none;
+  color: var(--text);
+  text-decoration: underline;
+}

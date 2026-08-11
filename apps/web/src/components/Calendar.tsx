@@ -3,6 +3,7 @@ import type { EventContent } from "@schedule-app/shared";
 import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent } from "../lib/api.js";
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
+import { NotificationToggle } from "./NotificationToggle.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -153,9 +154,12 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     <div className="calendar">
       <header className="calendar-header">
         <h1>Your schedule</h1>
-        <button type="button" className="logout" onClick={onLogout}>
-          Sign out
-        </button>
+        <div className="calendar-header-actions">
+          <NotificationToggle session={session} />
+          <button type="button" className="logout" onClick={onLogout}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       {offline && (

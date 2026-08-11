@@ -15,7 +15,9 @@
     "@schedule-app/shared": "*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "rrule": "^2.8.1"
+    "rrule": "^2.8.1",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.5.0",

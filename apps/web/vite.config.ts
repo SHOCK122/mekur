@@ -16,7 +16,15 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: ".",
+      filename: "sw.ts",
       registerType: "autoUpdate",
+      injectManifest: {
+        // Same glob scope as the previous generateSW config -- precache
+        // the app shell for offline/flaky-connection use.
+        globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+      },
       manifest: {
         name: "Schedule App",
         short_name: "Schedule",
@@ -38,11 +46,6 @@ export default defineConfig({
             type: "image/png",
           },
         ],
-      },
-      workbox: {
-        // Cache the app shell aggressively so it keeps working offline and
-        // on flaky/low-bandwidth connections.
-        globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
       },
     }),
   ],
