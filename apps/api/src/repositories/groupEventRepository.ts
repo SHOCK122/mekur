@@ -160,6 +160,14 @@ export function createGroupEventRepository(db: Database) {
       return result.rows[0]?.slot_ids ?? null;
     },
 
+    async listParticipantUserIds(groupEventId: string): Promise<string[]> {
+      const result = await db.query<{ user_id: string }>(
+        `SELECT user_id FROM group_event_participants WHERE group_event_id = $1`,
+        [groupEventId]
+      );
+      return result.rows.map((r) => r.user_id);
+    },
+
     async resolve(groupEventId: string, resolvedSlotId: string): Promise<void> {
       await db.query(
         `UPDATE group_events SET status = 'resolved', resolved_slot_id = $2, updated_at = now()

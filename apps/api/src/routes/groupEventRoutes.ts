@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { GroupEventRepository } from "../repositories/groupEventRepository.js";
 import type { VoteRepository } from "../repositories/voteRepository.js";
+import type { NotificationService } from "../services/notificationService.js";
 import { minimizeSumOfRanks } from "../services/slotSelection.js";
 import { CreateGroupEventRequestSchema } from "../schemas.js";
 import { SubmitVotesRequestSchema } from "@schedule-app/shared";
@@ -8,7 +9,8 @@ import { SubmitVotesRequestSchema } from "@schedule-app/shared";
 export function registerGroupEventRoutes(
   app: FastifyInstance,
   groupEvents: GroupEventRepository,
-  votes: VoteRepository
+  votes: VoteRepository,
+  notifications: NotificationService
 ) {
   app.register(async (scoped) => {
     scoped.addHook("preHandler", scoped.authenticate);
@@ -36,6 +38,22 @@ export function registerGroupEventRoutes(
         contentEnvelope,
         participants
       );
+
+      // Notify invitees, not the organizer (who obviously already knows).
+      // Payload stays generic -- the server doesn't know the event's real
+      // title/content, only that *a* group event exists.
+      const invitedUserIds = participants
+        .map((p) => p.userId)
+        .filter((userId) => userId !== request.userId);
+      await Promise.all(
+        invitedUserIds.map((userId) =>
+          notifications.notifyUser(userId, {
+            title: "New group event invite",
+            body: "You've been invited to propose times for a group event.",
+          })
+        )
+      );
+
       return reply.code(201).send({ groupEvent });
     });
 
@@ -90,6 +108,19 @@ export function registerGroupEventRoutes(
         }
 
         await groupEvents.resolve(groupEventId, winner);
+
+        const participantUserIds = await groupEvents.listParticipantUserIds(groupEventId);
+        await Promise.all(
+          participantUserIds
+            .filter((userId) => userId !== request.userId)
+            .map((userId) =>
+              notifications.notifyUser(userId, {
+                title: "Group event resolved",
+                body: "A time has been picked for a group event you're part of.",
+              })
+            )
+        );
+
         const resolved = await groupEvents.findByIdForUser(groupEventId, request.userId!);
         return reply.send({ groupEvent: resolved });
       }

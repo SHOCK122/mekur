@@ -28,6 +28,9 @@ services:
       - HOST=0.0.0.0
       - DATABASE_URL=postgres://scheduleapp:${POSTGRES_PASSWORD:-scheduleapp}@postgres:5432/scheduleapp
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in a .env file -- see .env.example}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:?Set VAPID_PUBLIC_KEY in a .env file -- see .env.example}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:?Set VAPID_PRIVATE_KEY in a .env file -- see .env.example}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:you@example.com}
       - NODE_ENV=production
     expose:
       - "3000"

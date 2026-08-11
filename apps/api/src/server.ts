@@ -11,7 +11,13 @@ async function main() {
     console.log(`Applied migrations: ${applied.join(", ")}`);
   }
 
-  const app = buildApp({ db, jwtSecret: config.jwtSecret });
+  const app = buildApp({
+    db,
+    jwtSecret: config.jwtSecret,
+    vapidPublicKey: config.vapidPublicKey,
+    vapidPrivateKey: config.vapidPrivateKey,
+    vapidSubject: config.vapidSubject,
+  });
 
   await app.listen({ port: config.port, host: config.host });
   // eslint-disable-next-line no-console

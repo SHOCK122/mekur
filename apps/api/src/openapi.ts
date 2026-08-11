@@ -367,5 +367,53 @@ export const openApiSpec = {
         responses: { "204": { description: "Revoked" }, "404": { description: "Not found" } },
       },
     },
+    "/push/vapid-public-key": {
+      get: {
+        summary: "Get the VAPID public key, needed to call PushManager.subscribe()",
+        responses: { "200": { description: "OK" } },
+      },
+    },
+    "/push-subscriptions": {
+      post: {
+        summary: "Register a Web Push subscription for the current device",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["endpoint", "keys"],
+                properties: {
+                  endpoint: { type: "string", format: "uri" },
+                  keys: {
+                    type: "object",
+                    properties: { p256dh: { type: "string" }, auth: { type: "string" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: { "204": { description: "Subscribed" } },
+      },
+      delete: {
+        summary: "Unregister a Web Push subscription",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["endpoint"],
+                properties: { endpoint: { type: "string", format: "uri" } },
+              },
+            },
+          },
+        },
+        responses: { "204": { description: "Unsubscribed" }, "404": { description: "Not found" } },
+      },
+    },
   },
 } as const;

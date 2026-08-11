@@ -8,7 +8,14 @@ const TEST_DATABASE_URL =
 export async function setupTestApp() {
   const db = createPool(TEST_DATABASE_URL);
   await runMigrations(db);
-  const app = buildApp({ db, jwtSecret: "test-secret" });
+  const app = buildApp({
+    db,
+    jwtSecret: "test-secret",
+    vapidPublicKey:
+      "BAHQnCgvhlb0-G5wOocrFTe7zK7ewUJ7AR7ZCYGA2rfaGlueYTazRM-fTiZUrkJUlM2SmKbdUALS1FzUnSiFbUI",
+    vapidPrivateKey: "qUFTF3lXxouxuo_n0kPvwpMn2Ehl3W51M8Aw3vap5QQ",
+    vapidSubject: "mailto:test@example.com",
+  });
   return { app, db };
 }
 

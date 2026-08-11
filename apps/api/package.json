@@ -17,13 +17,15 @@
     "@schedule-app/shared": "*",
     "fastify": "^5.10.0",
     "fastify-plugin": "^6.0.0",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@types/web-push": "^3.6.4"
   }
 }
