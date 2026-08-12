@@ -15,6 +15,11 @@ export async function setupTestApp() {
       "BAHQnCgvhlb0-G5wOocrFTe7zK7ewUJ7AR7ZCYGA2rfaGlueYTazRM-fTiZUrkJUlM2SmKbdUALS1FzUnSiFbUI",
     vapidPrivateKey: "qUFTF3lXxouxuo_n0kPvwpMn2Ehl3W51M8Aw3vap5QQ",
     vapidSubject: "mailto:test@example.com",
+    // Raised well above production defaults: the suite fires hundreds of
+    // requests in seconds, which would otherwise trip the limiter and
+    // produce confusing flakes unrelated to what's being tested.
+    rateLimitMax: 100_000,
+    authRateLimitMax: 100_000,
   });
   return { app, db };
 }

@@ -1,4 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import rateLimit from "@fastify/rate-limit";
+import helmet from "@fastify/helmet";
 import type { Database } from "./db/pool.js";
 import { authPlugin } from "./plugins/auth.js";
 import { createUserRepository } from "./repositories/userRepository.js";
@@ -21,10 +23,45 @@ export interface BuildAppOptions {
   vapidPublicKey: string;
   vapidPrivateKey: string;
   vapidSubject: string;
+  /** Overridable so tests can raise it -- the default would otherwise
+   * throttle a fast-running suite and cause confusing flakes. */
+  rateLimitMax?: number;
+  /** Tighter limit for auth endpoints (login/registration). */
+  authRateLimitMax?: number;
 }
 
 export function buildApp(opts: BuildAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    // Encrypted envelopes are small; without a cap, a client could store
+    // arbitrarily large blobs. 256KB is far more than any real event needs
+    // while bounding what a single request can cost us.
+    bodyLimit: 256 * 1024,
+  });
+
+  // Security headers. The PWA serves its own assets and talks only to its
+  // own origin, so a restrictive CSP costs nothing here.
+  app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Vite inlines critical CSS
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+  });
+
+  // Global rate limit as a backstop against abuse and runaway agent
+  // clients. Auth endpoints get a much tighter limit registered below --
+  // an unthrottled login endpoint is brute-forceable.
+  app.register(rateLimit, {
+    max: opts.rateLimitMax ?? 300,
+    timeWindow: "1 minute",
+  });
 
   const users = createUserRepository(opts.db);
   const events = createEventRepository(opts.db);
@@ -44,7 +81,7 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   app.get("/openapi.json", async () => openApiSpec);
 
   app.register(async (instance) => {
-    registerAuthRoutes(instance, users);
+    registerAuthRoutes(instance, users, opts.authRateLimitMax ?? 10);
     registerEventRoutes(instance, events);
     registerGroupEventRoutes(instance, groupEvents, votes, notifications);
     registerApiKeyRoutes(instance, apiKeys);

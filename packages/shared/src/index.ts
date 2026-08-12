@@ -10,8 +10,11 @@ export const EncryptedEnvelopeSchema = z.object({
   v: z.literal(1), // envelope format version, for future crypto migration
   algo: z.literal("xchacha20poly1305"),
   keyId: z.string().min(1), // identifies which key (user key or event key) encrypted this
-  nonce: z.string().min(1), // base64
-  ciphertext: z.string().min(1), // base64
+  nonce: z.string().min(1).max(128), // base64
+  // Bounded so a client can't store arbitrarily large blobs. 128KB of
+  // base64 is far beyond any realistic event's encrypted content while
+  // keeping worst-case row size and response size predictable.
+  ciphertext: z.string().min(1).max(128 * 1024), // base64
 });
 export type EncryptedEnvelope = z.infer<typeof EncryptedEnvelopeSchema>;
 

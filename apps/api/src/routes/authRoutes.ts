@@ -3,6 +3,12 @@ import { sha256Base64 } from "@schedule-app/crypto";
 import { UsernameTakenError, type UserRepository } from "../repositories/userRepository.js";
 import { RegisterRequestSchema, LoginRequestSchema } from "../schemas.js";
 
+// Session tokens previously never expired, meaning a stolen token stayed
+// valid forever. 30 days balances that against not forcing constant
+// re-logins on a personal calendar; agent clients should use API keys
+// (which are individually revocable) rather than long-lived JWTs.
+const TOKEN_TTL = "30d";
+
 function publicUser(user: { id: string; username: string; displayName: string; publicKey: string; createdAt: string }) {
   return {
     id: user.id,
@@ -13,8 +19,21 @@ function publicUser(user: { id: string; username: string; displayName: string; p
   };
 }
 
-export function registerAuthRoutes(app: FastifyInstance, users: UserRepository) {
-  app.post("/users", async (request, reply) => {
+export function registerAuthRoutes(
+  app: FastifyInstance,
+  users: UserRepository,
+  authRateLimitMax: number
+) {
+  // Login and registration get a much tighter rate limit than the rest of
+  // the API: an unthrottled login endpoint is directly brute-forceable,
+  // and registration is the obvious spam/enumeration target.
+  const authRateLimit = {
+    config: {
+      rateLimit: { max: authRateLimitMax, timeWindow: "1 minute" },
+    },
+  };
+
+  app.post("/users", authRateLimit, async (request, reply) => {
     const parsed = RegisterRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
@@ -28,7 +47,7 @@ export function registerAuthRoutes(app: FastifyInstance, users: UserRepository) 
 
     try {
       const user = await users.create({ username, displayName, publicKey, authSalt, authHash });
-      const token = app.jwt.sign({ userId: user.id });
+      const token = app.jwt.sign({ userId: user.id }, { expiresIn: TOKEN_TTL });
       return reply.code(201).send({ user: publicUser(user), token });
     } catch (err) {
       if (err instanceof UsernameTakenError) {
@@ -38,7 +57,7 @@ export function registerAuthRoutes(app: FastifyInstance, users: UserRepository) 
     }
   });
 
-  app.post("/sessions", async (request, reply) => {
+  app.post("/sessions", authRateLimit, async (request, reply) => {
     const parsed = LoginRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
@@ -52,7 +71,7 @@ export function registerAuthRoutes(app: FastifyInstance, users: UserRepository) 
       return reply.code(401).send({ error: "Invalid username or password" });
     }
 
-    const token = app.jwt.sign({ userId: user.id });
+    const token = app.jwt.sign({ userId: user.id }, { expiresIn: TOKEN_TTL });
     return reply.send({ user: publicUser(user), token });
   });
 
