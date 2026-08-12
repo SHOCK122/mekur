@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { EventRepository } from "../repositories/eventRepository.js";
 import { CreateEventRequestSchema, UpdateEventRequestSchema } from "../schemas.js";
+import { isValidUuid } from "../lib/params.js";
 
 export function registerEventRoutes(app: FastifyInstance, events: EventRepository) {
   app.register(async (scoped) => {
@@ -21,12 +22,14 @@ export function registerEventRoutes(app: FastifyInstance, events: EventRepositor
     });
 
     scoped.get<{ Params: { id: string } }>("/events/:id", async (request, reply) => {
+      if (!isValidUuid(request.params.id)) return reply.code(404).send({ error: "Not found" });
       const event = await events.findByIdForOwner(request.params.id, request.userId!);
       if (!event) return reply.code(404).send({ error: "Not found" });
       return reply.send({ event });
     });
 
     scoped.put<{ Params: { id: string } }>("/events/:id", async (request, reply) => {
+      if (!isValidUuid(request.params.id)) return reply.code(404).send({ error: "Not found" });
       const parsed = UpdateEventRequestSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
@@ -41,6 +44,7 @@ export function registerEventRoutes(app: FastifyInstance, events: EventRepositor
     });
 
     scoped.delete<{ Params: { id: string } }>("/events/:id", async (request, reply) => {
+      if (!isValidUuid(request.params.id)) return reply.code(404).send({ error: "Not found" });
       const deleted = await events.deleteForOwner(request.params.id, request.userId!);
       if (!deleted) return reply.code(404).send({ error: "Not found" });
       return reply.code(204).send();

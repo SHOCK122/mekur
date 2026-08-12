@@ -5,6 +5,7 @@ import type { NotificationService } from "../services/notificationService.js";
 import { minimizeSumOfRanks } from "../services/slotSelection.js";
 import { CreateGroupEventRequestSchema } from "../schemas.js";
 import { SubmitVotesRequestSchema } from "@schedule-app/shared";
+import { isValidUuid } from "../lib/params.js";
 
 export function registerGroupEventRoutes(
   app: FastifyInstance,
@@ -63,6 +64,7 @@ export function registerGroupEventRoutes(
     });
 
     scoped.get<{ Params: { id: string } }>("/group-events/:id", async (request, reply) => {
+      if (!isValidUuid(request.params.id)) return reply.code(404).send({ error: "Not found" });
       const groupEvent = await groupEvents.findByIdForUser(request.params.id, request.userId!);
       if (!groupEvent) return reply.code(404).send({ error: "Not found" });
       return reply.send({ groupEvent });
@@ -76,6 +78,7 @@ export function registerGroupEventRoutes(
           return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
         }
         const groupEventId = request.params.id;
+        if (!isValidUuid(groupEventId)) return reply.code(404).send({ error: "Not found" });
         const isParticipant = await groupEvents.isParticipant(groupEventId, request.userId!);
         if (!isParticipant) return reply.code(404).send({ error: "Not found" });
 
@@ -95,6 +98,7 @@ export function registerGroupEventRoutes(
       "/group-events/:id/resolve",
       async (request, reply) => {
         const groupEventId = request.params.id;
+        if (!isValidUuid(groupEventId)) return reply.code(404).send({ error: "Not found" });
         const isOrganizer = await groupEvents.isOrganizer(groupEventId, request.userId!);
         if (!isOrganizer) return reply.code(404).send({ error: "Not found" });
 

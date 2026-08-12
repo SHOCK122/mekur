@@ -181,5 +181,48 @@ describe("security hardening", () => {
       });
       expect(response.statusCode).toBe(201);
     }, 20_000);
+
+    it("returns 404, not a 500, for a malformed UUID path param (found during bughunt)", async () => {
+      // Previously the malformed id reached Postgres, which throws on the
+      // invalid uuid cast, surfacing as an unhandled 500 -- both the wrong
+      // status (the resource simply isn't there) and a hint about internals.
+      const keys = await deriveAuthAndEncryptionKeys("some strong password");
+      const { publicKey } = generateKeyPair();
+      const registerResponse = await app.inject({
+        method: "POST",
+        url: "/users",
+        payload: {
+          username: "uuidguard",
+          displayName: "UUID Guard",
+          publicKey,
+          authKey: keys.authKey,
+          authSalt: keys.salt,
+        },
+      });
+      const token = registerResponse.json().token as string;
+      const auth = { authorization: `Bearer ${token}` };
+
+      for (const url of [
+        "/events/not-a-uuid",
+        "/group-events/not-a-uuid",
+      ]) {
+        const response = await app.inject({ method: "GET", url, headers: auth });
+        expect(response.statusCode).toBe(404);
+      }
+
+      const deleteResponse = await app.inject({
+        method: "DELETE",
+        url: "/events/also-not-a-uuid",
+        headers: auth,
+      });
+      expect(deleteResponse.statusCode).toBe(404);
+
+      const apiKeyResponse = await app.inject({
+        method: "DELETE",
+        url: "/api-keys/still-not-a-uuid",
+        headers: auth,
+      });
+      expect(apiKeyResponse.statusCode).toBe(404);
+    }, 20_000);
   });
 });

@@ -304,5 +304,35 @@ unpushed work has no protection against this kind of environment loss.
       Icon-only controls (priority arrows, delete) already had proper
       `aria-label`s -- verified rather than assumed, and now covered by
       regression tests so they can't silently regress.
-- [ ] Load/performance testing at simulated scale
-- [ ] Documentation pass for external contributors
+- [x] Load/performance testing at simulated scale -- done in Phase 3;
+      real numbers and honest caveats in `docs/ARCHITECTURE.md`.
+- [x] Documentation pass -- README rewritten in Phase 3 (it still
+      described the Phase 0 skeleton); ARCHITECTURE.md and this roadmap
+      kept current with every decision and known gap.
+
+**Post-Phase-6 bughunt** (probing a live instance, not just re-reading
+code):
+- **Real bug found and fixed:** a malformed UUID in a path param (e.g.
+  `/events/not-a-uuid`) reached Postgres, which throws on the invalid
+  uuid cast, surfacing as an unhandled **500** rather than a 404. Wrong
+  status code (the resource simply isn't there) and a small leak about
+  internals. Now validated at the route boundary across events, group
+  events, and API keys, with a regression test.
+- Probes that came back **correct**, verified rather than assumed:
+  tampered JWTs are rejected (401), SQL-injection-style usernames are
+  rejected by the validator (and queries are parameterized regardless --
+  the users table was confirmed intact afterward), auth headers without
+  the `Bearer` prefix are rejected, oversized payloads are refused, and
+  empty group-event participant lists are rejected.
+
+**Still open, deliberately:**
+- Real end-to-end push *delivery* has never been verified -- it needs a
+  real browser and a real push service. The backend, service worker, and
+  UI are tested; the last mile isn't.
+- The encryption key still lives in `localStorage`. Documented in the
+  README's security notes rather than hidden.
+- No pagination: users with more than 200 events see only the most
+  recent 200.
+- Phases 4 (calendar integrations) and 5 (native shells) are an optional
+  backlog, not abandoned work -- deferred deliberately after weighing
+  effort against value.
