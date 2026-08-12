@@ -274,8 +274,35 @@ unpushed work has no protection against this kind of environment loss.
 
 ## Phase 6 — Polish & rigorous testing
 
-- [ ] Security review pass (dependency audit, key-handling review,
-      penetration-test-style pass on auth flows)
-- [ ] Accessibility audit
+- [x] Security review pass. Found and fixed four real gaps:
+      1. **No rate limiting anywhere** -- `POST /sessions` was directly
+         brute-forceable. Now a global backstop (300/min, also useful
+         against runaway agent clients) plus a tight 10/min limit on
+         login and registration.
+      2. **No security headers** -- no CSP, nothing preventing the app
+         being framed for clickjacking. Added helmet with a restrictive
+         CSP (the PWA only talks to its own origin, so this costs
+         nothing).
+      3. **JWTs never expired** -- a stolen token was valid forever. Now
+         30 days; agent clients should use API keys, which are
+         individually revocable.
+      4. **Unbounded encrypted payloads** -- `ciphertext` had a minimum
+         but no maximum, so a client could store arbitrarily large blobs.
+         Now capped at 128KB plus a 256KB request body limit.
+- [x] Accessibility audit. Contrast was measured, not eyeballed -- all
+      palette pairs pass WCAG AA (lowest was 4.71:1). Real issues found
+      and fixed:
+      - Event-title inputs relied on `placeholder` alone for their
+        accessible name. A placeholder isn't reliably announced and
+        vanishes once you type; added explicit `aria-label`s.
+      - Loading states swapped content silently with no announcement to
+        assistive tech; now `role="status" aria-live="polite"`.
+      - `select` elements were missing from the `:focus-visible` rule, so
+        keyboard users got no focus indicator on the repeat-unit dropdown.
+      - No `prefers-reduced-motion` handling; the repeat panel's reveal
+        animation is decorative and now respects that preference.
+      Icon-only controls (priority arrows, delete) already had proper
+      `aria-label`s -- verified rather than assumed, and now covered by
+      regression tests so they can't silently regress.
 - [ ] Load/performance testing at simulated scale
 - [ ] Documentation pass for external contributors

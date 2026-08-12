@@ -235,6 +235,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       <form onSubmit={handleCreate} className="event-form">
         <input
           placeholder="Event title"
+          aria-label="Event title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
@@ -299,7 +300,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       )}
 
       {loading ? (
-        <p>Loading&hellip;</p>
+        <p role="status" aria-live="polite">Loading&hellip;</p>
       ) : occurrences.length === 0 ? (
         <p className="empty-state">No events yet. Add your first one above.</p>
       ) : (

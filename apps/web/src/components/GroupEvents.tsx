@@ -141,6 +141,7 @@ export function GroupEvents({ session }: GroupEventsProps) {
       <form onSubmit={handleCreate} className="event-form">
         <input
           placeholder="Event title"
+          aria-label="Event title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -187,7 +188,7 @@ export function GroupEvents({ session }: GroupEventsProps) {
       )}
 
       {loading ? (
-        <p>Loading&hellip;</p>
+        <p role="status" aria-live="polite">Loading&hellip;</p>
       ) : events.length === 0 ? (
         <p className="empty-state">No group events yet.</p>
       ) : (

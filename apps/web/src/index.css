@@ -75,7 +75,9 @@ input {
 }
 
 input:focus-visible,
-button:focus-visible {
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -511,4 +513,17 @@ button:disabled {
 .conflict-banner button:hover {
   background: none;
   text-decoration: underline;
+}
+
+/* Respect a stated preference for reduced motion -- the repeat panel's
+   reveal animation is decorative, and vestibular disorders make
+   unrequested motion genuinely unpleasant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
