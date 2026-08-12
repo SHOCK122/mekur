@@ -4,6 +4,8 @@ import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent 
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { NotificationToggle } from "./NotificationToggle.js";
+import { enqueue, newMutationId, queueLength } from "../lib/mutationQueue.js";
+import { syncPendingMutations, type SyncConflict } from "../lib/sync.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -31,6 +33,8 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
+  const [pendingCount, setPendingCount] = useState(() => queueLength(session.userId));
+  const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
 
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
@@ -43,6 +47,13 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     setLoading(true);
     setError(null);
     try {
+      // Replay anything queued while offline before reading, so the list
+      // we render reflects those changes rather than briefly reverting them.
+      if (queueLength(session.userId) > 0) {
+        const syncResult = await syncPendingMutations(session);
+        if (syncResult.conflicts.length > 0) setConflicts(syncResult.conflicts);
+        setPendingCount(queueLength(session.userId));
+      }
       const list = await listEvents(session);
       setEvents(list);
       saveEventCache(session.userId, list);
@@ -90,21 +101,40 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       return;
     }
 
+    const newContent = {
+      title,
+      startTime: startIso,
+      endTime: endIso,
+      priority: 0,
+      recurrence: repeatEnabled ? { freq: customUnit, interval: Math.max(1, customInterval) } : undefined,
+    };
+
     try {
-      await createEvent(session, {
-        title,
-        startTime: startIso,
-        endTime: endIso,
-        priority: 0,
-        recurrence: repeatEnabled ? { freq: customUnit, interval: Math.max(1, customInterval) } : undefined,
-      });
+      await createEvent(session, newContent);
       setTitle("");
       setStart("");
       setEnd("");
       setRepeatEnabled(false);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create event");
+      // Offline (or the server is unreachable): queue the change instead of
+      // losing it, and optimistically show it in the list right away.
+      const tempId = `tmp_${newMutationId()}`;
+      enqueue(session.userId, {
+        id: newMutationId(),
+        type: "create",
+        tempId,
+        content: newContent,
+        queuedAt: new Date().toISOString(),
+      });
+      setEvents((current) => [...current, { id: tempId, ...newContent }]);
+      setPendingCount(queueLength(session.userId));
+      setTitle("");
+      setStart("");
+      setEnd("");
+      setRepeatEnabled(false);
+      setOffline(true);
+      void err;
     }
   }
 
@@ -145,8 +175,18 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     try {
       await deleteEvent(session, id);
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete event");
+    } catch {
+      // Same offline handling as create: queue it and reflect it locally
+      // rather than telling the person their delete failed.
+      enqueue(session.userId, {
+        id: newMutationId(),
+        type: "delete",
+        eventId: id,
+        queuedAt: new Date().toISOString(),
+      });
+      setEvents((current) => current.filter((event) => event.id !== id));
+      setPendingCount(queueLength(session.userId));
+      setOffline(true);
     }
   }
 
@@ -165,7 +205,31 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       {offline && (
         <p className="offline-banner" role="status">
           You&rsquo;re offline &mdash; showing your last synced events.
+          {pendingCount > 0 && ` ${pendingCount} change${pendingCount === 1 ? "" : "s"} will sync when you reconnect.`}
         </p>
+      )}
+
+      {conflicts.length > 0 && (
+        <div className="conflict-banner" role="alert">
+          <strong>
+            {conflicts.length} change{conflicts.length === 1 ? "" : "s"} couldn&rsquo;t be applied
+          </strong>
+          <p>
+            {conflicts.length === 1 ? "This event was" : "These events were"} also changed on another
+            device, so your offline edit wasn&rsquo;t applied over it:
+          </p>
+          <ul>
+            {conflicts.map((conflict) => (
+              <li key={conflict.eventId}>
+                You wrote &ldquo;{conflict.localTitle}&rdquo;; the current version is &ldquo;
+                {conflict.remoteTitle}&rdquo;.
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setConflicts([])}>
+            Dismiss
+          </button>
+        </div>
       )}
 
       <form onSubmit={handleCreate} className="event-form">

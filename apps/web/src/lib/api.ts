@@ -61,6 +61,10 @@ export async function login(username: string, password: string): Promise<Session
 
 export interface DecryptedEvent extends EventContent {
   id: string;
+  /** Server-assigned last-modified timestamp. Carried through (rather than
+   * discarded on decrypt) because offline sync uses it to detect that
+   * another device changed the same event -- see lib/sync.ts. */
+  updatedAt?: string;
 }
 
 export async function listEvents(session: Session): Promise<DecryptedEvent[]> {
@@ -68,10 +72,13 @@ export async function listEvents(session: Session): Promise<DecryptedEvent[]> {
     headers: { authorization: `Bearer ${session.token}` },
   });
   const body = await parseJsonOrThrow(response);
-  return body.events.map((record: { id: string; envelope: Parameters<typeof decryptEnvelope>[0] }) => ({
-    id: record.id,
-    ...decryptEnvelope<EventContent>(record.envelope, session.encryptionKey),
-  }));
+  return body.events.map(
+    (record: { id: string; updatedAt?: string; envelope: Parameters<typeof decryptEnvelope>[0] }) => ({
+      id: record.id,
+      updatedAt: record.updatedAt,
+      ...decryptEnvelope<EventContent>(record.envelope, session.encryptionKey),
+    })
+  );
 }
 
 export async function createEvent(

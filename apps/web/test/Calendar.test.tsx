@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { deriveAuthAndEncryptionKeys, encryptEnvelope } from "@schedule-app/crypto";
 import { Calendar } from "../src/components/Calendar.js";
 import { saveEventCache } from "../src/lib/eventCache.js";
+import { loadQueue } from "../src/lib/mutationQueue.js";
 
 describe("Calendar", () => {
   afterEach(() => {
@@ -283,4 +284,65 @@ describe("Calendar", () => {
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText("Just missed it")).toBeInTheDocument());
   }, 15_000);
+
+  it("queues an event created while offline and shows it immediately, then syncs it on reconnect", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = {
+      userId: "offline-create-user",
+      username: "ada",
+      token: "t",
+      encryptionKey,
+      identityPublicKey: "pub",
+      identitySecretKey: "sec",
+    };
+
+    // Phase 1: offline. Initial load succeeds (empty), then the create fails.
+    let online = false;
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      const isWrite = init?.method === "POST" || init?.method === "PUT" || init?.method === "DELETE";
+      if (!online && isWrite) throw new Error("offline");
+      if (url === "/api/events" && !isWrite) {
+        return { ok: true, json: async () => ({ events: [] }) };
+      }
+      return { ok: true, json: async () => ({ event: { id: "server-1" } }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText(/event title/i), "Written offline");
+    // Must fall inside the calendar's display window (next 90 days), or the
+    // event legitimately wouldn't be rendered.
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const localDateTime = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T09:00`;
+    const localDateTimeEnd = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T10:00`;
+    await user.type(screen.getByLabelText(/start time/i), localDateTime);
+    await user.type(screen.getByLabelText(/end time/i), localDateTimeEnd);
+    await user.click(screen.getByRole("button", { name: /add event/i }));
+
+    // Optimistically visible despite the failed write, and flagged as pending.
+    await waitFor(() => expect(screen.getByText("Written offline")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent(/will sync when you reconnect/i);
+
+    // The mutation really is queued for replay, not just shown optimistically.
+    expect(loadQueue(session.userId)).toHaveLength(1);
+    expect(loadQueue(session.userId)[0]!.type).toBe("create");
+
+    // Phase 2: back online. Remounting triggers refresh(), which replays the
+    // queue before reading -- the same path a reconnect takes.
+    online = true;
+    const writesBefore = fetchMock.mock.calls.filter((c) => c[1]?.method === "POST").length;
+    cleanup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+
+    await waitFor(() => {
+      const writesAfter = fetchMock.mock.calls.filter((c) => c[1]?.method === "POST").length;
+      expect(writesAfter).toBeGreaterThan(writesBefore);
+    });
+    // Queue drained once successfully replayed.
+    await waitFor(() => expect(loadQueue(session.userId)).toHaveLength(0));
+  }, 25_000);
 });

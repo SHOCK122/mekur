@@ -188,9 +188,27 @@ database.
 
 ## Phase 3 — Scale & offline resilience
 
-- [ ] CRDT-based local edit sync (e.g. Yjs) for real offline editing with
-      conflict resolution, not just read caching
-- [ ] Push notifications (Web Push/VAPID)
+- [x] Real offline editing with conflict resolution, not just read caching.
+      **Deliberately NOT a CRDT, contrary to this roadmap's original
+      plan.** CRDTs (Yjs et al.) solve concurrent editing of a *shared*
+      document by multiple simultaneous writers. Personal events here have
+      exactly one writer -- their owner -- so there is no multi-writer
+      merge to perform. The actual problem is narrower: one user makes
+      changes offline, which must replay on reconnect, with a sane answer
+      if the same account edited elsewhere meanwhile. That's a mutation
+      queue with conflict detection (`lib/mutationQueue.ts`, `lib/sync.ts`),
+      not a CRDT. Adding Yjs would have meant a large dependency and
+      restructuring the encrypted data model to solve a problem this app
+      doesn't have.
+      Conflict policy is conservative on purpose: if the server's
+      `updatedAt` has moved since the client last saw it, the offline edit
+      is **not** applied over it -- the conflict is surfaced to the person
+      instead. Last-write-wins would be less code but would silently
+      destroy the other device's change, which is exactly the kind of
+      quiet data loss people don't forgive in a calendar.
+- [x] Push notifications (Web Push/VAPID) -- backend, service worker, and
+      opt-in UI. Real end-to-end delivery still needs verification in a
+      real browser against a real push service; can't be tested here.
 - [ ] Redis-backed queue for background work -- not needed yet (nothing
       is slow enough at current scale to justify it); revisit if
       large-group-event resolution or notification fan-out becomes a

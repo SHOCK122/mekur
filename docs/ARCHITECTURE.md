@@ -145,6 +145,42 @@ full list of what shipped and the simplifications made along the way
 from vote status instead, API key minting not yet restricted to
 human-only auth).
 
+## Offline editing and sync
+
+The web client is offline-capable in three layers:
+
+1. **App shell** -- precached by the service worker, so the app loads with
+   no network at all.
+2. **Event data** -- the last synced, decrypted event list is cached
+   locally, so the calendar is readable offline.
+3. **Edits** -- creates and deletes made offline are recorded in a
+   mutation queue (`apps/web/src/lib/mutationQueue.ts`) and replayed on
+   reconnect (`apps/web/src/lib/sync.ts`).
+
+**Why not a CRDT.** An earlier plan called for Yjs. CRDTs solve concurrent
+editing of a *shared* document by multiple simultaneous writers; personal
+events here have exactly one writer, so there's no multi-writer merge to
+perform. The real problem is a single user's offline changes replaying
+later, possibly against an account that was also edited on another
+device -- a mutation queue with conflict detection, not a CRDT. Yjs would
+have added a large dependency and forced a restructuring of the encrypted
+data model to solve a problem this app doesn't have.
+
+**Conflict policy.** On replay, an update compares the `updatedAt` the
+client last saw against what the server currently reports. If they differ,
+another device changed that event while this one was offline, and the
+offline edit is **not** applied over it -- the conflict is surfaced in the
+UI showing both versions. Last-write-wins would be simpler but would
+silently destroy the other device's change. Similarly, an update to an
+event that was deleted elsewhere is reported as a conflict rather than
+silently resurrecting it, and deleting an already-deleted event is treated
+as success (the desired end state already holds).
+
+Queued mutations are collapsed before replay: repeated edits to one event
+become a single write, a delete supersedes earlier edits to that event,
+and an event created *and* deleted while offline is dropped entirely
+(the server never knew it existed).
+
 ## Client design
 
 - The web client is a Progressive Web App (Vite + React), offline-first
