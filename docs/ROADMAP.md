@@ -332,6 +332,26 @@ Requirements gathered from direct feedback. Ticked items are built.
 - Stack density: at 22px line-height, 100 mutually-overlapping events
   need ~2,200px of stack axis and 500 need ~11,000px. Hence scrolling.
 
+### Recurrence (extends the existing RRULE model)
+- [ ] **Richer recurrence patterns**: pick a specific date, time, or both,
+      scoped to week / month / year — e.g. "first Monday of every month".
+      This is mostly a schema and UI extension rather than new algorithm
+      work: `RecurrenceRuleSchema` already carries `freq`, `interval`,
+      `byDay`, `count` and `until`, and needs `bySetPos` (the "first" in
+      "first Monday"), `byMonthDay` and `byMonth`. The `rrule` library
+      already implements all of them. This is the payoff from modelling
+      recurrence on the iCalendar standard instead of inventing a format.
+- [ ] **Inviting someone to a recurring event** prompts the owner to
+      choose:
+      (a) invite them to the whole series, until explicitly un-invited; or
+      (b) split off a one-off event replacing just that occurrence —
+      visually on the timeline at minimum.
+      Option (b) is the standard recurrence-exception pattern: an `EXDATE`
+      excluding the occurrence plus a separate event carrying a
+      `RECURRENCE-ID` that overrides it. Worth implementing it that way so
+      exceptions stay interoperable if CalDAV export (Phase 4) ever
+      happens.
+
 ### Infrastructure this depends on
 - [ ] **Time-windowed event fetching** (`GET /events?from=&to=`) so the
       client only decrypts what the current view needs. Without it the
@@ -346,6 +366,17 @@ Requirements gathered from direct feedback. Ticked items are built.
   it has several candidate slots and no agreed time? Options: show every
   candidate faintly, show nothing until resolved, or show a single
   spanning block covering the candidate range.
+- Series invitations imply per-series invitation state that has to
+  interact with per-occurrence exceptions: if someone is invited to a
+  whole series and one occurrence is then split off, are they on the
+  split-off event too? Answering "no" is probably right (the split
+  exists because that occurrence is different) but it should be a
+  deliberate choice.
+- When an occurrence is replaced by a one-off, does the original
+  occurrence disappear for *everyone* or only for the invitee? "At least
+  visually" suggests a view-level override is acceptable, which is much
+  cheaper than a real data-level exception — but the two diverge as soon
+  as anyone else looks at the same series.
 - Accessibility is now a standing requirement for all new UI, with a
   comprehensive audit planned separately.
 
