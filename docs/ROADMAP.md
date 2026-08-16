@@ -258,6 +258,97 @@ Lesson applied going forward: push after every checkpoint commit
 instead of batching several before asking for a token, since
 unpushed work has no protection against this kind of environment loss.
 
+## Phase 7 — Timeline rewrite & social UI (specified, in progress)
+
+Requirements gathered from direct feedback. Ticked items are built.
+
+### Done
+- [x] Fix the "invalid tag" tagging bug (stale public keys; self-heal on login)
+- [x] Social layer **backend**: one-time friend codes, connections/blocks,
+      invitation accept/reject, `invited_via_code` tracking
+- [x] Event modal base color `hsl(198, 87%, 60%)` (`--event-modal`)
+
+### Header & session
+- [ ] Show who's logged in; logout; useful header links
+- [ ] Display the user's current one-time friend code, with rotate
+
+### Social UI (backend done, UI pending)
+- [ ] Tag users by username **or** one-time code when inviting
+- [ ] Invite notifications with accept / reject
+- [ ] Add inviter as connection, or block them
+- [ ] **Never** offer "add as connection" when the invite came via a
+      one-time code — the code existed so no identity was exchanged
+- [ ] Invite to events by **event code**, for both group *and* private
+      events
+
+### Events
+- [ ] Default start time = now, live-updating to the second
+- [ ] End time **optional**
+- [ ] Click the event name — or a top-left em-square affordance when the
+      name is blank or the modal is too narrow to hit — to edit
+- [x] Recurring events store one row + RRULE; no duplicate rows. The
+      timeline renders *calculated* occurrences.
+
+### Timeline
+- [ ] Real time axis; default scale of one day
+- [ ] Orientations: horizontal past→future (default), horizontal
+      future→past, vertical either direction
+- [ ] Present-time indicator
+- [ ] Configurable "base" edge: bottom (default) or top for horizontal;
+      left (default) or right for vertical
+- [ ] Drag modal edges to adjust start / duration / end
+- [ ] Drag away from the base to raise priority
+- [ ] Group events appear on the timeline alongside personal events
+- [ ] Don't block future event-preview work
+
+### Priority model (decided)
+- [ ] **Fractional ordering** (Option B): every event holds a unique
+      sortable rank. Reordering is one write regardless of list size — no
+      renumbering, no O(n) write storms. Ties are impossible, so stacking
+      order is never ambiguous between reloads.
+- [ ] **"Important" is orthogonal**: a flag that changes styling only,
+      never position. Encoded redundantly per WCAG 1.4.1 (colour alone
+      must not carry meaning): bold + ★ (U+2605, `aria-hidden`) + deep
+      maroon `#5C0F0A` + a visually-hidden "Important:" prefix for screen
+      readers.
+
+### Rendering rules (decided)
+- [ ] Only the **background** fades toward the base. Text stays at 100%
+      opacity and clickable regardless of depth or priority.
+- [ ] Text must never overlap other text; overlapping modals are
+      separated by ≥ one text-height.
+- [ ] Open-ended events (no end time) fade toward the future.
+- [ ] Event name anchors to the **start edge, away from the base**, so it
+      follows the start in flipped orientations.
+- [ ] When more events overlap than fit, **scroll the stack axis**, with a
+      clear affordance signalling that it scrolls.
+
+### Measured constraints (don't rediscover these)
+- Text composited below ~75% opacity drops under WCAG AA on the modal
+  colour (2.92:1 at 60%, 1.42:1 at 25%). Hence background-only fade.
+- Red text fails on the modal background: `#B3324E`-family reds score
+  ~3.02:1. Only very dark colours clear AA against *both* fade endpoints
+  (modal blue and page white). `#5C0F0A` scores 6.34 / 13.75.
+- Stack density: at 22px line-height, 100 mutually-overlapping events
+  need ~2,200px of stack axis and 500 need ~11,000px. Hence scrolling.
+
+### Infrastructure this depends on
+- [ ] **Time-windowed event fetching** (`GET /events?from=&to=`) so the
+      client only decrypts what the current view needs. Without it the
+      timeline degrades badly on the low-end devices this project
+      explicitly targets.
+
+### Open design questions
+- Inviting someone to a **private** event: does that convert it into a
+  group event, or is there a distinct "shared personal event"? The
+  current model has exactly one owner per personal event.
+- How should an **unresolved** group event render on the timeline, when
+  it has several candidate slots and no agreed time? Options: show every
+  candidate faintly, show nothing until resolved, or show a single
+  spanning block covering the candidate range.
+- Accessibility is now a standing requirement for all new UI, with a
+  comprehensive audit planned separately.
+
 ## Phase 4 — Integrations & richness
 
 - [ ] CalDAV import/export
