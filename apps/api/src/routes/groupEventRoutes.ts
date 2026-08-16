@@ -94,6 +94,21 @@ export function registerGroupEventRoutes(
       }
     );
 
+    scoped.post<{ Params: { id: string }; Body: { status?: string } }>(
+      "/group-events/:id/respond",
+      async (request, reply) => {
+        const groupEventId = request.params.id;
+        if (!isValidUuid(groupEventId)) return reply.code(404).send({ error: "Not found" });
+        const status = request.body?.status;
+        if (status !== "accepted" && status !== "rejected") {
+          return reply.code(400).send({ error: "status must be 'accepted' or 'rejected'" });
+        }
+        const updated = await groupEvents.respondToInvite(groupEventId, request.userId!, status);
+        if (!updated) return reply.code(404).send({ error: "Not found" });
+        return reply.code(204).send();
+      }
+    );
+
     scoped.post<{ Params: { id: string } }>(
       "/group-events/:id/resolve",
       async (request, reply) => {

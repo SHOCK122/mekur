@@ -35,6 +35,9 @@ export type UpdateEventRequest = z.infer<typeof UpdateEventRequestSchema>;
 const participantSchema = z.object({
   userId: z.string().uuid(),
   wrappedKey: EncryptedEnvelopeSchema,
+  /** Set when this participant was reached via a one-time anonymous code,
+   * which permanently bars turning the invite into a connection. */
+  invitedViaCode: z.boolean().optional(),
 });
 
 export const CreateGroupEventRequestSchema = z.object({

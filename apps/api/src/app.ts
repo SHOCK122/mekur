@@ -9,12 +9,15 @@ import { createGroupEventRepository } from "./repositories/groupEventRepository.
 import { createVoteRepository } from "./repositories/voteRepository.js";
 import { createApiKeyRepository } from "./repositories/apiKeyRepository.js";
 import { createPushSubscriptionRepository } from "./repositories/pushSubscriptionRepository.js";
+import { createFriendCodeRepository } from "./repositories/friendCodeRepository.js";
+import { createRelationshipRepository } from "./repositories/relationshipRepository.js";
 import { createNotificationService } from "./services/notificationService.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerEventRoutes } from "./routes/eventRoutes.js";
 import { registerGroupEventRoutes } from "./routes/groupEventRoutes.js";
 import { registerApiKeyRoutes } from "./routes/apiKeyRoutes.js";
 import { registerPushRoutes } from "./routes/pushRoutes.js";
+import { registerSocialRoutes } from "./routes/socialRoutes.js";
 import { openApiSpec } from "./openapi.js";
 
 export interface BuildAppOptions {
@@ -69,6 +72,8 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   const votes = createVoteRepository(opts.db);
   const apiKeys = createApiKeyRepository(opts.db);
   const pushSubscriptions = createPushSubscriptionRepository(opts.db);
+  const friendCodes = createFriendCodeRepository(opts.db);
+  const relationships = createRelationshipRepository(opts.db);
   const notifications = createNotificationService(pushSubscriptions, {
     vapidPublicKey: opts.vapidPublicKey,
     vapidPrivateKey: opts.vapidPrivateKey,
@@ -86,6 +91,7 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
     registerGroupEventRoutes(instance, groupEvents, votes, notifications);
     registerApiKeyRoutes(instance, apiKeys);
     registerPushRoutes(instance, pushSubscriptions, opts.vapidPublicKey);
+    registerSocialRoutes(instance, users, friendCodes, relationships);
   });
 
   return app;

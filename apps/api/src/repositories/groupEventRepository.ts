@@ -4,6 +4,10 @@ import type { EncryptedEnvelope, GroupEventStatus } from "@schedule-app/shared";
 export interface GroupEventParticipantInput {
   userId: string;
   wrappedKey: EncryptedEnvelope;
+  /** True when this person was reached via a one-time anonymous code.
+   * Recorded so the UI can refuse to offer "add as connection" for them --
+   * the code existed precisely so no lasting identity was exchanged. */
+  invitedViaCode?: boolean;
 }
 
 export interface VoteRankingRow {
@@ -23,6 +27,8 @@ export interface GroupEventRow {
   updatedAt: string;
   myWrappedKey: EncryptedEnvelope;
   myVotes: VoteRankingRow[];
+  myInviteStatus: "pending" | "accepted" | "rejected";
+  invitedViaCode: boolean;
 }
 
 interface RawRow {
@@ -37,6 +43,8 @@ interface RawRow {
   updated_at: Date;
   my_wrapped_key: EncryptedEnvelope;
   my_votes: VoteRankingRow[];
+  my_invite_status: "pending" | "accepted" | "rejected";
+  invited_via_code: boolean;
 }
 
 function toGroupEventRow(row: RawRow): GroupEventRow {
@@ -52,6 +60,8 @@ function toGroupEventRow(row: RawRow): GroupEventRow {
     updatedAt: row.updated_at.toISOString(),
     myWrappedKey: row.my_wrapped_key,
     myVotes: row.my_votes,
+    myInviteStatus: row.my_invite_status,
+    invitedViaCode: row.invited_via_code,
   };
 }
 
@@ -62,6 +72,8 @@ const SELECT_FOR_USER = `
          ge.slot_ids, ge.content_envelope, ge.status,
          ge.resolved_slot_id, ge.created_at, ge.updated_at,
          gep.wrapped_key AS my_wrapped_key,
+         gep.invite_status AS my_invite_status,
+         gep.invited_via_code,
          COALESCE(votes.my_votes, '[]'::json) AS my_votes
   FROM group_events ge
   JOIN group_event_participants gep
@@ -95,9 +107,17 @@ export function createGroupEventRepository(db: Database) {
 
         for (const participant of participants) {
           await client.query(
-            `INSERT INTO group_event_participants (group_event_id, user_id, wrapped_key)
-             VALUES ($1, $2, $3)`,
-            [groupEventId, participant.userId, participant.wrappedKey]
+            `INSERT INTO group_event_participants
+               (group_event_id, user_id, wrapped_key, invited_via_code, invite_status)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              groupEventId,
+              participant.userId,
+              participant.wrappedKey,
+              participant.invitedViaCode ?? false,
+              // The organizer never has to accept their own invitation.
+              participant.userId === organizerId ? "accepted" : "pending",
+            ]
           );
         }
         await client.query("COMMIT");
@@ -166,6 +186,19 @@ export function createGroupEventRepository(db: Database) {
         [groupEventId]
       );
       return result.rows.map((r) => r.user_id);
+    },
+
+    async respondToInvite(
+      groupEventId: string,
+      userId: string,
+      status: "accepted" | "rejected"
+    ): Promise<boolean> {
+      const result = await db.query(
+        `UPDATE group_event_participants SET invite_status = $3
+         WHERE group_event_id = $1 AND user_id = $2`,
+        [groupEventId, userId, status]
+      );
+      return (result.rowCount ?? 0) > 0;
     },
 
     async resolve(groupEventId: string, resolvedSlotId: string): Promise<void> {
