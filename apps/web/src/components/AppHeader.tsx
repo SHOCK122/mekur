@@ -9,6 +9,7 @@ import {
   isBlocked,
   type Invitation,
 } from "../lib/social.js";
+import { redeemShareCode } from "../lib/events.js";
 import type { Session } from "../lib/session.js";
 
 interface AppHeaderProps {
@@ -22,6 +23,8 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
   const [showCode, setShowCode] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [busy, setBusy] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
+  const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refreshCode() {
@@ -98,6 +101,24 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
     refreshInvitations();
   }
 
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+    setBusy(true);
+    setError(null);
+    setJoinStatus(null);
+    try {
+      await redeemShareCode(session, joinCode);
+      setJoinCode("");
+      setJoinStatus("Event added to your schedule.");
+      onInvitationAccepted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not use that code");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <header className="app-header">
       <div className="app-header-identity">
@@ -135,6 +156,26 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
             {busy ? "Working\u2026" : "Replace this code"}
           </button>
         </div>
+      )}
+
+      <form onSubmit={handleJoin} className="join-form">
+        <label className="inline-label">
+          Have an event code?
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value)}
+            aria-label="Event code"
+            placeholder="Paste an event code"
+          />
+        </label>
+        <button type="submit" disabled={busy || !joinCode.trim()}>
+          Add event
+        </button>
+      </form>
+      {joinStatus && (
+        <p className="share-status" role="status">
+          {joinStatus}
+        </p>
       )}
 
       {invitations.length > 0 && (

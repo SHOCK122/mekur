@@ -4,6 +4,7 @@ import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent 
 import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { NotificationToggle } from "./NotificationToggle.js";
+import { ShareEvent } from "./ShareEvent.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -31,6 +32,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
+  const [sharingEventId, setSharingEventId] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
@@ -232,6 +234,15 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         <button type="submit">Add event</button>
       </form>
 
+      {sharingEventId && (
+        <ShareEvent
+          session={session}
+          eventId={sharingEventId}
+          eventTitle={events.find((e) => e.id === sharingEventId)?.title ?? "this event"}
+          onClose={() => setSharingEventId(null)}
+        />
+      )}
+
       {error && (
         <p className="auth-error" role="alert">
           {error}
@@ -274,6 +285,15 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                     &#9660;
                   </button>
                 </div>
+                {event.canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setSharingEventId(event.id)}
+                    aria-label={`Share ${event.title}`}
+                  >
+                    Share
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDelete(event.id)}

@@ -635,3 +635,56 @@ button:disabled {
   font-size: 0.8rem;
   padding: 0.35rem 0.6rem;
 }
+
+.share-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.share-panel h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+}
+
+.share-form,
+.join-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.share-form .inline-label,
+.join-form .inline-label {
+  flex: 1;
+}
+
+.share-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.share-code-warning {
+  color: #7a2020;
+  background: #fdf2f2;
+  border: 1px solid #f5c6c6;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.share-status {
+  color: #1e7e34;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}

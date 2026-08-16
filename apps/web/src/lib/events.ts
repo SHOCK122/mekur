@@ -170,3 +170,62 @@ export async function acceptSharedEvent(
 ): Promise<void> {
   await addKeyringEntry(session, shared);
 }
+
+/**
+ * Share codes carry the capability AND the event key together, because the
+ * server holds neither and so cannot supply the key to a late joiner (see
+ * docs/ARCHITECTURE.md). That makes the code itself the secret: anyone it
+ * is forwarded to gains the same access, which is why the UI must present
+ * it as sensitive rather than as a convenience link.
+ */
+export interface ShareCodePayload {
+  eventId: string;
+  viewToken: string;
+  eventKey: string;
+}
+
+export function encodeShareCode(payload: ShareCodePayload): string {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function decodeShareCode(code: string): ShareCodePayload {
+  const normalised = code.trim().replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalised + "=".repeat((4 - (normalised.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const parsed = JSON.parse(new TextDecoder().decode(bytes)) as ShareCodePayload;
+  if (!parsed.eventId || !parsed.viewToken || !parsed.eventKey) {
+    throw new Error("That doesn't look like a valid event code.");
+  }
+  return parsed;
+}
+
+/** Mints a reusable join capability and packages it with the event key. */
+export async function createShareCode(session: Session, eventId: string): Promise<string> {
+  const entry = await entryFor(session, eventId);
+  if (!entry?.editToken) {
+    throw new Error("You don't have permission to share this event.");
+  }
+  const joinToken = await mintJoinCode(session, eventId, "view");
+  return encodeShareCode({ eventId, viewToken: joinToken, eventKey: entry.eventKey });
+}
+
+/** Redeems a share code by recording its capability in the keyring. */
+export async function redeemShareCode(session: Session, code: string): Promise<string> {
+  const payload = decodeShareCode(code);
+  // Verify the capability actually works before storing it, so a bad code
+  // fails now with a clear message rather than appearing to succeed and
+  // then silently producing an unreadable event.
+  const response = await fetch(`${API_BASE}/events/${payload.eventId}`, {
+    headers: authHeaders(session, payload.viewToken, false),
+  });
+  if (!response.ok) {
+    throw new Error("That code isn't valid, or the event is no longer shared.");
+  }
+  await acceptSharedEvent(session, payload);
+  return payload.eventId;
+}
