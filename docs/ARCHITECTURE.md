@@ -225,6 +225,77 @@ observer with full database *and* log access. Defeating that needs mixnet
 or private-information-retrieval techniques and is out of scope; it is
 documented here rather than implied to be solved.
 
+## Future: advertising (separate project, constraints recorded here)
+
+Not built, and intended to live in its own project talking to this one
+through a narrow interface. Recorded here because the requirements collide
+with the capability model, and the collision is far cheaper to resolve on
+paper than in a schema.
+
+### The collision
+Two requirements reintroduce what the capability model exists to remove:
+"users earn revenue from ads they receive" implies counting impressions per
+user, and "save a user's brand associations" implies a server-side
+user->preference link. Both are the server knowing things about
+identifiable people.
+
+### Constraints any implementation must satisfy
+1. **No server-side user->content association.** The server cannot read
+   schedules -- that property must not be weakened to enable targeting.
+2. **Matching happens client-side.** The server publishes an ad catalogue;
+   the client, which holds the only decrypted copy of the schedule, matches
+   locally. This falls out of the existing design rather than being bolted
+   on.
+3. **Attribution via anonymous tokens, not user records.** See below.
+4. **Opt-out by default**, with the second tier a separate, explicit opt-in.
+
+### Attribution: why single-use blind tokens over stable per-user tokens
+A tempting simplification is one stable token per (user, ad), counting
+requests from it. It does produce the two aggregates needed -- per-ad
+totals to bill advertisers, per-user totals to pay users -- without any
+per-impression user record.
+
+It is nonetheless weaker than it appears, and the weakness is the one that
+matters. A stable token is a **long-term pseudonym**. Requests carry IP
+addresses, timing and TLS fingerprints, so two tokens used in one session
+can be correlated and the profile reassembled. And deanonymisation is
+retroactive: identify the person behind a token once and every past and
+future request under it becomes theirs. This is close to how third-party
+cookies worked, which the industry has spent a decade moving away from.
+
+**Preferred: single-use blind-signed tokens** (Privacy Pass; used by Brave
+Ads, alongside Apple's Private Click Measurement and Google's Attribution
+Reporting API, which add aggregation and noise). The client receives a
+batch of blind-signed tokens; at redemption the server verifies
+authenticity but **cannot link a token to its issuance**. The same two
+aggregates fall out, and unlinkability survives correlation. Cost is one
+additional crypto primitive with mature libraries available.
+
+The stable-token scheme is recorded as an acceptable fallback if
+simplicity ever has to win, with its limitation understood rather than
+forgotten.
+
+### Tier two, and a tension worth naming
+Higher-value targeting works precisely because those users are more
+identifiable. The privacy guarantee therefore stands against a real and
+persistent economic incentive to erode it, and whoever operates the server
+will always have a reason to weaken it a little further.
+
+That makes it worth deciding deliberately whether anonymity is
+**architecturally enforced** (the server *cannot* deanonymise) or **policy**
+(the server *promises* not to). Only the former survives a change of
+ownership, an acquisition, or a subpoena. Tier-two associations should
+therefore be stored under a user-controlled, resettable pseudonym that the
+server cannot join to an account -- not under a user id with an access rule
+in front of it.
+
+### Why a separate project
+Keeping this out of the scheduling codebase protects the core privacy
+property from being gradually compromised by commercial requirements, and
+keeps this project's threat model small enough to reason about. The
+interface should stay narrow: a read-only ad catalogue out, anonymous
+redemption tokens in.
+
 ## Offline editing and sync
 
 The web client is offline-capable in three layers:
