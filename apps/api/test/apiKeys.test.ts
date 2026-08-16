@@ -68,20 +68,22 @@ describe("API keys", () => {
       payload: { envelope },
     });
     expect(createResp.statusCode).toBe(201);
+    const { event, viewToken } = createResp.json();
 
-    const listResp = await app.inject({
+    // Reading back requires the capability, not the identity -- the API key
+    // authenticates the request, the token authorises the event.
+    const readResp = await app.inject({
       method: "GET",
-      url: "/events",
-      headers: { authorization: `Bearer ${rawKey}` },
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${rawKey}`, "x-event-capability": viewToken },
     });
-    expect(listResp.statusCode).toBe(200);
-    expect(listResp.json().events).toHaveLength(1);
+    expect(readResp.statusCode).toBe(200);
   });
 
   it("rejects an unknown or malformed API key", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/events",
+      url: "/keyring",
       headers: { authorization: "Bearer sak_not_a_real_key" },
     });
     expect(response.statusCode).toBe(401);
@@ -99,7 +101,7 @@ describe("API keys", () => {
 
     const beforeRevoke = await app.inject({
       method: "GET",
-      url: "/events",
+      url: "/keyring",
       headers: { authorization: `Bearer ${rawKey}` },
     });
     expect(beforeRevoke.statusCode).toBe(200);
@@ -113,7 +115,7 @@ describe("API keys", () => {
 
     const afterRevoke = await app.inject({
       method: "GET",
-      url: "/events",
+      url: "/keyring",
       headers: { authorization: `Bearer ${rawKey}` },
     });
     expect(afterRevoke.statusCode).toBe(401);

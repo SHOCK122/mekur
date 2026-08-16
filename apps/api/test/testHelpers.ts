@@ -25,5 +25,5 @@ export async function setupTestApp() {
 }
 
 export async function truncateAll(db: Database) {
-  await db.query("TRUNCATE TABLE events, users RESTART IDENTITY CASCADE");
+  await db.query("TRUNCATE TABLE events, keyrings, inbox_messages, users RESTART IDENTITY CASCADE");
 }

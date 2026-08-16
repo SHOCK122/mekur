@@ -1,14 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { FriendCodeRepository } from "../repositories/friendCodeRepository.js";
-import type { RelationshipRepository } from "../repositories/relationshipRepository.js";
 import type { UserRepository } from "../repositories/userRepository.js";
-import { isValidUuid } from "../lib/params.js";
-
-const RelationshipRequestSchema = z.object({
-  otherUserId: z.string().uuid(),
-  state: z.enum(["connected", "blocked"]),
-});
 
 const ResolveTagRequestSchema = z.object({
   tag: z.string().min(1).max(64),
@@ -20,11 +13,17 @@ const ResolveTagRequestSchema = z.object({
  * say which kind of thing they're typing. */
 const FRIEND_CODE_PATTERN = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
 
+/**
+ * Blocking is deliberately absent here. Under the capability model the
+ * server does not know who contacts whom, so it cannot filter on anyone's
+ * behalf. Sender identity travels inside the encrypted invite envelope and
+ * the recipient's client filters it -- which means the server never learns
+ * a block list either. See docs/ARCHITECTURE.md.
+ */
 export function registerSocialRoutes(
   app: FastifyInstance,
   users: UserRepository,
-  friendCodes: FriendCodeRepository,
-  relationships: RelationshipRepository
+  friendCodes: FriendCodeRepository
 ) {
   app.register(async (scoped) => {
     scoped.addHook("preHandler", scoped.authenticate);
@@ -65,11 +64,6 @@ export function registerSocialRoutes(
           // which codes exist.
           return reply.code(404).send({ error: "That code isn't valid or has already been used." });
         }
-        if (await relationships.hasBlocked(redeemed.ownerId, request.userId!)) {
-          // Same message as an invalid code -- revealing "they blocked you"
-          // would leak both that the code was real and who owns it.
-          return reply.code(404).send({ error: "That code isn't valid or has already been used." });
-        }
         const owner = await users.findById(redeemed.ownerId);
         if (!owner) {
           return reply.code(404).send({ error: "That code isn't valid or has already been used." });
@@ -86,11 +80,6 @@ export function registerSocialRoutes(
 
       const user = await users.findByUsername(tag.toLowerCase());
       if (!user) return reply.code(404).send({ error: "No user with that username." });
-      if (await relationships.hasBlocked(user.id, request.userId!)) {
-        // Deliberately identical to "no such user": confirming the account
-        // exists would tell someone they've been blocked.
-        return reply.code(404).send({ error: "No user with that username." });
-      }
       return reply.send({
         target: {
           userId: user.id,
@@ -102,37 +91,5 @@ export function registerSocialRoutes(
       });
     });
 
-    scoped.get("/relationships", async (request, reply) => {
-      const list = await relationships.list(request.userId!);
-      return reply.send({ relationships: list });
-    });
-
-    scoped.put("/relationships", async (request, reply) => {
-      const parsed = RelationshipRequestSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
-      }
-      const { otherUserId, state } = parsed.data;
-      if (otherUserId === request.userId) {
-        return reply.code(400).send({ error: "You can't connect to or block yourself." });
-      }
-      const other = await users.findById(otherUserId);
-      if (!other) return reply.code(404).send({ error: "Not found" });
-
-      await relationships.set(request.userId!, otherUserId, state);
-      return reply.code(204).send();
-    });
-
-    scoped.delete<{ Params: { otherUserId: string } }>(
-      "/relationships/:otherUserId",
-      async (request, reply) => {
-        if (!isValidUuid(request.params.otherUserId)) {
-          return reply.code(404).send({ error: "Not found" });
-        }
-        const removed = await relationships.remove(request.userId!, request.params.otherUserId);
-        if (!removed) return reply.code(404).send({ error: "Not found" });
-        return reply.code(204).send();
-      }
-    );
   });
 }
