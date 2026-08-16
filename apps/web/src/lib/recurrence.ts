@@ -23,6 +23,9 @@ const WEEKDAY_MAP: Record<Weekday, RRuleWeekday> = {
 export interface Occurrence {
   start: Date;
   end: Date;
+  /** True when this occurrence was skipped. Callers decide whether to
+   * render it (dimmed, behind a "show skipped" toggle) or omit it. */
+  skipped: boolean;
 }
 
 /** Hard ceiling on how many occurrences a single event can contribute to a
@@ -40,16 +43,31 @@ const MAX_OCCURRENCES_PER_EVENT = 500;
  * now (see docs/ROADMAP.md).
  */
 export function expandOccurrences(
-  event: { startTime: string; endTime: string; recurrence?: RecurrenceRule },
+  event: {
+    startTime: string;
+    endTime: string;
+    recurrence?: RecurrenceRule;
+    skippedOccurrences?: string[];
+  },
   rangeStart: Date,
-  rangeEnd: Date
+  rangeEnd: Date,
+  options: { includeSkipped?: boolean } = {}
 ): Occurrence[] {
   const start = new Date(event.startTime);
   const end = new Date(event.endTime);
   const durationMs = end.getTime() - start.getTime();
 
+  // Compared by timestamp rather than string, so an exception recorded in
+  // a different ISO format still matches the occurrence it refers to.
+  const skipped = new Set((event.skippedOccurrences ?? []).map((iso) => new Date(iso).getTime()));
+  const isSkipped = (date: Date) => skipped.has(date.getTime());
+
+  const keep = (occurrence: Occurrence) =>
+    options.includeSkipped ? true : !occurrence.skipped;
+
   if (!event.recurrence) {
-    return start >= rangeStart && start <= rangeEnd ? [{ start, end }] : [];
+    if (start < rangeStart || start > rangeEnd) return [];
+    return [{ start, end, skipped: isSkipped(start) }].filter(keep);
   }
 
   const rule = new RRule({
@@ -61,10 +79,35 @@ export function expandOccurrences(
     dtstart: start,
   });
 
-  return collectBounded(rule, rangeStart, rangeEnd).map((occurrenceStart) => ({
-    start: occurrenceStart,
-    end: new Date(occurrenceStart.getTime() + durationMs),
-  }));
+  return collectBounded(rule, rangeStart, rangeEnd)
+    .map((occurrenceStart) => ({
+      start: occurrenceStart,
+      end: new Date(occurrenceStart.getTime() + durationMs),
+      skipped: isSkipped(occurrenceStart),
+    }))
+    .filter(keep);
+}
+
+/** Adds an occurrence to a series' skip list, without duplicating it. */
+export function withSkippedOccurrence(
+  skippedOccurrences: string[] | undefined,
+  occurrenceStart: Date
+): string[] {
+  const iso = occurrenceStart.toISOString();
+  const existing = skippedOccurrences ?? [];
+  return existing.some((s) => new Date(s).getTime() === occurrenceStart.getTime())
+    ? existing
+    : [...existing, iso];
+}
+
+/** Restores a previously skipped occurrence. */
+export function withoutSkippedOccurrence(
+  skippedOccurrences: string[] | undefined,
+  occurrenceStart: Date
+): string[] {
+  return (skippedOccurrences ?? []).filter(
+    (s) => new Date(s).getTime() !== occurrenceStart.getTime()
+  );
 }
 
 /** Iterates the rule in chronological order and stops as soon as either the

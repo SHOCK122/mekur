@@ -98,6 +98,16 @@ export const EventContentSchema = z
     endTime: z.string().datetime(),
     priority: EventPrioritySchema,
     recurrence: RecurrenceRuleSchema.optional(),
+    /** Occurrences of a recurring series that have been skipped, by their
+     * start time. This is the iCalendar EXDATE concept: the series rule is
+     * unchanged and no extra rows are created -- specific occurrences are
+     * simply excluded when the rule is expanded.
+     *
+     * It lives inside the encrypted envelope, so everyone holding the
+     * event's key sees the same exceptions. A view-level override would be
+     * cheaper but would let two people disagree about when a shared
+     * meeting is. */
+    skippedOccurrences: z.array(z.string().datetime()).optional(),
   })
   .refine((event) => new Date(event.endTime) > new Date(event.startTime), {
     message: "endTime must be after startTime",

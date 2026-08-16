@@ -688,3 +688,28 @@ button:disabled {
   font-size: 0.85rem;
   margin: 0.5rem 0;
 }
+
+.delete-choice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.delete-choice p {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.delete-choice-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.event-item-skipped {
+  opacity: 0.55;
+  border-style: dashed;
+}

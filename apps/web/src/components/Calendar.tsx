@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EventContent } from "@schedule-app/shared";
 import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent } from "../lib/events.js";
-import { expandOccurrences, describeRecurrence } from "../lib/recurrence.js";
+import {
+  expandOccurrences,
+  describeRecurrence,
+  withSkippedOccurrence,
+  withoutSkippedOccurrence,
+} from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { NotificationToggle } from "./NotificationToggle.js";
 import { ShareEvent } from "./ShareEvent.js";
@@ -33,6 +38,14 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [sharingEventId, setSharingEventId] = useState<string | null>(null);
+  const [showSkipped, setShowSkipped] = useState(false);
+  // Deleting a recurring event is ambiguous -- this occurrence, or all of
+  // them? Rather than guess, hold the pending delete until the person says.
+  const [pendingDelete, setPendingDelete] = useState<{
+    eventId: string;
+    occurrenceStart: Date;
+    title: string;
+  } | null>(null);
 
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
@@ -75,10 +88,12 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     const rangeEnd = new Date(now.getTime() + DISPLAY_WINDOW_FUTURE_DAYS * 24 * 60 * 60 * 1000);
     return events
       .flatMap((event) =>
-        expandOccurrences(event, rangeStart, rangeEnd).map((occurrence) => ({ event, occurrence }))
+        expandOccurrences(event, rangeStart, rangeEnd, { includeSkipped: showSkipped }).map(
+          (occurrence) => ({ event, occurrence })
+        )
       )
       .sort((a, b) => a.occurrence.start.getTime() - b.occurrence.start.getTime());
-  }, [events]);
+  }, [events, showSkipped]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -145,7 +160,49 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     }
   }
 
+  async function requestDelete(event: DecryptedEvent, occurrenceStart: Date) {
+    if (event.recurrence) {
+      setPendingDelete({ eventId: event.id, occurrenceStart, title: event.title });
+      return;
+    }
+    await handleDelete(event.id);
+  }
+
+  /** Skipping records an exception on the series rather than creating or
+   * deleting rows -- the iCalendar EXDATE approach. */
+  async function handleSkipOccurrence(eventId: string, occurrenceStart: Date) {
+    const target = events.find((e) => e.id === eventId);
+    if (!target) return;
+    setPendingDelete(null);
+    try {
+      const { id, canEdit, updatedAt, ...content } = target;
+      await updateEvent(session, eventId, {
+        ...content,
+        skippedOccurrences: withSkippedOccurrence(target.skippedOccurrences, occurrenceStart),
+      });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not skip that occurrence");
+    }
+  }
+
+  async function handleRestoreOccurrence(eventId: string, occurrenceStart: Date) {
+    const target = events.find((e) => e.id === eventId);
+    if (!target) return;
+    try {
+      const { id, canEdit, updatedAt, ...content } = target;
+      await updateEvent(session, eventId, {
+        ...content,
+        skippedOccurrences: withoutSkippedOccurrence(target.skippedOccurrences, occurrenceStart),
+      });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not restore that occurrence");
+    }
+  }
+
   async function handleDelete(id: string) {
+    setPendingDelete(null);
     try {
       await deleteEvent(session, id);
       await refresh();
@@ -172,6 +229,15 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         </p>
       )}
 
+
+      <button
+        type="button"
+        className="header-link"
+        aria-pressed={showSkipped}
+        onClick={() => setShowSkipped((v) => !v)}
+      >
+        {showSkipped ? "Hide skipped occurrences" : "View skipped occurrences"}
+      </button>
 
       <form onSubmit={handleCreate} className="event-form">
         <input
@@ -234,6 +300,31 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         <button type="submit">Add event</button>
       </form>
 
+      {pendingDelete && (
+        <div className="delete-choice" role="dialog" aria-label="Delete recurring event">
+          <p>
+            &ldquo;{pendingDelete.title}&rdquo; repeats. Delete just this one, or the
+            whole series?
+          </p>
+          <div className="delete-choice-actions">
+            <button
+              type="button"
+              onClick={() =>
+                handleSkipOccurrence(pendingDelete.eventId, pendingDelete.occurrenceStart)
+              }
+            >
+              Skip this one
+            </button>
+            <button type="button" onClick={() => handleDelete(pendingDelete.eventId)}>
+              Delete whole series
+            </button>
+            <button type="button" className="header-link" onClick={() => setPendingDelete(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {sharingEventId && (
         <ShareEvent
           session={session}
@@ -256,12 +347,18 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       ) : (
         <ul className="event-list">
           {occurrences.map(({ event, occurrence }, index) => (
-            <li key={`${event.id}-${index}`} className="event-item">
+            <li
+              key={`${event.id}-${index}`}
+              className={occurrence.skipped ? "event-item event-item-skipped" : "event-item"}
+            >
               <div>
                 <strong>{event.title}</strong>
                 <div className="event-time">{formatDateTime(occurrence.start)}</div>
                 {event.recurrence && (
-                  <div className="event-recurrence">{describeRecurrence(event.recurrence)}</div>
+                  <div className="event-recurrence">
+                    {describeRecurrence(event.recurrence)}
+                    {occurrence.skipped && " \u00b7 skipped"}
+                  </div>
                 )}
               </div>
               <div className="event-item-actions">
@@ -294,13 +391,23 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                     Share
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(event.id)}
-                  aria-label={`Delete ${event.title}`}
-                >
-                  Delete
-                </button>
+                {occurrence.skipped ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRestoreOccurrence(event.id, occurrence.start)}
+                    aria-label={`Restore skipped occurrence of ${event.title}`}
+                  >
+                    Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => requestDelete(event, occurrence.start)}
+                    aria-label={`Delete ${event.title}`}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </li>
           ))}

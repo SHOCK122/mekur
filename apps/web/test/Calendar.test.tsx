@@ -239,4 +239,59 @@ describe("Calendar", () => {
     await waitFor(() => expect(screen.getByText("Just missed it")).toBeInTheDocument());
   }, 15_000);
 
+
+  it("asks whether to skip one occurrence or delete the series, rather than guessing", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const recurring = {
+      title: "Standup",
+      startTime: soon.toISOString(),
+      endTime: new Date(soon.getTime() + 15 * 60_000).toISOString(),
+      priority: 0,
+      recurrence: { freq: "DAILY" as const, interval: 1 },
+    };
+    const fetchMock = stubCapabilityServer(session, [{ id: "e1", content: recurring }]);
+
+    const user = userEvent.setup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+    await waitFor(() => expect(screen.getAllByText("Standup").length).toBeGreaterThan(0));
+
+    await user.click(screen.getAllByRole("button", { name: /delete standup/i })[0]!);
+
+    // Deleting a repeating event is ambiguous, so it must ask.
+    expect(await screen.findByRole("dialog", { name: /delete recurring event/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skip this one/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete whole series/i })).toBeInTheDocument();
+
+    // Skipping updates the series' exception list -- it must not DELETE.
+    await user.click(screen.getByRole("button", { name: /skip this one/i }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => c[1]?.method === "PUT" && String(c[0]).includes("/api/events/e1"))).toBe(true)
+    );
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === "DELETE")).toBe(false);
+  }, 25_000);
+
+  it("deletes a non-recurring event immediately, without an unnecessary prompt", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    const soon = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const single = {
+      title: "Dentist",
+      startTime: soon.toISOString(),
+      endTime: new Date(soon.getTime() + 30 * 60_000).toISOString(),
+      priority: 0,
+    };
+    const fetchMock = stubCapabilityServer(session, [{ id: "e1", content: single }]);
+
+    const user = userEvent.setup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Dentist")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /delete dentist/i }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => c[1]?.method === "DELETE")).toBe(true)
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  }, 25_000);
 });
