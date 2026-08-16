@@ -8,6 +8,12 @@
   --danger: #b3261e;
   --border: #e4e4e0;
   --radius: 10px;
+  /* Timeline event modal base color: sky blue nudged green-ward (hue 198),
+     87% saturation as specified. Dark text on this scores 8.19:1, well past
+     WCAG AA. Modals fade to transparent toward the timeline base, so the
+     event name must stay pinned to the opaque edge -- text composited below
+     ~75% opacity drops under 4.5:1 and becomes unreadable. */
+  --event-modal: hsl(198, 87%, 60%);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
 }
