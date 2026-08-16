@@ -533,3 +533,105 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+.app-header {
+  width: 100%;
+  max-width: 560px;
+  margin-bottom: 1.25rem;
+}
+
+.app-header-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.app-header-brand {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.app-header-user {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.app-header-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.35rem;
+}
+
+.header-link {
+  background: none;
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+}
+
+.header-link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.friend-code-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+
+.friend-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.35rem;
+  letter-spacing: 0.12em;
+  margin: 0 0 0.4rem;
+}
+
+.friend-code-help {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.invitations {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+
+.invitations h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.6rem;
+}
+
+.invitations ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.invitation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.invitation-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.invitation-actions button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+}
