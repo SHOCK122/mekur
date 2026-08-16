@@ -12,11 +12,14 @@ import {
 
 const API_BASE = "/api";
 
-function authHeaders(session: Session, capability?: string) {
+/** `hasBody` matters: sending Content-Type: application/json with no body
+ * makes Fastify reject the request outright (FST_ERR_CTP_EMPTY_JSON_BODY),
+ * which is what broke DELETE. */
+function authHeaders(session: Session, capability?: string, hasBody = true) {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     authorization: `Bearer ${session.token}`,
   };
+  if (hasBody) headers["Content-Type"] = "application/json";
   if (capability) headers["x-event-capability"] = capability;
   return headers;
 }
@@ -130,7 +133,7 @@ export async function deleteEvent(session: Session, eventId: string): Promise<vo
   }
   const response = await fetch(`${API_BASE}/events/${eventId}`, {
     method: "DELETE",
-    headers: authHeaders(session, entry.editToken),
+    headers: authHeaders(session, entry.editToken, false),
   });
   if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
   await removeKeyringEntry(session, eventId);

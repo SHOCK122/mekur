@@ -42,6 +42,25 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
     bodyLimit: 256 * 1024,
   });
 
+  // Treat an empty JSON body as {} rather than rejecting the request.
+  // Fastify's default refuses any request declaring Content-Type:
+  // application/json without a body, which turns an ordinary DELETE into
+  // a confusing 400. Routes that genuinely require fields still reject
+  // them via their own schema validation.
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_request, body: string, done) => {
+      if (!body || body.trim().length === 0) return done(null, {});
+      try {
+        done(null, JSON.parse(body));
+      } catch (err) {
+        (err as Error & { statusCode?: number }).statusCode = 400;
+        done(err as Error, undefined);
+      }
+    }
+  );
+
   // Security headers. The PWA serves its own assets and talks only to its
   // own origin, so a restrictive CSP costs nothing here.
   app.register(helmet, {

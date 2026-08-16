@@ -235,6 +235,36 @@ describe("capability-based events", () => {
     const ids = response.json().events.map((e: { id: string }) => e.id);
     expect(ids).toEqual([mine.event.id]);
   }, 20_000);
+
+  it("accepts a DELETE that declares a JSON content-type but sends no body", async () => {
+    // Regression: the client sent Content-Type: application/json on DELETE
+    // with no body, and Fastify rejected it outright with
+    // FST_ERR_CTP_EMPTY_JSON_BODY -- surfacing to the user as a bare
+    // "Bad Request" when they tried to delete an event.
+    const alice = await registerUser(app, "alice");
+    const created = await createEvent(alice.token);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/events/${created.event.id}`,
+      headers: {
+        ...auth(alice.token, created.editToken),
+        "content-type": "application/json",
+      },
+    });
+    expect(response.statusCode).toBe(204);
+  }, 20_000);
+
+  it("still rejects malformed JSON rather than silently treating it as empty", async () => {
+    const alice = await registerUser(app, "alice");
+    const response = await app.inject({
+      method: "POST",
+      url: "/events",
+      headers: { ...auth(alice.token), "content-type": "application/json" },
+      payload: "{not valid json",
+    });
+    expect(response.statusCode).toBe(400);
+  }, 20_000);
 });
 
 describe("keyring", () => {
