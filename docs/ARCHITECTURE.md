@@ -145,6 +145,86 @@ full list of what shipped and the simplifications made along the way
 from vote status instead, API key minting not yet restricted to
 human-only auth).
 
+## Architecture decision: capability-based access (supersedes the ACL model)
+
+**Status:** adopted, replacing the previous design where the server stored
+`group_event_participants` rows linking user IDs to events.
+
+### The problem with the previous model
+Event *content* was encrypted, but the **social graph was not**. The server
+could see who shared an event with whom, when, and how often. For the
+motivating case -- a source handing a journalist a code to arrange a
+meeting -- a breach would not reveal what the meeting was, but would
+reveal that those two accounts met. That defeats the point.
+
+### The model
+Events are standalone rows with no owner column and no participant table.
+Access is by capability:
+
+- `event_id` + **view token** -> may read the row
+- `event_id` + **edit token** -> may modify it
+
+The server stores no user->event association whatsoever. A database breach
+yields encrypted blobs and capability token *hashes*, with nothing
+connecting them to accounts.
+
+### Consequences (all necessary, not optional)
+
+**Users need an encrypted keyring.** With no server-side association,
+`GET /events` is unanswerable -- the server cannot know which events are
+yours. The client holds `(eventId, viewToken, editToken, eventKey)` per
+event, synced as a single opaque encrypted blob per account. The server
+learns only the approximate *size* of that blob, i.e. roughly how many
+events an account has. That is the one leak accepted by design.
+
+*Risk:* the keyring is a single point of failure. Lose it and the events
+remain on the server, intact and permanently unreachable, because nothing
+else records that access existed. Mitigated by versioning and append-safe
+writes, not eliminated.
+
+**Invites need an inbox.** Granting a capability means delivering it. The
+inviter writes a blob encrypted to the invitee's public key containing the
+event id and tokens. The server sees that an account received something,
+not from whom or about what. Writes must authenticate as *some valid
+account* rather than as a specific sender -- authenticating the writer
+against the recipient would rebuild the graph in the logs. Abuse is
+handled by rate limiting and requiring a valid friend code, not by
+identifying senders.
+
+**Blocking is client-side.** The server cannot filter on someone's behalf
+without knowing who contacts whom. Sender identity travels inside the
+encrypted invite; the recipient's client filters. The server never learns
+a block list.
+
+**Votes become per-event pseudonyms.** Group scheduling no longer needs
+global user IDs -- a voter is identified by a pseudonym derived from their
+capability for that event. The server sees N pseudonymous voters, and
+cannot link the same person across two events. Strictly better than the
+previous design.
+
+**Revocation requires re-keying.** A capability that has been copied
+cannot be retracted. Revoking a token stops *new* access; existing holders
+keep it until the event is re-keyed and redistributed to remaining
+participants. Join codes must therefore be treated as sensitive as
+passwords, and the UI should say so.
+
+### Unified event model
+Group and personal events collapse into one type. A personal event is one
+whose capability has been granted to exactly one person; a shared event
+has more. Candidate slots and voting are optional fields present only when
+scheduling is wanted. Start and end times are both optional. This removes
+the "convert a private event into a group event" operation entirely --
+sharing is just granting a capability.
+
+### What the server can still infer
+Honest accounting of the residual leak: row counts and timestamps
+(creation and modification times of events and keyrings), approximate
+keyring size, encrypted payload sizes, and traffic patterns. Timing
+correlation between two accounts' requests remains possible for an
+observer with full database *and* log access. Defeating that needs mixnet
+or private-information-retrieval techniques and is out of scope; it is
+documented here rather than implied to be solved.
+
 ## Offline editing and sync
 
 The web client is offline-capable in three layers:
