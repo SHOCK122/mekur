@@ -1,9 +1,4 @@
-import {
-  deriveAuthAndEncryptionKeys,
-  encryptEnvelope,
-  decryptEnvelope,
-} from "@schedule-app/crypto";
-import type { EventContent } from "@schedule-app/shared";
+import { deriveAuthAndEncryptionKeys } from "@schedule-app/crypto";
 import type { Session } from "./session.js";
 import { parseJsonOrThrow } from "./http.js";
 
@@ -84,66 +79,5 @@ async function repairPublicKey(session: Session): Promise<void> {
     });
   } catch {
     // Ignored deliberately -- see above.
-  }
-}
-
-export interface DecryptedEvent extends EventContent {
-  id: string;
-  /** Server-assigned last-modified timestamp. Carried through (rather than
-   * discarded on decrypt) because offline sync uses it to detect that
-   * another device changed the same event -- see lib/sync.ts. */
-  updatedAt?: string;
-}
-
-export async function listEvents(session: Session): Promise<DecryptedEvent[]> {
-  const response = await fetch(`${API_BASE}/events`, {
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  const body = await parseJsonOrThrow(response);
-  return body.events.map(
-    (record: { id: string; updatedAt?: string; envelope: Parameters<typeof decryptEnvelope>[0] }) => ({
-      id: record.id,
-      updatedAt: record.updatedAt,
-      ...decryptEnvelope<EventContent>(record.envelope, session.encryptionKey),
-    })
-  );
-}
-
-export async function createEvent(
-  session: Session,
-  content: EventContent
-): Promise<DecryptedEvent> {
-  const envelope = encryptEnvelope(content, session.encryptionKey, "user-key-1");
-  const response = await fetch(`${API_BASE}/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", authorization: `Bearer ${session.token}` },
-    body: JSON.stringify({ envelope }),
-  });
-  const body = await parseJsonOrThrow(response);
-  return { id: body.event.id, ...content };
-}
-
-export async function updateEvent(
-  session: Session,
-  id: string,
-  content: EventContent
-): Promise<DecryptedEvent> {
-  const envelope = encryptEnvelope(content, session.encryptionKey, "user-key-1");
-  const response = await fetch(`${API_BASE}/events/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", authorization: `Bearer ${session.token}` },
-    body: JSON.stringify({ envelope }),
-  });
-  const body = await parseJsonOrThrow(response);
-  return { id: body.event.id, ...content };
-}
-
-export async function deleteEvent(session: Session, id: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/events/${id}`, {
-    method: "DELETE",
-    headers: { authorization: `Bearer ${session.token}` },
-  });
-  if (!response.ok && response.status !== 204) {
-    await parseJsonOrThrow(response);
   }
 }

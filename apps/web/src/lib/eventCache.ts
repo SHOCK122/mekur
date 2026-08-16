@@ -1,4 +1,4 @@
-import type { DecryptedEvent } from "./api.js";
+import type { DecryptedEvent } from "./events.js";
 
 function cacheKey(userId: string): string {
   return `schedule-app:event-cache:${userId}`;

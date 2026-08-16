@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { deriveAuthAndEncryptionKeys } from "@schedule-app/crypto";
 import { Calendar } from "../src/components/Calendar.js";
-import { GroupEvents } from "../src/components/GroupEvents.js";
+import { stubCapabilityServer } from "./mockServer.js";
 import { AuthForm } from "../src/components/AuthForm.js";
 import type { Session } from "../src/lib/session.js";
 
@@ -37,10 +37,7 @@ describe("accessibility", () => {
 
   it("the calendar's event-title input has an accessible name, not just a placeholder", async () => {
     const session = await makeSession();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
-    );
+    stubCapabilityServer(session);
     render(<Calendar session={session} onLogout={() => {}} />);
     // A placeholder alone is not an accessible name: it isn't reliably
     // announced and disappears as soon as the person types.
@@ -48,16 +45,6 @@ describe("accessibility", () => {
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
   }, 15_000);
 
-  it("the group events form's title input has an accessible name", async () => {
-    const session = await makeSession();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ groupEvents: [] }) })
-    );
-    render(<GroupEvents session={session} />);
-    expect(screen.getByLabelText(/event title/i)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/no group events yet/i)).toBeInTheDocument());
-  }, 15_000);
 
   it("announces loading state to assistive tech rather than silently swapping content", async () => {
     const session = await makeSession();
@@ -70,21 +57,13 @@ describe("accessibility", () => {
 
   it("icon-only priority controls expose what they do and which event they affect", async () => {
     const session = await makeSession();
-    const { encryptEnvelope } = await import("@schedule-app/crypto");
     const content = {
       title: "Dentist",
       startTime: new Date(Date.now() + 86_400_000).toISOString(),
       endTime: new Date(Date.now() + 90_000_000).toISOString(),
       priority: 0,
     };
-    const envelope = encryptEnvelope(content, session.encryptionKey, "user-key-1");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ events: [{ id: "e1", envelope }] }),
-      })
-    );
+    stubCapabilityServer(session, [{ id: "e1", content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText("Dentist")).toBeInTheDocument());

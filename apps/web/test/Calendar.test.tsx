@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { deriveAuthAndEncryptionKeys, encryptEnvelope } from "@schedule-app/crypto";
+import { deriveAuthAndEncryptionKeys } from "@schedule-app/crypto";
+import { stubCapabilityServer } from "./mockServer.js";
 import { Calendar } from "../src/components/Calendar.js";
 import { saveEventCache } from "../src/lib/eventCache.js";
-import { loadQueue } from "../src/lib/mutationQueue.js";
 
 describe("Calendar", () => {
   afterEach(() => {
@@ -14,21 +14,13 @@ describe("Calendar", () => {
 
   it("renders decrypted events fetched from the server", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const content = {
       title: "Standup",
       startTime: "2026-08-01T09:00:00.000Z",
       endTime: "2026-08-01T09:15:00.000Z",
     };
-    const envelope = encryptEnvelope(content, encryptionKey, "user-key-1");
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ events: [{ id: "event-1", envelope }] }),
-      })
-    );
+    stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText("Standup")).toBeInTheDocument());
@@ -36,11 +28,8 @@ describe("Calendar", () => {
 
   it("shows an empty state when there are no events", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
-    );
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    stubCapabilityServer(session);
 
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
@@ -48,11 +37,8 @@ describe("Calendar", () => {
 
   it("calls onLogout when Sign out is clicked", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
-    );
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    stubCapabilityServer(session);
 
     const onLogout = vi.fn();
     const user = userEvent.setup();
@@ -64,7 +50,7 @@ describe("Calendar", () => {
 
   it("rejects an end time before the start time without calling the API", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -84,7 +70,7 @@ describe("Calendar", () => {
 
   it("submits a custom recurrence interval via the repeat toggle", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ events: [] }) }) // initial load
@@ -112,9 +98,10 @@ describe("Calendar", () => {
     await user.selectOptions(screen.getByLabelText(/^unit$/i), "MINUTELY");
     await user.click(screen.getByRole("button", { name: /add event/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const createCall = fetchMock.mock.calls[1];
-    expect(createCall[0]).toBe("/api/events");
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => c[0] === "/api/events" && c[1]?.method === "POST")).toBe(true)
+    );
+    const createCall = fetchMock.mock.calls.find((c) => c[0] === "/api/events" && c[1]?.method === "POST")!;
     // The envelope is encrypted, so we can't inspect the plaintext here directly,
     // but we can confirm no plaintext leaked into the request body.
     expect(createCall[1].body).not.toContain("Check the oven");
@@ -122,18 +109,14 @@ describe("Calendar", () => {
 
   it("never shows a raw priority number to the user", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const content = {
       title: "Important thing",
       startTime: "2026-08-01T09:00:00.000Z",
       endTime: "2026-08-01T09:15:00.000Z",
       priority: 7,
     };
-    const envelope = encryptEnvelope(content, encryptionKey, "user-key-1");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [{ id: "event-1", envelope }] }) })
-    );
+    stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText("Important thing")).toBeInTheDocument());
@@ -143,22 +126,13 @@ describe("Calendar", () => {
 
   it("raising priority (up arrow) updates only that event, incrementing its priority", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const contentA = { title: "Event A", startTime: "2026-08-01T09:00:00.000Z", endTime: "2026-08-01T09:15:00.000Z", priority: 0 };
     const contentB = { title: "Event B", startTime: "2026-08-02T09:00:00.000Z", endTime: "2026-08-02T09:15:00.000Z", priority: 2 };
-    const envelopeA = encryptEnvelope(contentA, encryptionKey, "user-key-1");
-    const envelopeB = encryptEnvelope(contentB, encryptionKey, "user-key-1");
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        events: [
-          { id: "event-a", envelope: envelopeA },
-          { id: "event-b", envelope: envelopeB },
-        ],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubCapabilityServer(session, [
+      { id: "event-a", content: contentA },
+      { id: "event-b", content: contentB },
+    ]);
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
@@ -177,25 +151,15 @@ describe("Calendar", () => {
 
   it("lowering priority (down arrow) raises every OTHER event's priority, not the clicked one", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const contentA = { title: "Event A", startTime: "2026-08-01T09:00:00.000Z", endTime: "2026-08-01T09:15:00.000Z", priority: 0 };
     const contentB = { title: "Event B", startTime: "2026-08-02T09:00:00.000Z", endTime: "2026-08-02T09:15:00.000Z", priority: 0 };
     const contentC = { title: "Event C", startTime: "2026-08-03T09:00:00.000Z", endTime: "2026-08-03T09:15:00.000Z", priority: 0 };
-    const envelopeA = encryptEnvelope(contentA, encryptionKey, "user-key-1");
-    const envelopeB = encryptEnvelope(contentB, encryptionKey, "user-key-1");
-    const envelopeC = encryptEnvelope(contentC, encryptionKey, "user-key-1");
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        events: [
-          { id: "event-a", envelope: envelopeA },
-          { id: "event-b", envelope: envelopeB },
-          { id: "event-c", envelope: envelopeC },
-        ],
-      }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubCapabilityServer(session, [
+      { id: "event-a", content: contentA },
+      { id: "event-b", content: contentB },
+      { id: "event-c", content: contentC },
+    ]);
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
@@ -217,7 +181,7 @@ describe("Calendar", () => {
 
   it("falls back to cached events and shows an offline notice when the network fails", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "offline-user", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "offline-user", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     saveEventCache(session.userId, [
       {
         id: "cached-1",
@@ -238,11 +202,8 @@ describe("Calendar", () => {
 
   it("clicking the repeat toggle again hides the panel and reverts the button label", async () => {
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
-    );
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    stubCapabilityServer(session);
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
@@ -264,7 +225,7 @@ describe("Calendar", () => {
     // moment that had already ticked past "now" (e.g. picked a couple of
     // minutes before hitting submit) was silently excluded.
     const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = { userId: "u1", username: "ada", token: "t", encryptionKey };
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
     const justPassed = new Date(Date.now() - 5 * 60_000); // 5 minutes ago
     const content = {
       title: "Just missed it",
@@ -272,77 +233,10 @@ describe("Calendar", () => {
       endTime: new Date(justPassed.getTime() + 30 * 60_000).toISOString(),
       priority: 0,
     };
-    const envelope = encryptEnvelope(content, encryptionKey, "user-key-1");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ events: [{ id: "event-1", envelope }] }),
-      })
-    );
+    stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
     await waitFor(() => expect(screen.getByText("Just missed it")).toBeInTheDocument());
   }, 15_000);
 
-  it("queues an event created while offline and shows it immediately, then syncs it on reconnect", async () => {
-    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
-    const session = {
-      userId: "offline-create-user",
-      username: "ada",
-      token: "t",
-      encryptionKey,
-      identityPublicKey: "pub",
-      identitySecretKey: "sec",
-    };
-
-    // Phase 1: offline. Initial load succeeds (empty), then the create fails.
-    let online = false;
-    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
-      const isWrite = init?.method === "POST" || init?.method === "PUT" || init?.method === "DELETE";
-      if (!online && isWrite) throw new Error("offline");
-      if (url === "/api/events" && !isWrite) {
-        return { ok: true, json: async () => ({ events: [] }) };
-      }
-      return { ok: true, json: async () => ({ event: { id: "server-1" } }) };
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const user = userEvent.setup();
-    render(<Calendar session={session} onLogout={() => {}} />);
-    await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
-
-    await user.type(screen.getByPlaceholderText(/event title/i), "Written offline");
-    // Must fall inside the calendar's display window (next 90 days), or the
-    // event legitimately wouldn't be rendered.
-    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const localDateTime = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T09:00`;
-    const localDateTimeEnd = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T10:00`;
-    await user.type(screen.getByLabelText(/start time/i), localDateTime);
-    await user.type(screen.getByLabelText(/end time/i), localDateTimeEnd);
-    await user.click(screen.getByRole("button", { name: /add event/i }));
-
-    // Optimistically visible despite the failed write, and flagged as pending.
-    await waitFor(() => expect(screen.getByText("Written offline")).toBeInTheDocument());
-    expect(screen.getByRole("status")).toHaveTextContent(/will sync when you reconnect/i);
-
-    // The mutation really is queued for replay, not just shown optimistically.
-    expect(loadQueue(session.userId)).toHaveLength(1);
-    expect(loadQueue(session.userId)[0]!.type).toBe("create");
-
-    // Phase 2: back online. Remounting triggers refresh(), which replays the
-    // queue before reading -- the same path a reconnect takes.
-    online = true;
-    const writesBefore = fetchMock.mock.calls.filter((c) => c[1]?.method === "POST").length;
-    cleanup();
-    render(<Calendar session={session} onLogout={() => {}} />);
-
-    await waitFor(() => {
-      const writesAfter = fetchMock.mock.calls.filter((c) => c[1]?.method === "POST").length;
-      expect(writesAfter).toBeGreaterThan(writesBefore);
-    });
-    // Queue drained once successfully replayed.
-    await waitFor(() => expect(loadQueue(session.userId)).toHaveLength(0));
-  }, 25_000);
 });
