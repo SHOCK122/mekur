@@ -78,6 +78,22 @@ export function createUserRepository(db: Database) {
       return row ? toUserRecord(row) : null;
     },
 
+    /**
+     * Replaces a user's stored public key with the one their client
+     * actually derived. Needed because accounts created before the
+     * identity-keypair fix registered a RANDOM public key whose private
+     * half was discarded -- anything wrapped to it is undecryptable, which
+     * surfaced as a cryptic "invalid tag" error. Clients self-heal on
+     * login by calling this when they detect the mismatch.
+     */
+    async updatePublicKey(id: string, publicKey: string): Promise<boolean> {
+      const result = await db.query(`UPDATE users SET public_key = $2 WHERE id = $1`, [
+        id,
+        publicKey,
+      ]);
+      return (result.rowCount ?? 0) > 0;
+    },
+
     async findById(id: string): Promise<UserRecord | null> {
       const result = await db.query<UserRow>(
         `SELECT id, username, display_name, public_key, auth_salt, auth_hash, created_at

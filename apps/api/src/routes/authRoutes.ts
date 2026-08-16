@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { sha256Base64 } from "@schedule-app/crypto";
 import { UsernameTakenError, type UserRepository } from "../repositories/userRepository.js";
@@ -86,6 +87,24 @@ export function registerAuthRoutes(
       const user = await users.findByUsername(request.params.username);
       if (!user) return reply.code(404).send({ error: "Not found" });
       return reply.send({ user: publicUser(user) });
+    }
+  );
+
+  // Lets a client repair its own stored public key when it detects that
+  // the server's copy doesn't match what its password actually derives.
+  // Scoped to the authenticated user only -- you can never rewrite someone
+  // else's key, which would let you hijack events wrapped to them.
+  app.put(
+    "/users/me/public-key",
+    { preHandler: app.authenticate },
+    async (request, reply) => {
+      const parsed = z.object({ publicKey: z.string().min(1).max(200) }).safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
+      }
+      const updated = await users.updatePublicKey(request.userId!, parsed.data.publicKey);
+      if (!updated) return reply.code(404).send({ error: "Not found" });
+      return reply.code(204).send();
     }
   );
 

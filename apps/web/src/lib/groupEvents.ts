@@ -59,8 +59,21 @@ interface RawGroupEventRecord {
 
 function decryptRecord(session: Session, record: RawGroupEventRecord): DecryptedGroupEvent {
   const myWrapKey = deriveSharedWrapKey(session.identitySecretKey, record.organizerPublicKey);
-  const eventKey = unwrapKey(record.myWrappedKey, myWrapKey);
-  const content = decryptEnvelope<GroupEventContent>(record.contentEnvelope, eventKey);
+  let eventKey: string;
+  let content: GroupEventContent;
+  try {
+    eventKey = unwrapKey(record.myWrappedKey, myWrapKey);
+    content = decryptEnvelope<GroupEventContent>(record.contentEnvelope, eventKey);
+  } catch (err) {
+    // The underlying library reports this as "invalid tag", which tells a
+    // person nothing. It always means the same thing here: the key this
+    // event was wrapped to isn't the key we hold.
+    throw new Error(
+      "This group event can't be decrypted with your current keys. It was most likely " +
+        "shared before your account's encryption keys were repaired, and can't be recovered. " +
+        `(underlying error: ${err instanceof Error ? err.message : String(err)})`
+    );
+  }
   return {
     id: record.id,
     organizerId: record.organizerId,

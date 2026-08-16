@@ -49,7 +49,7 @@ export async function login(username: string, password: string): Promise<Session
     body: JSON.stringify({ username, authKey: keys.authKey }),
   });
   const body = await parseJsonOrThrow(response);
-  return {
+  const session: Session = {
     userId: body.user.id,
     username: body.user.username,
     token: body.token,
@@ -57,6 +57,34 @@ export async function login(username: string, password: string): Promise<Session
     identityPublicKey: keys.identityKeyPair.publicKey,
     identitySecretKey: keys.identityKeyPair.secretKey,
   };
+
+  // Self-heal a stale public key. Accounts created before the
+  // identity-keypair fix registered a RANDOM public key whose private half
+  // was discarded, so anything wrapped to it could never be opened -- which
+  // surfaced as a cryptic "invalid tag" error the moment you tagged anyone
+  // into a group event. If the server's copy disagrees with what this
+  // password actually derives, the derived one is authoritative: it's the
+  // only one we hold the private half for.
+  if (body.user.publicKey && body.user.publicKey !== keys.identityKeyPair.publicKey) {
+    await repairPublicKey(session);
+  }
+
+  return session;
+}
+
+/** Best-effort repair; a failure here must not block an otherwise valid
+ * login, since the person can still read anything encrypted to their
+ * personal key (only sharing depends on the identity keypair). */
+async function repairPublicKey(session: Session): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/users/me/public-key`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({ publicKey: session.identityPublicKey }),
+    });
+  } catch {
+    // Ignored deliberately -- see above.
+  }
 }
 
 export interface DecryptedEvent extends EventContent {
