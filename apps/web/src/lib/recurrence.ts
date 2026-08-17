@@ -80,7 +80,11 @@ export function expandOccurrences(
     byweekday: event.recurrence.byDay?.map((d) => WEEKDAY_MAP[d]),
     count: event.recurrence.count,
     until: event.recurrence.until ? new Date(event.recurrence.until) : undefined,
-    dtstart: start,
+    // Start the rule near the window instead of at the series' real
+    // beginning. Without this, viewing an hour of a minutely series that
+    // began years ago walks every intervening occurrence -- measured at
+    // over two minutes for a single expansion.
+    dtstart: advancedStart(start, event.recurrence, rangeStart),
   });
 
   return collectBounded(rule, rangeStart, rangeEnd)
@@ -112,6 +116,43 @@ export function withoutSkippedOccurrence(
   return (skippedOccurrences ?? []).filter(
     (s) => new Date(s).getTime() !== occurrenceStart.getTime()
   );
+}
+
+/** Milliseconds in one repetition, for frequencies of fixed length.
+ * Months and years vary, so they are excluded and handled by walking --
+ * they are infrequent enough that walking is cheap. */
+const FIXED_PERIOD_MS: Partial<Record<RecurrenceRule["freq"], number>> = {
+  MINUTELY: 60_000,
+  HOURLY: 3_600_000,
+  DAILY: 86_400_000,
+  WEEKLY: 604_800_000,
+};
+
+/**
+ * Moves a series' start forward, by a whole number of repetitions, to just
+ * before the requested window.
+ *
+ * Advancing by whole periods preserves the phase of the series, so the
+ * occurrences generated are exactly those the original rule would have
+ * produced -- it just skips the ones nobody asked for. A weekly rule with
+ * BYDAY keeps its weekday pattern for the same reason.
+ *
+ * Deliberately skipped when `count` is set: a count limits the series as a
+ * whole, so dropping earlier occurrences would change which ones remain.
+ */
+function advancedStart(start: Date, recurrence: RecurrenceRule, rangeStart: Date): Date {
+  if (recurrence.count !== undefined) return start;
+  const period = FIXED_PERIOD_MS[recurrence.freq];
+  if (period === undefined) return start;
+
+  const periodMs = period * Math.max(1, recurrence.interval);
+  const behindBy = rangeStart.getTime() - start.getTime();
+  if (behindBy <= 0) return start;
+
+  // Step back one period so an occurrence straddling the window edge is
+  // still produced.
+  const periods = Math.max(0, Math.floor(behindBy / periodMs) - 1);
+  return new Date(start.getTime() + periods * periodMs);
 }
 
 /** Iterates the rule in chronological order and stops as soon as either the

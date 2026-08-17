@@ -156,7 +156,11 @@ export function rectFor(
   endFraction: number,
   lane: number,
   orientation: Orientation,
-  viewport: Viewport
+  viewport: Viewport,
+  /** When true the rectangle runs from its lane all the way to the base,
+   * rather than occupying one lane's thickness. The fade then has the full
+   * distance to reach zero exactly at the base. */
+  extendToBase = false
 ): Rect {
   const { width, height, laneSize } = viewport;
 
@@ -168,6 +172,9 @@ export function rectFor(
       : [1 - endFraction, 1 - startFraction];
 
   const laneOffset = lane * laneSize;
+  // Thickness across the stacking axis: one lane, or everything from this
+  // lane down to the base.
+  const thickness = extendToBase ? laneOffset + laneSize : laneSize;
 
   if (orientation.axis === "horizontal") {
     const left = from * width;
@@ -175,13 +182,22 @@ export function rectFor(
     // Base at the bottom means measuring up from the bottom edge.
     const top =
       orientation.base === "bottom" ? height - laneOffset - laneSize : laneOffset;
-    return { left, top, width: rectWidth, height: laneSize };
+    return { left, top, width: rectWidth, height: thickness };
   }
 
   const top = from * height;
   const rectHeight = Math.max(0, (to - from) * height);
-  const left = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
-  return { left, top, width: laneSize, height: rectHeight };
+  const left =
+    orientation.base === "left"
+      ? 0
+      : width - thickness;
+  const laneLeft = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
+  return {
+    left: extendToBase ? left : laneLeft,
+    top,
+    width: thickness,
+    height: rectHeight,
+  };
 }
 
 // ---------------------------------------------------------------------------

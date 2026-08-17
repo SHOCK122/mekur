@@ -1091,3 +1091,157 @@ button:disabled {
     transparent 8px
   );
 }
+
+/* ---- Full-bleed timeline ---- */
+
+.timeline {
+  max-width: none;
+}
+
+.timeline-viewport {
+  height: min(60vh, 520px);
+}
+
+.timeline-vertical.timeline-viewport {
+  height: min(75vh, 720px);
+}
+
+/* ---- Present indicator ----
+   A thin amber rod tapering to points at both ends (an elongated hexagon),
+   lit with a golden glow. One half is darker than the other so the rod
+   reads as a lit cylinder rather than a flat line. */
+
+.present-indicator {
+  background: none;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(255, 191, 0, 0.85))
+    drop-shadow(0 0 10px rgba(255, 170, 0, 0.45));
+  pointer-events: none;
+}
+
+.present-horizontal {
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  margin-left: -3px;
+  /* Points at top and bottom, straight sides between. */
+  clip-path: polygon(50% 0, 100% 5%, 100% 95%, 50% 100%, 0 95%, 0 5%);
+  background: linear-gradient(
+    to right,
+    #b87400 0%,
+    #ffc233 45%,
+    #ffe08a 55%,
+    #c07f05 100%
+  );
+}
+
+.present-vertical {
+  left: 0;
+  right: 0;
+  height: 7px;
+  margin-top: -3px;
+  clip-path: polygon(0 50%, 5% 0, 95% 0, 100% 50%, 95% 100%, 5% 100%);
+  background: linear-gradient(
+    to bottom,
+    #b87400 0%,
+    #ffc233 45%,
+    #ffe08a 55%,
+    #c07f05 100%
+  );
+}
+
+/* ---- Modal fade ----
+   The fill runs from its lane to the base. The gradient is an S-curve
+   rather than linear: it falls quickly through the first text-height,
+   holds around 25% across the middle so overlapping modals stay legible
+   without muddying each other, then eases to exactly 0% at the base. */
+
+.fade-bottom {
+  background: linear-gradient(
+    to bottom,
+    var(--event-modal) 0,
+    color-mix(in srgb, var(--event-modal) 60%, transparent) 0.9em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) 1.4em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) calc(100% - 1.4em),
+    color-mix(in srgb, var(--event-modal) 12%, transparent) calc(100% - 0.6em),
+    transparent 100%
+  );
+}
+
+.fade-top {
+  background: linear-gradient(
+    to top,
+    var(--event-modal) 0,
+    color-mix(in srgb, var(--event-modal) 60%, transparent) 0.9em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) 1.4em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) calc(100% - 1.4em),
+    color-mix(in srgb, var(--event-modal) 12%, transparent) calc(100% - 0.6em),
+    transparent 100%
+  );
+}
+
+.fade-left {
+  background: linear-gradient(
+    to left,
+    var(--event-modal) 0,
+    color-mix(in srgb, var(--event-modal) 60%, transparent) 0.9em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) 1.4em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) calc(100% - 1.4em),
+    color-mix(in srgb, var(--event-modal) 12%, transparent) calc(100% - 0.6em),
+    transparent 100%
+  );
+}
+
+.fade-right {
+  background: linear-gradient(
+    to right,
+    var(--event-modal) 0,
+    color-mix(in srgb, var(--event-modal) 60%, transparent) 0.9em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) 1.4em,
+    color-mix(in srgb, var(--event-modal) 25%, transparent) calc(100% - 1.4em),
+    color-mix(in srgb, var(--event-modal) 12%, transparent) calc(100% - 0.6em),
+    transparent 100%
+  );
+}
+
+/* A solid start border anchoring the event to the base. */
+.event-modal::before {
+  content: "";
+  position: absolute;
+  background: var(--event-modal);
+  pointer-events: none;
+}
+
+.timeline-horizontal .event-modal::before {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+}
+
+.timeline-horizontal.direction-reverse .event-modal::before {
+  left: auto;
+  right: 0;
+}
+
+.timeline-vertical .event-modal::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+
+.timeline-vertical.direction-reverse .event-modal::before {
+  top: auto;
+  bottom: 0;
+}
+
+/* Panning affordance on the background. */
+.timeline-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.timeline-canvas:active {
+  cursor: grabbing;
+}

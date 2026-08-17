@@ -314,4 +314,39 @@ describe("Timeline", () => {
     fireEvent.wheel(viewport, { deltaY: 5 });
     expect(screen.getByText("1 day")).toBeInTheDocument();
   });
+
+  it("pans through time when the background is dragged", () => {
+    const start = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            title: "Ten days out",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    // Ten days ahead is outside the default one-day view.
+    expect(screen.queryByText("Ten days out")).not.toBeInTheDocument();
+
+    const viewport = screen.getByLabelText("Timeline events");
+    const canvas = viewport.querySelector(".timeline-canvas")!;
+    // Drag leftwards to travel forward in time, the way dragging a map
+    // moves the surface rather than the viewpoint.
+    fireEvent.pointerDown(canvas, { clientX: 500, clientY: 100 });
+    for (let i = 0; i < 12; i++) {
+      fireEvent.pointerMove(viewport, { clientX: 500 - (i + 1) * 800, clientY: 100 });
+    }
+    fireEvent.pointerUp(viewport);
+
+    expect(screen.getByText("Ten days out")).toBeInTheDocument();
+  });
+
+  it("renders a live present indicator", () => {
+    render(<Timeline events={[]} onEditEvent={() => {}} />);
+    expect(screen.getByTestId("present-indicator")).toBeInTheDocument();
+  });
 });

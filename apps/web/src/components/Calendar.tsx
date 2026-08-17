@@ -75,6 +75,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [customInterval, setCustomInterval] = useState(1);
   const [customUnit, setCustomUnit] = useState<CustomUnit>("DAILY");
+  const [repeatUntil, setRepeatUntil] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -152,6 +153,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       setStartTouched(false);
       setEnd("");
       setRepeatEnabled(false);
+      setRepeatUntil("");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create event");
@@ -385,6 +387,15 @@ export function Calendar({ session, onLogout }: CalendarProps) {
                 <option value="DAILY">Days</option>
                 <option value="WEEKLY">Weeks</option>
               </select>
+            </label>
+            <label className="inline-label">
+              Repeat until <span className="field-hint">(optional)</span>
+              <input
+                type="date"
+                value={repeatUntil}
+                onChange={(e) => setRepeatUntil(e.target.value)}
+                aria-label="Repeat until"
+              />
             </label>
           </div>
         )}

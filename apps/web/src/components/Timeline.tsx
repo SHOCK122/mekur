@@ -54,6 +54,10 @@ interface DragState {
 export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [showLayoutOptions, setShowLayoutOptions] = useState(false);
+  // Panning by dragging the background, distinct from dragging an event.
+  const [pan, setPan] = useState<{ startX: number; startY: number; startCentre: number } | null>(
+    null
+  );
   const [orientation, setOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
   const [spanSeconds, setSpanSeconds] = useState(TIME_SCALES[DEFAULT_SCALE_INDEX]!.seconds);
   const [centre, setCentre] = useState(() => Date.now());
@@ -71,8 +75,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const update = () =>
-      setViewportSize({ width: element.clientWidth, height: element.clientHeight });
+    const update = () => {
+      // Ignore zero measurements. They occur before layout settles (and
+      // always in jsdom), and a zero width would make every drag compute a
+      // zero time delta, silently disabling panning and resizing.
+      if (element.clientWidth > 0 && element.clientHeight > 0) {
+        setViewportSize({ width: element.clientWidth, height: element.clientHeight });
+      }
+    };
     update();
     // ResizeObserver is absent in jsdom; the initial measurement still runs.
     if (typeof ResizeObserver === "undefined") return;
@@ -166,7 +176,29 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     });
   }
 
+  function beginPan(e: React.PointerEvent) {
+    // Only the background pans; presses that land on an event are handled
+    // by that event's own drag handlers.
+    if (e.target !== e.currentTarget && !(e.target as Element).classList.contains("timeline-canvas")) {
+      return;
+    }
+    setPan({ startX: e.clientX, startY: e.clientY, startCentre: centre });
+  }
+
   function handlePointerMove(e: React.PointerEvent) {
+    if (pan) {
+      // Dragging right should reveal the PAST, the way dragging a map
+      // moves the surface under the pointer rather than the viewpoint.
+      const deltaMs = timeDeltaFromDrag(
+        e.clientX - pan.startX,
+        e.clientY - pan.startY,
+        orientation,
+        viewport,
+        spanSeconds * 1000
+      );
+      setCentre(pan.startCentre - deltaMs);
+      return;
+    }
     if (!drag) return;
     const deltaMs = timeDeltaFromDrag(
       e.clientX - drag.startX,
@@ -206,6 +238,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   }
 
   async function handlePointerUp() {
+    if (pan) {
+      setPan(null);
+      return;
+    }
     if (!drag) return;
     const { eventId, preview } = drag;
     setDrag(null);
@@ -344,6 +380,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         tabIndex={0}
         aria-label="Timeline events"
         onWheel={handleWheel}
+        onPointerDown={beginPan}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
@@ -359,6 +396,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           {nowFraction >= 0 && nowFraction <= 1 && (
             <div
               className={`present-indicator present-${orientation.axis}`}
+              data-testid="present-indicator"
               style={
                 orientation.axis === "horizontal"
                   ? {
@@ -398,7 +436,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                     Math.max(0, Math.min(1, endFraction)),
                     lane,
                     orientation,
-                    viewport
+                    viewport,
+                    true
                   );
                   // The name belongs to the series, not to each repeat, so
                   // only the first visible occurrence carries it.
