@@ -95,8 +95,21 @@ export const EventContentSchema = z
     description: z.string().max(10_000).optional(),
     location: z.string().max(500).optional(),
     startTime: z.string().datetime(),
-    endTime: z.string().datetime(),
+    /** Optional: an event may be open-ended. On the timeline these extend
+     * to the edge of the view and fade toward the future rather than
+     * claiming a definite finish. */
+    endTime: z.string().datetime().optional(),
     priority: EventPrioritySchema,
+    /** Fractional ordering rank. Determines how far from the timeline's
+     * base an event stacks when it overlaps others. Unique per event, so
+     * stacking order is never ambiguous. Optional for now so events
+     * created before fractional ordering still parse; the client assigns
+     * one on first render. */
+    rank: z.string().min(1).optional(),
+    /** Importance is deliberately separate from rank: it changes styling
+     * only, never position. Folding it into the sort key would reintroduce
+     * ties inside each importance group. */
+    important: z.boolean().optional(),
     recurrence: RecurrenceRuleSchema.optional(),
     /** Occurrences of a recurring series that have been skipped, by their
      * start time. This is the iCalendar EXDATE concept: the series rule is
@@ -109,10 +122,15 @@ export const EventContentSchema = z
      * meeting is. */
     skippedOccurrences: z.array(z.string().datetime()).optional(),
   })
-  .refine((event) => new Date(event.endTime) > new Date(event.startTime), {
-    message: "endTime must be after startTime",
-    path: ["endTime"],
-  });
+  .refine(
+    // Only meaningful when an end exists; an open-ended event cannot end
+    // before it starts.
+    (event) => event.endTime === undefined || new Date(event.endTime) > new Date(event.startTime),
+    {
+      message: "endTime must be after startTime",
+      path: ["endTime"],
+    }
+  );
 export type EventContent = z.infer<typeof EventContentSchema>;
 
 /**

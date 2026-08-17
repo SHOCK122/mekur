@@ -10,6 +10,7 @@ import {
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { NotificationToggle } from "./NotificationToggle.js";
 import { ShareEvent } from "./ShareEvent.js";
+import { Timeline } from "./Timeline.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -38,7 +39,13 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [sharingEventId, setSharingEventId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [showSkipped, setShowSkipped] = useState(false);
+  // Defaults to the list for now because the timeline is still view-only:
+  // it has no create, edit, delete or priority controls yet, so making it
+  // the default would remove function rather than add it. Flips to
+  // timeline-by-default once it reaches parity.
+  const [view, setView] = useState<"timeline" | "list">("list");
   // Deleting a recurring event is ambiguous -- this occurrence, or all of
   // them? Rather than guess, hold the pending delete until the person says.
   const [pendingDelete, setPendingDelete] = useState<{
@@ -230,6 +237,27 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       )}
 
 
+      <div className="view-toggle" role="group" aria-label="View">
+        <button
+          type="button"
+          className={view === "timeline" ? "tab active" : "tab"}
+          onClick={() => setView("timeline")}
+        >
+          Timeline
+        </button>
+        <button
+          type="button"
+          className={view === "list" ? "tab active" : "tab"}
+          onClick={() => setView("list")}
+        >
+          List
+        </button>
+      </div>
+
+      {view === "timeline" && (
+        <Timeline events={events} onEditEvent={(id) => setSharingEventId(null) ?? setEditingId(id)} />
+      )}
+
       <button
         type="button"
         className="header-link"
@@ -340,11 +368,11 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         </p>
       )}
 
-      {loading ? (
+      {view === "list" && loading ? (
         <p role="status" aria-live="polite">Loading&hellip;</p>
-      ) : occurrences.length === 0 ? (
+      ) : view === "list" && occurrences.length === 0 ? (
         <p className="empty-state">No events yet. Add your first one above.</p>
-      ) : (
+      ) : view === "list" ? (
         <ul className="event-list">
           {occurrences.map(({ event, occurrence }, index) => (
             <li
@@ -412,6 +440,15 @@ export function Calendar({ session, onLogout }: CalendarProps) {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {editingId && (
+        <p className="share-status" role="status">
+          Editing panel for this event is coming next.{" "}
+          <button type="button" className="header-link" onClick={() => setEditingId(null)}>
+            Dismiss
+          </button>
+        </p>
       )}
     </div>
   );

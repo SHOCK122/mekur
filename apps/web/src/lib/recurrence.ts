@@ -22,7 +22,8 @@ const WEEKDAY_MAP: Record<Weekday, RRuleWeekday> = {
 
 export interface Occurrence {
   start: Date;
-  end: Date;
+  /** Null for open-ended events. */
+  end: Date | null;
   /** True when this occurrence was skipped. Callers decide whether to
    * render it (dimmed, behind a "show skipped" toggle) or omit it. */
   skipped: boolean;
@@ -45,7 +46,8 @@ const MAX_OCCURRENCES_PER_EVENT = 500;
 export function expandOccurrences(
   event: {
     startTime: string;
-    endTime: string;
+    /** Absent for open-ended events. */
+    endTime?: string;
     recurrence?: RecurrenceRule;
     skippedOccurrences?: string[];
   },
@@ -54,8 +56,10 @@ export function expandOccurrences(
   options: { includeSkipped?: boolean } = {}
 ): Occurrence[] {
   const start = new Date(event.startTime);
-  const end = new Date(event.endTime);
-  const durationMs = end.getTime() - start.getTime();
+  // An open-ended event has no duration to preserve across occurrences;
+  // callers render it as extending to the edge of the view instead.
+  const end = event.endTime ? new Date(event.endTime) : null;
+  const durationMs = end ? end.getTime() - start.getTime() : null;
 
   // Compared by timestamp rather than string, so an exception recorded in
   // a different ISO format still matches the occurrence it refers to.
@@ -82,7 +86,7 @@ export function expandOccurrences(
   return collectBounded(rule, rangeStart, rangeEnd)
     .map((occurrenceStart) => ({
       start: occurrenceStart,
-      end: new Date(occurrenceStart.getTime() + durationMs),
+      end: durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs),
       skipped: isSkipped(occurrenceStart),
     }))
     .filter(keep);

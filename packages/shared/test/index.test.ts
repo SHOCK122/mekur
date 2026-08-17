@@ -294,3 +294,34 @@ describe("SubmitVotesRequestSchema", () => {
     ).toThrow();
   });
 });
+
+describe("optional end time", () => {
+  it("accepts an event with no end time", () => {
+    const parsed = EventContentSchema.parse({
+      title: "Open ended",
+      startTime: "2026-08-01T09:00:00.000Z",
+    });
+    expect(parsed.endTime).toBeUndefined();
+  });
+
+  it("still rejects an end before the start when one is given", () => {
+    expect(() =>
+      EventContentSchema.parse({
+        title: "Backwards",
+        startTime: "2026-08-01T10:00:00.000Z",
+        endTime: "2026-08-01T09:00:00.000Z",
+      })
+    ).toThrow(/endTime must be after startTime/);
+  });
+
+  it("accepts a fractional rank and an important flag", () => {
+    const parsed = EventContentSchema.parse({
+      title: "Ranked",
+      startTime: "2026-08-01T09:00:00.000Z",
+      rank: "V",
+      important: true,
+    });
+    expect(parsed.rank).toBe("V");
+    expect(parsed.important).toBe(true);
+  });
+});
