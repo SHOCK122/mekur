@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { deriveAuthAndEncryptionKeys } from "@schedule-app/crypto";
 import { stubCapabilityServer } from "./mockServer.js";
 import { Calendar } from "../src/components/Calendar.js";
 import { saveEventCache } from "../src/lib/eventCache.js";
+
+
+/** These tests target the list view, which is no longer the default now
+ * that the timeline handles editing. Switching explicitly keeps them
+ * testing what they were written to test. */
+function switchToListView() {
+  fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
+}
 
 describe("Calendar", () => {
   afterEach(() => {
@@ -23,6 +31,8 @@ describe("Calendar", () => {
     stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
+
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Standup")).toBeInTheDocument());
   }, 15_000);
 
@@ -32,6 +42,8 @@ describe("Calendar", () => {
     stubCapabilityServer(session);
 
     render(<Calendar session={session} onLogout={() => {}} />);
+
+    switchToListView();
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
   }, 15_000);
 
@@ -43,6 +55,7 @@ describe("Calendar", () => {
     const onLogout = vi.fn();
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={onLogout} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /sign out/i }));
     expect(onLogout).toHaveBeenCalled();
@@ -56,6 +69,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
 
     await user.type(screen.getByPlaceholderText(/event title/i), "Backwards event");
@@ -80,6 +94,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
 
     await user.type(screen.getByPlaceholderText(/event title/i), "Check the oven");
@@ -119,6 +134,8 @@ describe("Calendar", () => {
     stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
+
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Important thing")).toBeInTheDocument());
     expect(screen.queryByText("7")).not.toBeInTheDocument();
     expect(screen.queryByText(/priority 7/i)).not.toBeInTheDocument();
@@ -136,6 +153,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Event A")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /raise priority of event a/i }));
@@ -163,6 +181,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Event A")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /lower priority of event a/i }));
@@ -196,6 +215,8 @@ describe("Calendar", () => {
 
     render(<Calendar session={session} onLogout={() => {}} />);
 
+    switchToListView();
+
     await waitFor(() => expect(screen.getByText("Cached meeting")).toBeInTheDocument());
     expect(screen.getByRole("status")).toHaveTextContent(/offline/i);
   }, 15_000);
@@ -207,6 +228,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
 
     const toggle = screen.getByRole("button", { name: /^repeat/i });
@@ -236,6 +258,8 @@ describe("Calendar", () => {
     stubCapabilityServer(session, [{ id: "event-1", content: content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
+
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Just missed it")).toBeInTheDocument());
   }, 15_000);
 
@@ -255,6 +279,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getAllByText("Standup").length).toBeGreaterThan(0));
 
     await user.click(screen.getAllByRole("button", { name: /delete standup/i })[0]!);
@@ -286,6 +311,7 @@ describe("Calendar", () => {
 
     const user = userEvent.setup();
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Dentist")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /delete dentist/i }));

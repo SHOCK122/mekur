@@ -15,6 +15,14 @@ import {
 } from "../lib/timeline.js";
 import { expandOccurrences } from "../lib/recurrence.js";
 import { rankAtEnd } from "../lib/fractionalRank.js";
+import {
+  timeDeltaFromDrag,
+  laneFromPointer,
+  resizeEvent,
+  moveEvent,
+  rankForLane,
+  type ResizeEdge,
+} from "../lib/timelineInteraction.js";
 import type { DecryptedEvent } from "../lib/events.js";
 
 const LANE_SIZE = 28;
@@ -24,10 +32,27 @@ const LABEL_WIDTH_PX = 90;
 
 interface TimelineProps {
   events: DecryptedEvent[];
-  onEditEvent: (eventId: string) => void;
+  onEditEvent: (eventId: string, origin: DOMRect | null) => void;
+  /** Applies a change to an event. Kept as a callback so the timeline
+   * stays presentational and the owner decides how to persist. */
+  onChangeEvent?: (eventId: string, changes: Partial<DecryptedEvent>) => Promise<void> | void;
 }
 
-export function Timeline({ events, onEditEvent }: TimelineProps) {
+type DragMode = { kind: "resize"; edge: ResizeEdge } | { kind: "move" };
+
+interface DragState {
+  eventId: string;
+  mode: DragMode;
+  startX: number;
+  startY: number;
+  original: { startTime: string; endTime?: string };
+  /** Preview of the change, applied visually before it is saved so the
+   * drag feels immediate rather than waiting on a round trip. */
+  preview: { startTime: string; endTime?: string; rank?: string } | null;
+}
+
+export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) {
+  const [drag, setDrag] = useState<DragState | null>(null);
   const [orientation, setOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
   const [spanSeconds, setSpanSeconds] = useState(TIME_SCALES[DEFAULT_SCALE_INDEX]!.seconds);
   const [centre, setCentre] = useState(() => Date.now());
@@ -64,7 +89,11 @@ export function Timeline({ events, onEditEvent }: TimelineProps) {
     const knownRanks = events.map((e) => e.rank).filter((r): r is string => Boolean(r));
     let fallbackSeed = knownRanks;
 
-    const occurrences = events.flatMap((event) => {
+    const withPreview = events.map((event) =>
+      drag?.preview && drag.eventId === event.id ? { ...event, ...drag.preview } : event
+    );
+
+    const occurrences = withPreview.flatMap((event) => {
       let rank = event.rank;
       if (!rank) {
         rank = rankAtEnd(fallbackSeed);
@@ -83,7 +112,7 @@ export function Timeline({ events, onEditEvent }: TimelineProps) {
     const msPerPixel = (spanSeconds * 1000) / Math.max(1, viewportSize.width);
     const separation = LABEL_WIDTH_PX * msPerPixel;
     return assignLanes(occurrences, viewEnd.getTime(), separation);
-  }, [events, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+  }, [events, drag, viewStart, viewEnd, spanSeconds, viewportSize.width]);
 
   const lanes = laneCount(placements);
   const stackExtent = lanes * LANE_SIZE;
@@ -105,6 +134,80 @@ export function Timeline({ events, onEditEvent }: TimelineProps) {
 
   const nowFraction = timeFraction(new Date(now), viewStart, viewEnd);
   const currentScale = snapToScale(spanSeconds);
+
+  function beginDrag(
+    e: React.PointerEvent,
+    event: DecryptedEvent,
+    mode: DragMode
+  ) {
+    if (!event.canEdit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    setDrag({
+      eventId: event.id,
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      original: { startTime: event.startTime, endTime: event.endTime },
+      preview: null,
+    });
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!drag) return;
+    const deltaMs = timeDeltaFromDrag(
+      e.clientX - drag.startX,
+      e.clientY - drag.startY,
+      orientation,
+      viewport,
+      spanSeconds * 1000
+    );
+
+    if (drag.mode.kind === "resize") {
+      const next = resizeEvent(drag.original, drag.mode.edge, deltaMs);
+      setDrag({
+        ...drag,
+        preview: { startTime: next.startTime, endTime: next.endTime ?? undefined },
+      });
+      return;
+    }
+
+    const moved = moveEvent(drag.original, deltaMs);
+    // Moving also re-ranks if the pointer crossed into another lane:
+    // dragging away from the base means higher priority.
+    const bounds = containerRef.current?.getBoundingClientRect();
+    let rank: string | undefined;
+    if (bounds) {
+      const targetLane = laneFromPointer(
+        e.clientX - bounds.left,
+        e.clientY - bounds.top,
+        orientation,
+        viewport
+      );
+      rank = rankForLane(drag.eventId, targetLane, placements) ?? undefined;
+    }
+    setDrag({
+      ...drag,
+      preview: { startTime: moved.startTime, endTime: moved.endTime ?? undefined, ...(rank ? { rank } : {}) },
+    });
+  }
+
+  async function handlePointerUp() {
+    if (!drag) return;
+    const { eventId, preview } = drag;
+    setDrag(null);
+    if (!preview || !onChangeEvent) return;
+    // Nothing actually moved -- skip a pointless encrypted round trip.
+    if (
+      preview.startTime === drag.original.startTime &&
+      preview.endTime === drag.original.endTime &&
+      !preview.rank
+    ) {
+      return;
+    }
+    await onChangeEvent(eventId, preview);
+  }
 
   function handleZoom(factor: number) {
     setSpanSeconds((current) => zoomSpan(current, factor));
@@ -201,6 +304,9 @@ export function Timeline({ events, onEditEvent }: TimelineProps) {
         ref={containerRef}
         tabIndex={0}
         aria-label="Timeline events"
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         <div
           className="timeline-canvas"
@@ -268,10 +374,35 @@ export function Timeline({ events, onEditEvent }: TimelineProps) {
                   }`}
                   aria-hidden="true"
                 />
+                {/* Edge handles resize; the body moves and re-ranks. Both
+                    are pointer-driven, so they work with touch as well. */}
+                {item.event.canEdit && (
+                  <>
+                    <span
+                      className="resize-handle resize-start"
+                      role="separator"
+                      aria-label={`Adjust start of ${item.event.title || "untitled event"}`}
+                      onPointerDown={(e) =>
+                        beginDrag(e, item.event, { kind: "resize", edge: "start" })
+                      }
+                    />
+                    <span
+                      className="resize-handle resize-end"
+                      role="separator"
+                      aria-label={`Adjust end of ${item.event.title || "untitled event"}`}
+                      onPointerDown={(e) =>
+                        beginDrag(e, item.event, { kind: "resize", edge: "end" })
+                      }
+                    />
+                  </>
+                )}
                 <button
                   type="button"
                   className="event-modal-label"
-                  onClick={() => onEditEvent(item.event.id)}
+                  onPointerDown={(e) => beginDrag(e, item.event, { kind: "move" })}
+                  onClick={(e) =>
+                    onEditEvent(item.event.id, (e.currentTarget as Element).getBoundingClientRect())
+                  }
                 >
                   {item.event.important && (
                     <>

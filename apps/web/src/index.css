@@ -917,3 +917,112 @@ button:disabled {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+/* ---- Drag handles ---- */
+
+.resize-handle {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.timeline-horizontal .resize-handle {
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.timeline-horizontal .resize-start { left: 0; }
+.timeline-horizontal .resize-end { right: 0; }
+
+.timeline-vertical .resize-handle {
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.timeline-vertical .resize-start { top: 0; }
+.timeline-vertical .resize-end { bottom: 0; }
+
+.resize-handle:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.event-modal-label {
+  cursor: grab;
+  touch-action: none;
+}
+
+.event-modal-label:active {
+  cursor: grabbing;
+}
+
+/* ---- Edit panel ---- */
+
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  transition: background 180ms ease;
+}
+
+.edit-overlay-open {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.edit-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  width: min(420px, calc(100vw - 2rem));
+  /* Grows out of the event that was clicked, so it is obvious which one
+     is being edited without pinning the panel to the timeline. */
+  transform: scale(0.85);
+  opacity: 0;
+  transform-origin: var(--origin-x, 50%) var(--origin-y, 50%);
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.edit-panel-open {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.edit-delete {
+  background: none;
+  color: var(--danger);
+  margin-left: auto;
+}
+
+.edit-delete:hover {
+  background: none;
+  text-decoration: underline;
+}

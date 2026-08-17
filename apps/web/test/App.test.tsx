@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../src/App.js";
 
@@ -35,6 +35,7 @@ describe("App", () => {
     );
     render(<App />);
     expect(screen.getByRole("heading", { name: /your schedule/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
   });
 });

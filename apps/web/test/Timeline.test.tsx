@@ -45,17 +45,21 @@ describe("Timeline", () => {
     const user = userEvent.setup();
     render(<Timeline events={[makeEvent()]} onEditEvent={onEdit} />);
     await user.click(screen.getByText("Standup"));
-    expect(onEdit).toHaveBeenCalledWith("e1");
+    expect(onEdit).toHaveBeenCalled();
+    expect(onEdit.mock.calls[0]![0]).toBe("e1");
   });
 
   it("gives an untitled event a clickable square instead of an unhittable label", async () => {
     const onEdit = vi.fn();
     const user = userEvent.setup();
     render(<Timeline events={[makeEvent({ title: "" })]} onEditEvent={onEdit} />);
-    const square = screen.getByLabelText(/untitled event/i);
+    // The resize handles also mention "untitled event", so target the
+    // square specifically rather than by loose text match.
+    const square = screen.getByLabelText("Untitled event");
     expect(square).toBeInTheDocument();
     await user.click(square);
-    expect(onEdit).toHaveBeenCalledWith("e1");
+    expect(onEdit).toHaveBeenCalled();
+    expect(onEdit.mock.calls[0]![0]).toBe("e1");
   });
 
   it("marks an important event with more than colour alone", () => {

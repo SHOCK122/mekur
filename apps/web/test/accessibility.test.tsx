@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { deriveAuthAndEncryptionKeys } from "@schedule-app/crypto";
 import { Calendar } from "../src/components/Calendar.js";
 import { stubCapabilityServer } from "./mockServer.js";
@@ -16,6 +16,13 @@ async function makeSession(): Promise<Session> {
     identityPublicKey: keys.identityKeyPair.publicKey,
     identitySecretKey: keys.identityKeyPair.secretKey,
   };
+}
+
+
+/** The timeline is the default view; these assertions target list-view
+ * markup, so they switch explicitly. */
+function switchToListView() {
+  fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
 }
 
 describe("accessibility", () => {
@@ -39,6 +46,7 @@ describe("accessibility", () => {
     const session = await makeSession();
     stubCapabilityServer(session);
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     // A placeholder alone is not an accessible name: it isn't reliably
     // announced and disappears as soon as the person types.
     expect(screen.getByLabelText(/event title/i)).toBeInTheDocument();
@@ -51,6 +59,7 @@ describe("accessibility", () => {
     // Never-resolving fetch so the loading state stays visible.
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => new Promise(() => {})));
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     const status = await screen.findByRole("status");
     expect(status).toHaveTextContent(/loading/i);
   }, 15_000);
@@ -66,6 +75,8 @@ describe("accessibility", () => {
     stubCapabilityServer(session, [{ id: "e1", content }]);
 
     render(<Calendar session={session} onLogout={() => {}} />);
+
+    switchToListView();
     await waitFor(() => expect(screen.getByText("Dentist")).toBeInTheDocument());
 
     // Triangle glyphs convey nothing to a screen reader on their own.
@@ -78,6 +89,7 @@ describe("accessibility", () => {
     const session = await makeSession();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
     // No cache and a failed fetch => a real error the person must notice.
     const alert = await screen.findByRole("alert");
     expect(alert).toBeInTheDocument();

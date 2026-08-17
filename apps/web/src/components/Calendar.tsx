@@ -11,6 +11,7 @@ import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { NotificationToggle } from "./NotificationToggle.js";
 import { ShareEvent } from "./ShareEvent.js";
 import { Timeline } from "./Timeline.js";
+import { EventEditPanel } from "./EventEditPanel.js";
 import type { Session } from "../lib/session.js";
 
 interface CalendarProps {
@@ -40,12 +41,13 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [offline, setOffline] = useState(false);
   const [sharingEventId, setSharingEventId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editOrigin, setEditOrigin] = useState<DOMRect | null>(null);
   const [showSkipped, setShowSkipped] = useState(false);
-  // Defaults to the list for now because the timeline is still view-only:
-  // it has no create, edit, delete or priority controls yet, so making it
-  // the default would remove function rather than add it. Flips to
-  // timeline-by-default once it reaches parity.
-  const [view, setView] = useState<"timeline" | "list">("list");
+  // The timeline is now the primary view: it edits, resizes, re-ranks and
+  // deletes. The list is retained as a debugging surface and an
+  // accessibility fallback on very small screens, and is slated for
+  // removal once the timeline is confirmed to cover both.
+  const [view, setView] = useState<"timeline" | "list">("timeline");
   // Deleting a recurring event is ambiguous -- this occurrence, or all of
   // them? Rather than guess, hold the pending delete until the person says.
   const [pendingDelete, setPendingDelete] = useState<{
@@ -208,6 +210,21 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     }
   }
 
+  /** Persists a change to one event. Shared by timeline dragging and the
+   * edit panel so both go through the same validation and refresh path. */
+  async function handleChangeEvent(eventId: string, changes: Partial<DecryptedEvent>) {
+    const target = events.find((e) => e.id === eventId);
+    if (!target) return;
+    setError(null);
+    try {
+      const { id, canEdit, updatedAt, ...content } = { ...target, ...changes };
+      await updateEvent(session, eventId, content);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the change");
+    }
+  }
+
   async function handleDelete(id: string) {
     setPendingDelete(null);
     try {
@@ -255,7 +272,14 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       </div>
 
       {view === "timeline" && (
-        <Timeline events={events} onEditEvent={(id) => setSharingEventId(null) ?? setEditingId(id)} />
+        <Timeline
+          events={events}
+          onEditEvent={(id, origin) => {
+            setEditOrigin(origin);
+            setEditingId(id);
+          }}
+          onChangeEvent={handleChangeEvent}
+        />
       )}
 
       <button
@@ -442,14 +466,22 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         </ul>
       ) : null}
 
-      {editingId && (
-        <p className="share-status" role="status">
-          Editing panel for this event is coming next.{" "}
-          <button type="button" className="header-link" onClick={() => setEditingId(null)}>
-            Dismiss
-          </button>
-        </p>
-      )}
+      {editingId && (() => {
+        const editing = events.find((e) => e.id === editingId);
+        if (!editing) return null;
+        return (
+          <EventEditPanel
+            event={editing}
+            origin={editOrigin}
+            onSave={(changes) => handleChangeEvent(editingId, changes)}
+            onDelete={() => {
+              setEditingId(null);
+              void requestDelete(editing, new Date(editing.startTime));
+            }}
+            onClose={() => setEditingId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
