@@ -84,35 +84,46 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   const viewStart = useMemo(() => new Date(centre - (spanSeconds * 1000) / 2), [centre, spanSeconds]);
   const viewEnd = useMemo(() => new Date(centre + (spanSeconds * 1000) / 2), [centre, spanSeconds]);
 
+  /**
+   * Occurrences are grouped into one entry per event, so every repeat of a
+   * series shares a single lane rather than each occurrence competing for
+   * its own. A daily standup is one row, not thirty. Non-repeating events
+   * are simply series of one, which keeps a single rendering path.
+   */
   const placements = useMemo(() => {
-    // Ranks are assigned lazily so events created before fractional
-    // ordering still lay out deterministically.
-    const knownRanks = events.map((e) => e.rank).filter((r): r is string => Boolean(r));
-    let fallbackSeed = knownRanks;
-
     const withPreview = events.map((event) =>
       drag?.preview && drag.eventId === event.id ? { ...event, ...drag.preview } : event
     );
 
-    const occurrences = withPreview.flatMap((event) => {
-      let rank = event.rank;
-      if (!rank) {
-        rank = rankAtEnd(fallbackSeed);
-        fallbackSeed = [...fallbackSeed, rank];
-      }
-      return expandOccurrences(event, viewStart, viewEnd).map((occurrence, index) => ({
-        id: `${event.id}-${index}`,
-        event,
-        occurrence,
-        startMs: occurrence.start.getTime(),
-        endMs: occurrence.end ? occurrence.end.getTime() : null,
-        rank: rank!,
-      }));
-    });
+    const knownRanks = withPreview.map((e) => e.rank).filter((r): r is string => Boolean(r));
+    let fallbackSeed = knownRanks;
+
+    const series = withPreview
+      .map((event) => {
+        let rank = event.rank;
+        if (!rank) {
+          rank = rankAtEnd(fallbackSeed);
+          fallbackSeed = [...fallbackSeed, rank];
+        }
+        const occurrences = expandOccurrences(event, viewStart, viewEnd);
+        if (occurrences.length === 0) return null;
+
+        // The series occupies its lane from its first visible occurrence
+        // to its last, so nothing else can be laid into the gaps between
+        // repeats and break the single-row rule.
+        const startMs = Math.min(...occurrences.map((o) => o.start.getTime()));
+        const openEnded = occurrences.some((o) => o.end === null);
+        const endMs = openEnded
+          ? null
+          : Math.max(...occurrences.map((o) => o.end!.getTime()));
+
+        return { id: event.id, event, occurrences, startMs, endMs, rank: rank! };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
     const msPerPixel = (spanSeconds * 1000) / Math.max(1, viewportSize.width);
     const separation = LABEL_WIDTH_PX * msPerPixel;
-    return assignLanes(occurrences, viewEnd.getTime(), separation);
+    return assignLanes(series, viewEnd.getTime(), separation);
   }, [events, drag, viewStart, viewEnd, spanSeconds, viewportSize.width]);
 
   const lanes = laneCount(placements);
@@ -211,6 +222,20 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   }
 
   function handleZoom(factor: number) {
+    setSpanSeconds((current) => zoomSpan(current, factor));
+  }
+
+  /**
+   * Continuous zoom on the wheel: scrolling up zooms in, down zooms out.
+   * The factor is derived from the scroll magnitude so a trackpad's small
+   * increments feel smooth rather than stepping, and the exponential form
+   * keeps zooming perceptually even across nine orders of magnitude --
+   * a fixed additive step would crawl at one end and leap at the other.
+   */
+  function handleWheel(e: React.WheelEvent) {
+    if (e.deltaY === 0) return;
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.002);
     setSpanSeconds((current) => zoomSpan(current, factor));
   }
 
@@ -318,6 +343,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         ref={containerRef}
         tabIndex={0}
         aria-label="Timeline events"
+        onWheel={handleWheel}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
@@ -351,89 +377,106 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           )}
 
           {placements.map(({ item, lane }) => {
-            const startFraction = timeFraction(item.occurrence.start, viewStart, viewEnd);
-            const endFraction = item.occurrence.end
-              ? timeFraction(item.occurrence.end, viewStart, viewEnd)
-              : 1;
-            const rect = rectFor(
-              Math.max(0, Math.min(1, startFraction)),
-              Math.max(0, Math.min(1, endFraction)),
-              lane,
-              orientation,
-              viewport
-            );
-            const openEnded = item.occurrence.end === null;
+            const { event, occurrences } = item;
+            const openEnded = item.endMs === null;
 
             return (
               <div
-                key={item.id}
-                className={`event-modal${openEnded ? " event-modal-open-ended" : ""}${
-                  item.event.important ? " event-modal-important" : ""
-                }`}
-                style={{
-                  left: rect.left,
-                  top: rect.top,
-                  width: Math.max(rect.width, 2),
-                  height: Math.max(rect.height, 2),
-                }}
-                data-testid={`event-modal-${item.event.id}`}
+                key={event.id}
+                className={`event-series${event.important ? " event-series-important" : ""}`}
+                data-testid={`event-series-${event.id}`}
                 data-lane={lane}
+                data-occurrences={occurrences.length}
               >
-                {/* Background carries the fade; the label sits above it at
-                    full opacity so it stays readable and clickable at any
-                    depth. */}
-                <div
-                  className={`event-modal-fill fade-${orientation.base}${
-                    openEnded ? " fade-open-ended" : ""
-                  }`}
-                  aria-hidden="true"
-                />
-                {/* Edge handles resize; the body moves and re-ranks. Both
-                    are pointer-driven, so they work with touch as well. */}
-                {item.event.canEdit && (
-                  <>
-                    <span
-                      className="resize-handle resize-start"
-                      role="separator"
-                      aria-label={`Adjust start of ${item.event.title || "untitled event"}`}
-                      onPointerDown={(e) =>
-                        beginDrag(e, item.event, { kind: "resize", edge: "start" })
-                      }
-                    />
-                    <span
-                      className="resize-handle resize-end"
-                      role="separator"
-                      aria-label={`Adjust end of ${item.event.title || "untitled event"}`}
-                      onPointerDown={(e) =>
-                        beginDrag(e, item.event, { kind: "resize", edge: "end" })
-                      }
-                    />
-                  </>
-                )}
-                <button
-                  type="button"
-                  className="event-modal-label"
-                  onPointerDown={(e) => beginDrag(e, item.event, { kind: "move" })}
-                  onClick={(e) =>
-                    onEditEvent(item.event.id, (e.currentTarget as Element).getBoundingClientRect())
-                  }
-                >
-                  {item.event.important && (
-                    <>
-                      <span className="visually-hidden">Important: </span>
-                      <span aria-hidden="true" className="important-star">
-                        &#9733;
-                      </span>
-                    </>
-                  )}
-                  {/* An em-square target when there is no readable label,
-                      so a nameless or very narrow event is still clickable. */}
-                  {item.event.title?.trim() ? (
-                    <span className="event-modal-title">{item.event.title}</span>
-                  ) : (
-                    <span className="event-modal-square" aria-label="Untitled event" />
-                  )}
-                </button>
+                {occurrences.map((occurrence, index) => {
+                  const startFraction = timeFraction(occurrence.start, viewStart, viewEnd);
+                  const endFraction = occurrence.end
+                    ? timeFraction(occurrence.end, viewStart, viewEnd)
+                    : 1;
+                  const rect = rectFor(
+                    Math.max(0, Math.min(1, startFraction)),
+                    Math.max(0, Math.min(1, endFraction)),
+                    lane,
+                    orientation,
+                    viewport
+                  );
+                  // The name belongs to the series, not to each repeat, so
+                  // only the first visible occurrence carries it.
+                  const isFirst = index === 0;
+
+                  return (
+                    <div
+                      key={`${event.id}-${index}`}
+                      className={`event-modal${openEnded ? " event-modal-open-ended" : ""}${
+                        event.important ? " event-modal-important" : ""
+                      }${occurrence.skipped ? " event-modal-skipped" : ""}`}
+                      style={{
+                        left: rect.left,
+                        top: rect.top,
+                        width: Math.max(rect.width, 2),
+                        height: Math.max(rect.height, 2),
+                      }}
+                      data-testid={isFirst ? `event-modal-${event.id}` : undefined}
+                      data-lane={lane}
+                    >
+                      <div
+                        className={`event-modal-fill fade-${orientation.base}${
+                          openEnded ? " fade-open-ended" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+
+                      {event.canEdit && (
+                        <>
+                          <span
+                            className="resize-handle resize-start"
+                            role="separator"
+                            aria-label={`Adjust start of ${event.title || "untitled event"}`}
+                            onPointerDown={(e) =>
+                              beginDrag(e, event, { kind: "resize", edge: "start" })
+                            }
+                          />
+                          <span
+                            className="resize-handle resize-end"
+                            role="separator"
+                            aria-label={`Adjust end of ${event.title || "untitled event"}`}
+                            onPointerDown={(e) =>
+                              beginDrag(e, event, { kind: "resize", edge: "end" })
+                            }
+                          />
+                        </>
+                      )}
+
+                      {isFirst && (
+                        <button
+                          type="button"
+                          className="event-modal-label"
+                          onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
+                          onClick={(e) =>
+                            onEditEvent(
+                              event.id,
+                              (e.currentTarget as Element).getBoundingClientRect()
+                            )
+                          }
+                        >
+                          {event.important && (
+                            <>
+                              <span className="visually-hidden">Important: </span>
+                              <span aria-hidden="true" className="important-star">
+                                &#9733;
+                              </span>
+                            </>
+                          )}
+                          {event.title?.trim() ? (
+                            <span className="event-modal-title">{event.title}</span>
+                          ) : (
+                            <span className="event-modal-square" aria-label="Untitled event" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

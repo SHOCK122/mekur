@@ -1072,3 +1072,22 @@ button:disabled {
   gap: 0.5rem;
   margin-top: 0.35rem;
 }
+
+/* A series groups every repeat of one event, so they share a row. */
+.event-series {
+  display: contents;
+}
+
+.event-modal-skipped {
+  opacity: 0.5;
+}
+
+.event-modal-skipped .event-modal-fill {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--border),
+    var(--border) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}

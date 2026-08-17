@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Timeline } from "../src/components/Timeline.js";
 import type { DecryptedEvent } from "../src/lib/events.js";
@@ -207,5 +207,111 @@ describe("Timeline", () => {
     expect(screen.queryByLabelText(/^layout$/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /layout options/i }));
     expect(screen.getByLabelText(/^layout$/i)).toBeInTheDocument();
+  });
+
+  it("keeps every repeat of a series in one row rather than stacking them", () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            id: "daily",
+            title: "Standup",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 15 * 60 * 1000).toISOString(),
+            recurrence: { freq: "HOURLY", interval: 1 },
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    const series = screen.getByTestId("event-series-daily");
+    // Many occurrences within a day view...
+    expect(Number(series.getAttribute("data-occurrences"))).toBeGreaterThan(1);
+    // ...all sharing a single lane, because a repeating event is one row.
+    const lanes = new Set(
+      Array.from(series.querySelectorAll(".event-modal")).map((el) => el.getAttribute("data-lane"))
+    );
+    expect(lanes.size).toBe(1);
+  });
+
+  it("shows a repeating event's name only once", () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            id: "daily",
+            title: "Standup",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 15 * 60 * 1000).toISOString(),
+            recurrence: { freq: "HOURLY", interval: 1 },
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    // Repeating the label on every occurrence would be noise, and would
+    // also collide with itself at tight zoom levels.
+    expect(screen.getAllByText("Standup")).toHaveLength(1);
+  });
+
+  it("wraps a non-repeating event in its own single-occurrence series", () => {
+    render(<Timeline events={[makeEvent()]} onEditEvent={() => {}} />);
+    const series = screen.getByTestId("event-series-e1");
+    expect(series.getAttribute("data-occurrences")).toBe("1");
+  });
+
+  it("does not let another event occupy the gaps between repeats", () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            id: "daily",
+            title: "Standup",
+            rank: "A",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 15 * 60 * 1000).toISOString(),
+            recurrence: { freq: "HOURLY", interval: 1 },
+          }),
+          makeEvent({
+            id: "other",
+            title: "Other",
+            rank: "B",
+            // Lands in a gap between two repeats.
+            startTime: new Date(start.getTime() + 30 * 60 * 1000).toISOString(),
+            endTime: new Date(start.getTime() + 40 * 60 * 1000).toISOString(),
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    const seriesLane = screen.getByTestId("event-series-daily").getAttribute("data-lane");
+    const otherLane = screen.getByTestId("event-series-other").getAttribute("data-lane");
+    // The series holds its row across the whole span it covers.
+    expect(otherLane).not.toBe(seriesLane);
+  });
+
+  it("zooms continuously on the wheel: up zooms in, down zooms out", () => {
+    render(<Timeline events={[]} onEditEvent={() => {}} />);
+    const viewport = screen.getByLabelText("Timeline events");
+    expect(screen.getByText("1 day")).toBeInTheDocument();
+
+    // Scrolling down (positive deltaY) zooms out.
+    fireEvent.wheel(viewport, { deltaY: 400 });
+    expect(screen.queryByText("1 day")).not.toBeInTheDocument();
+
+    // Scrolling up brings it back in.
+    fireEvent.wheel(viewport, { deltaY: -400 });
+    expect(screen.getByText("1 day")).toBeInTheDocument();
+  });
+
+  it("zooms by small amounts for small scrolls, so a trackpad feels smooth", () => {
+    render(<Timeline events={[]} onEditEvent={() => {}} />);
+    const viewport = screen.getByLabelText("Timeline events");
+    // A tiny scroll should not jump a whole scale step.
+    fireEvent.wheel(viewport, { deltaY: 5 });
+    expect(screen.getByText("1 day")).toBeInTheDocument();
   });
 });
