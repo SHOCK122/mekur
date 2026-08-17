@@ -34,6 +34,15 @@ function formatDateTime(date: Date): string {
 const DISPLAY_WINDOW_PAST_DAYS = 30;
 const DISPLAY_WINDOW_FUTURE_DAYS = 90;
 
+/** Formats an instant for a datetime-local input, which wants local time
+ * with no zone suffix. Seconds included so "now" is exact. */
+function toLocalInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function Calendar({ session, onLogout }: CalendarProps) {
   const [events, setEvents] = useState<DecryptedEvent[]>(() => loadEventCache(session.userId) ?? []);
   const [loading, setLoading] = useState(true);
@@ -43,6 +52,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editOrigin, setEditOrigin] = useState<DOMRect | null>(null);
   const [showSkipped, setShowSkipped] = useState(false);
+  const [showViewOptions, setShowViewOptions] = useState(false);
   // The timeline is now the primary view: it edits, resizes, re-ranks and
   // deletes. The list is retained as a debugging surface and an
   // accessibility fallback on very small screens, and is slated for
@@ -57,7 +67,10 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   } | null>(null);
 
   const [title, setTitle] = useState("");
-  const [start, setStart] = useState("");
+  const [start, setStart] = useState(() => toLocalInput(new Date()));
+  // Tracks whether the person has edited the start field. Until they do,
+  // it follows the clock so a new event defaults to "right now".
+  const [startTouched, setStartTouched] = useState(false);
   const [end, setEnd] = useState("");
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [customInterval, setCustomInterval] = useState(1);
@@ -87,6 +100,12 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   }
 
   useEffect(() => {
+    if (startTouched) return;
+    const timer = setInterval(() => setStart(toLocalInput(new Date())), 1000);
+    return () => clearInterval(timer);
+  }, [startTouched]);
+
+  useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -107,11 +126,13 @@ export function Calendar({ session, onLogout }: CalendarProps) {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!title || !start || !end) return;
+    if (!title) return;
 
-    const startIso = new Date(start).toISOString();
-    const endIso = new Date(end).toISOString();
-    if (new Date(endIso) <= new Date(startIso)) {
+    // An event needs only a title: it starts now unless told otherwise,
+    // and may be open-ended.
+    const startIso = (start ? new Date(start) : new Date()).toISOString();
+    const endIso = end ? new Date(end).toISOString() : undefined;
+    if (endIso && new Date(endIso) <= new Date(startIso)) {
       setError("End time must be after the start time.");
       return;
     }
@@ -127,7 +148,8 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     try {
       await createEvent(session, newContent);
       setTitle("");
-      setStart("");
+      setStart(toLocalInput(new Date()));
+      setStartTouched(false);
       setEnd("");
       setRepeatEnabled(false);
       await refresh();
@@ -254,21 +276,33 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       )}
 
 
-      <div className="view-toggle" role="group" aria-label="View">
+      <div className="view-toggle">
         <button
           type="button"
-          className={view === "timeline" ? "tab active" : "tab"}
-          onClick={() => setView("timeline")}
+          className="header-link"
+          aria-expanded={showViewOptions}
+          onClick={() => setShowViewOptions((v) => !v)}
         >
-          Timeline
+          {showViewOptions ? "Hide view options" : "View options"}
         </button>
-        <button
-          type="button"
-          className={view === "list" ? "tab active" : "tab"}
-          onClick={() => setView("list")}
-        >
-          List
-        </button>
+        {showViewOptions && (
+          <div className="view-toggle-buttons" role="group" aria-label="View">
+            <button
+              type="button"
+              className={view === "timeline" ? "tab active" : "tab"}
+              onClick={() => setView("timeline")}
+            >
+              Timeline
+            </button>
+            <button
+              type="button"
+              className={view === "list" ? "tab active" : "tab"}
+              onClick={() => setView("list")}
+            >
+              List
+            </button>
+          </div>
+        )}
       </div>
 
       {view === "timeline" && (
@@ -302,17 +336,23 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         <div className="event-form-row">
           <input
             type="datetime-local"
+            step={1}
             value={start}
-            onChange={(e) => setStart(e.target.value)}
-            required
+            onChange={(e) => {
+              // Once touched, stop tracking the clock -- otherwise the
+              // field would overwrite whatever was just typed.
+              setStartTouched(true);
+              setStart(e.target.value);
+            }}
             aria-label="Start time"
           />
           <input
             type="datetime-local"
+            step={1}
             value={end}
             onChange={(e) => setEnd(e.target.value)}
-            required
-            aria-label="End time"
+            aria-label="End time (optional)"
+            placeholder="Optional"
           />
         </div>
 

@@ -827,7 +827,10 @@ button:disabled {
 .event-modal {
   position: absolute;
   border-radius: 4px;
-  overflow: hidden;
+  /* Visible, so a name can extend beyond a short event rather than being
+     truncated into uselessness. Lane assignment already reserves label
+     width, so extended names don't collide with other text. */
+  overflow: visible;
   z-index: 2;
 }
 
@@ -836,6 +839,9 @@ button:disabled {
   position: absolute;
   inset: 0;
   border-radius: 4px;
+  /* Clips itself so the gradient still ends at the event's real bounds
+     even though the modal no longer clips its children. */
+  overflow: hidden;
 }
 
 .fade-bottom {
@@ -861,7 +867,14 @@ button:disabled {
 }
 
 .event-modal-label {
-  position: relative;
+  position: absolute;
+  /* Anchored to the start corner. Combined with the minimum size below,
+     a very narrow event still presents a full em-square target rather
+     than a sliver too small to hit. */
+  top: 0;
+  left: 0;
+  min-width: 1em;
+  min-height: 1em;
   z-index: 1;
   background: none;
   color: var(--text);
@@ -870,9 +883,6 @@ button:disabled {
   padding: 0.15rem 0.35rem;
   text-align: left;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
   border-radius: 3px;
 }
 
@@ -1025,4 +1035,40 @@ button:disabled {
 .edit-delete:hover {
   background: none;
   text-decoration: underline;
+}
+
+/* The name anchors to the START edge, which flips with the layout. */
+.timeline-horizontal.direction-reverse .event-modal-label {
+  left: auto;
+  right: 0;
+  text-align: right;
+}
+
+.timeline-vertical.direction-reverse .event-modal-label {
+  top: auto;
+  bottom: 0;
+}
+
+/* Labels sit above the fills of neighbouring events so an extended name
+   stays readable where it overhangs. */
+.event-modal-label {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.timeline-controls-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.view-toggle-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
 }

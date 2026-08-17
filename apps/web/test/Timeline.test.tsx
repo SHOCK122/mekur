@@ -85,8 +85,10 @@ describe("Timeline", () => {
   it("offers all four layouts and keeps the base perpendicular to time", async () => {
     const user = userEvent.setup();
     render(<Timeline events={[makeEvent()]} onEditEvent={() => {}} />);
+    // Layout controls are behind a disclosure to keep the toolbar quiet.
+    await user.click(screen.getByRole("button", { name: /layout options/i }));
 
-    const layout = screen.getByLabelText(/layout/i);
+    const layout = screen.getByLabelText(/^layout$/i);
     const base = screen.getByLabelText(/^base$/i);
     // Horizontal offers bottom/top only.
     expect(within(base).getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -152,5 +154,58 @@ describe("Timeline", () => {
     );
     render(<Timeline events={many} onEditEvent={() => {}} />);
     expect(screen.getByRole("status")).toHaveTextContent(/more events stacked beyond the edge/i);
+  });
+
+  it("lets a long name extend beyond a short event rather than truncating it", () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            title: "A considerably longer event name than the block is wide",
+            startTime: start.toISOString(),
+            // Two minutes: far narrower than the label.
+            endTime: new Date(start.getTime() + 2 * 60 * 1000).toISOString(),
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    // The full name is rendered rather than truncated in markup; the
+    // overflow behaviour itself is CSS, which jsdom does not evaluate.
+    expect(screen.getByText(/considerably longer event name than the block is wide/i)).toBeInTheDocument();
+  });
+
+  it("keeps a minimum em-square hit area on a very narrow event", () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            title: "X",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 1000).toISOString(),
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    // A one-second event is a sliver, but the label is a real button
+    // rendered outside the clipped fill, so it stays hittable. The
+    // em-square minimum is enforced in CSS, which jsdom does not evaluate
+    // -- asserting on computed style here would test nothing.
+    const label = screen.getByText("X").closest("button")!;
+    expect(label).toBeInTheDocument();
+    expect(label.className).toContain("event-modal-label");
+    const fill = screen.getByTestId("event-modal-e1").querySelector(".event-modal-fill")!;
+    expect(fill.contains(label)).toBe(false);
+  });
+
+  it("keeps layout options behind a disclosure so the toolbar stays quiet", async () => {
+    const user = userEvent.setup();
+    render(<Timeline events={[]} onEditEvent={() => {}} />);
+    expect(screen.queryByLabelText(/^layout$/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /layout options/i }));
+    expect(screen.getByLabelText(/^layout$/i)).toBeInTheDocument();
   });
 });

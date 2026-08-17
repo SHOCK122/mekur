@@ -53,6 +53,7 @@ interface DragState {
 
 export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [showLayoutOptions, setShowLayoutOptions] = useState(false);
   const [orientation, setOrientation] = useState<Orientation>(DEFAULT_ORIENTATION);
   const [spanSeconds, setSpanSeconds] = useState(TIME_SCALES[DEFAULT_SCALE_INDEX]!.seconds);
   const [centre, setCentre] = useState(() => Date.now());
@@ -244,6 +245,18 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           </button>
         </div>
 
+        <button
+          type="button"
+          className="header-link"
+          aria-expanded={showLayoutOptions}
+          onClick={() => setShowLayoutOptions((v) => !v)}
+        >
+          {showLayoutOptions ? "Hide layout options" : "Layout options"}
+        </button>
+      </div>
+
+      {showLayoutOptions && (
+        <div className="timeline-controls-panel">
         <label className="inline-label">
           Layout
           <select
@@ -288,7 +301,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             ))}
           </select>
         </label>
-      </div>
+        </div>
+      )}
 
       {overflowing && (
         <p className="stack-overflow-note" role="status">
@@ -298,7 +312,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       )}
 
       <div
-        className={`timeline-viewport timeline-${orientation.axis} base-${orientation.base}${
+        className={`timeline-viewport timeline-${orientation.axis} direction-${orientation.direction} base-${orientation.base}${
           overflowing ? " timeline-scrollable" : ""
         }`}
         ref={containerRef}

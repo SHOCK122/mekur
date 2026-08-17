@@ -22,6 +22,8 @@ async function makeSession(): Promise<Session> {
 /** The timeline is the default view; these assertions target list-view
  * markup, so they switch explicitly. */
 function switchToListView() {
+  // The view toggle now lives behind a disclosure button.
+  fireEvent.click(screen.getByRole("button", { name: /view options/i }));
   fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
 }
 

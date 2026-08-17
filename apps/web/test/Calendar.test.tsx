@@ -11,6 +11,8 @@ import { saveEventCache } from "../src/lib/eventCache.js";
  * that the timeline handles editing. Switching explicitly keeps them
  * testing what they were written to test. */
 function switchToListView() {
+  // The view toggle now lives behind a disclosure button.
+  fireEvent.click(screen.getByRole("button", { name: /view options/i }));
   fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
 }
 
@@ -98,8 +100,12 @@ describe("Calendar", () => {
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
 
     await user.type(screen.getByPlaceholderText(/event title/i), "Check the oven");
-    await user.type(screen.getByLabelText(/start time/i), "2026-08-01T09:00");
-    await user.type(screen.getByLabelText(/end time/i), "2026-08-01T09:05");
+    // Start now carries a live default, and end is optional, so both are
+    // cleared before typing rather than appended to.
+    await user.clear(screen.getByLabelText(/start time/i));
+    await user.type(screen.getByLabelText(/start time/i), "2026-08-01T09:00:00");
+    await user.clear(screen.getByLabelText(/end time/i));
+    await user.type(screen.getByLabelText(/end time/i), "2026-08-01T09:05:00");
 
     // Repeat options are collapsed by default, revealed by the toggle button.
     expect(screen.queryByLabelText(/repeat interval/i)).not.toBeInTheDocument();
@@ -319,5 +325,39 @@ describe("Calendar", () => {
       expect(fetchMock.mock.calls.some((c) => c[1]?.method === "DELETE")).toBe(true)
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  }, 25_000);
+
+  it("creates an event from a title alone, defaulting the start to now and leaving it open-ended", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    const fetchMock = stubCapabilityServer(session);
+
+    const user = userEvent.setup();
+    render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
+    await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
+
+    // Neither a start nor an end is typed: a title should be enough.
+    await user.type(screen.getByPlaceholderText(/event title/i), "Just a thing");
+    await user.click(screen.getByRole("button", { name: /add event/i }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => c[0] === "/api/events" && c[1]?.method === "POST")).toBe(true)
+    );
+  }, 25_000);
+
+  it("pre-fills the start field with the current time", async () => {
+    const { encryptionKey } = await deriveAuthAndEncryptionKeys("pw");
+    const session = { userId: "u1", username: "ada", token: "t", encryptionKey, identityPublicKey: "pub", identitySecretKey: "sec" };
+    stubCapabilityServer(session);
+    render(<Calendar session={session} onLogout={() => {}} />);
+    switchToListView();
+
+    const startField = screen.getByLabelText(/start time/i) as HTMLInputElement;
+    // Defaulted to roughly now, rather than sitting empty and demanding
+    // input for the common case.
+    expect(startField.value).toBeTruthy();
+    const parsed = new Date(startField.value).getTime();
+    expect(Math.abs(parsed - Date.now())).toBeLessThan(60_000);
   }, 25_000);
 });

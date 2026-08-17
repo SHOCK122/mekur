@@ -35,6 +35,7 @@ describe("App", () => {
     );
     render(<App />);
     expect(screen.getByRole("heading", { name: /your schedule/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /view options/i }));
     fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
     await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
   });
