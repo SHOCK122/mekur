@@ -12,7 +12,7 @@ A user's own events are stored as an `EncryptedEnvelope`
 (`packages/shared/src/index.ts`): the server sees only an opaque ciphertext
 blob, a nonce, and a `keyId`. It never sees titles, times, locations, or
 descriptions. The key used is derived client-side from the user's
-password via scrypt (`packages/crypto/src/index.ts:deriveKeyFromPassword`)
+password via scrypt (`packages/crypto/src/index.ts:deriveAuthAndEncryptionKeys`)
 and never transmitted to the server.
 
 ### Group scheduling (phase 2+)

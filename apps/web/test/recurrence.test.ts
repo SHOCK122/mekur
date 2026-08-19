@@ -4,7 +4,37 @@ import {
   describeRecurrence,
   withSkippedOccurrence,
   withoutSkippedOccurrence,
+  buildRecurrenceRule,
 } from "../src/lib/recurrence.js";
+
+describe("buildRecurrenceRule", () => {
+  it("returns undefined when repeating isn't enabled", () => {
+    expect(buildRecurrenceRule(false, "DAILY", 1, "2026-08-26")).toBeUndefined();
+  });
+
+  it("includes an until date, converted to end-of-day ISO", () => {
+    // Regression test: this field used to be silently dropped -- the form
+    // captured it, but the object sent to the server never included it, so
+    // "repeat until" had no effect and the event repeated forever.
+    const rule = buildRecurrenceRule(true, "DAILY", 1, "2026-08-26");
+    expect(rule?.until).toBeDefined();
+    expect(new Date(rule!.until!).toISOString().startsWith("2026-08-2")).toBe(true);
+    // The whole picked day must still be included, not excluded by a
+    // midnight cutoff.
+    const untilDate = new Date(rule!.until!);
+    expect(untilDate.getTime()).toBeGreaterThan(new Date("2026-08-26T00:00:00.000Z").getTime());
+  });
+
+  it("omits until when no date was picked", () => {
+    const rule = buildRecurrenceRule(true, "WEEKLY", 2, "");
+    expect(rule).toEqual({ freq: "WEEKLY", interval: 2, until: undefined });
+  });
+
+  it("floors interval at 1 even if given 0 or negative", () => {
+    expect(buildRecurrenceRule(true, "DAILY", 0, "")?.interval).toBe(1);
+    expect(buildRecurrenceRule(true, "DAILY", -5, "")?.interval).toBe(1);
+  });
+});
 
 describe("expandOccurrences", () => {
   it("returns a single occurrence for a non-recurring event within range", () => {

@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { deriveAuthAndEncryptionKeys, encryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
+import {
+  deriveAuthAndEncryptionKeys,
+  encryptEnvelope,
+  deriveSharedWrapKey,
+  generateKeyPair,
+} from "@schedule-app/crypto";
 import { AppHeader } from "../src/components/AppHeader.js";
 import type { Session } from "../src/lib/session.js";
 
@@ -24,27 +29,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Builds an inbox message the way sendInvite would, self-addressed so the
- * test can decrypt it with the same session. */
+/** Builds an inbox message the way sendInvite actually packages one: a
+ * fresh ephemeral keypair wraps the key to the recipient's identity public
+ * key. Self-addressed here (session is both "sender" and recipient) purely
+ * for test convenience -- the crypto correctness for genuinely distinct
+ * sender/recipient keypairs is covered separately in sharing.test.ts. */
 function inviteMessage(overrides: Record<string, unknown> = {}) {
-  const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
+  const ephemeral = generateKeyPair();
+  const wrapKey = deriveSharedWrapKey(ephemeral.secretKey, session.identityPublicKey);
   return {
     id: "msg-1",
     createdAt: "2026-01-01T00:00:00.000Z",
-    envelope: encryptEnvelope(
-      {
-        kind: "event-invite",
-        eventId: "e1",
-        viewToken: "vt",
-        eventKey: "ek",
-        viaCode: false,
-        fromDisplayName: "Bob",
-        fromFriendCode: "BOBCODE1",
-        ...overrides,
-      },
-      wrapKey,
-      "invite"
-    ),
+    envelope: {
+      ephemeralPublicKey: ephemeral.publicKey,
+      payload: encryptEnvelope(
+        {
+          kind: "event-invite",
+          eventId: "e1",
+          viewToken: "vt",
+          eventKey: "ek",
+          viaCode: false,
+          fromDisplayName: "Bob",
+          fromFriendCode: "BOBCODE1",
+          ...overrides,
+        },
+        wrapKey,
+        "invite"
+      ),
+    },
   };
 }
 

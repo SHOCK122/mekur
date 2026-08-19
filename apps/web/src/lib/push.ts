@@ -1,11 +1,7 @@
-import { parseJsonOrThrow } from "./http.js";
+import { authHeaders, parseJsonOrThrow } from "./http.js";
 import type { Session } from "./session.js";
 
 const API_BASE = "/api";
-
-function authHeaders(session: Session) {
-  return { authorization: `Bearer ${session.token}` };
-}
 
 /** Converts a base64url VAPID public key into the Uint8Array shape
  * PushManager.subscribe() requires for applicationServerKey. The explicit
@@ -60,7 +56,7 @@ export async function enablePushNotifications(session: Session): Promise<void> {
   const json = subscription.toJSON();
   const response = await fetch(`${API_BASE}/push-subscriptions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
+    headers: authHeaders(session),
     body: JSON.stringify({
       endpoint: json.endpoint,
       keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
@@ -80,7 +76,7 @@ export async function disablePushNotifications(session: Session): Promise<void> 
 
   const response = await fetch(`${API_BASE}/push-subscriptions`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
+    headers: authHeaders(session),
     body: JSON.stringify({ endpoint }),
   });
   // 404 is fine here: the server may have already pruned this subscription

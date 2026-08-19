@@ -20,6 +20,29 @@ const WEEKDAY_MAP: Record<Weekday, RRuleWeekday> = {
   SU: RRule.SU,
 };
 
+/**
+ * Builds a RecurrenceRule from the create-event form's repeat controls, or
+ * undefined when repeating isn't enabled. Pulled out of Calendar.tsx so the
+ * "repeat until" -> RecurrenceRule.until conversion is unit-testable
+ * directly, rather than only observable through an encrypted request body.
+ */
+export function buildRecurrenceRule(
+  enabled: boolean,
+  freq: RecurrenceRule["freq"],
+  interval: number,
+  untilDate: string
+): RecurrenceRule | undefined {
+  if (!enabled) return undefined;
+  return {
+    freq,
+    interval: Math.max(1, interval),
+    // untilDate is a plain "YYYY-MM-DD" (no time picker in the UI); treat
+    // it as inclusive of the whole day rather than cutting off at local
+    // midnight, which would silently drop that day's occurrence.
+    until: untilDate ? new Date(`${untilDate}T23:59:59.999`).toISOString() : undefined,
+  };
+}
+
 export interface Occurrence {
   start: Date;
   /** Null for open-ended events. */

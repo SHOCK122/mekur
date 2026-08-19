@@ -1,5 +1,5 @@
 import { encryptEnvelope, decryptEnvelope, generateSymmetricKey } from "@schedule-app/crypto";
-import { parseJsonOrThrow } from "./http.js";
+import { authHeaders, parseJsonOrThrow } from "./http.js";
 import type { Session } from "./session.js";
 
 const API_BASE = "/api";
@@ -33,12 +33,10 @@ export interface Keyring {
   version: number;
 }
 
-function authHeaders(session: Session) {
-  return { authorization: `Bearer ${session.token}` };
-}
-
 export async function loadKeyring(session: Session): Promise<Keyring> {
-  const response = await fetch(`${API_BASE}/keyring`, { headers: authHeaders(session) });
+  const response = await fetch(`${API_BASE}/keyring`, {
+    headers: authHeaders(session, { hasBody: false }),
+  });
   const body = await parseJsonOrThrow(response);
   if (!body.keyring) return { entries: [], version: 0 };
   const decrypted = decryptEnvelope<{ entries: KeyringEntry[] }>(
@@ -56,7 +54,7 @@ async function writeKeyring(
   const envelope = encryptEnvelope({ entries }, session.encryptionKey, "keyring");
   const response = await fetch(`${API_BASE}/keyring`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
+    headers: authHeaders(session),
     body: JSON.stringify({ envelope, expectedVersion }),
   });
   if (response.status === 409) {

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { DecryptedEvent } from "../lib/events.js";
+import { validateEventTimes, type DecryptedEvent } from "../lib/events.js";
+import { toLocalInputValue } from "../lib/dateInput.js";
+import { getErrorMessage } from "../lib/http.js";
 
 interface EventEditPanelProps {
   event: DecryptedEvent;
@@ -9,17 +11,6 @@ interface EventEditPanelProps {
   onSave: (changes: Partial<DecryptedEvent>) => Promise<void> | void;
   onDelete: () => void;
   onClose: () => void;
-}
-
-/** Formats an instant for a datetime-local input, which expects local time
- * with no zone suffix. */
-function toLocalInput(iso: string | undefined): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
 }
 
 const ANIMATION_MS = 180;
@@ -32,8 +23,8 @@ export function EventEditPanel({
   onClose,
 }: EventEditPanelProps) {
   const [title, setTitle] = useState(event.title ?? "");
-  const [start, setStart] = useState(toLocalInput(event.startTime));
-  const [end, setEnd] = useState(toLocalInput(event.endTime));
+  const [start, setStart] = useState(toLocalInputValue(event.startTime));
+  const [end, setEnd] = useState(toLocalInputValue(event.endTime));
   const [important, setImportant] = useState(Boolean(event.important));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +32,21 @@ export function EventEditPanel({
   // finish so the panel visibly collapses back rather than vanishing.
   const [open, setOpen] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setOpen(true));
     // Focus moves into the panel so keyboard users aren't left behind on
-    // the timeline.
-    const focusTimer = setTimeout(() => titleRef.current?.focus(), ANIMATION_MS);
+    // the timeline -- but only if nothing inside the panel has already
+    // been focused by the time the animation finishes. Without this guard,
+    // a keyboard/fast typist who starts interacting with a different field
+    // (e.g. "Ends") before this timer fires gets their focus -- and
+    // whatever they were mid-typing -- yanked back to Title.
+    const focusTimer = setTimeout(() => {
+      if (!panelRef.current?.contains(document.activeElement)) {
+        titleRef.current?.focus();
+      }
+    }, ANIMATION_MS);
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(focusTimer);
@@ -81,8 +81,10 @@ export function EventEditPanel({
     }
     const startIso = new Date(start).toISOString();
     const endIso = end ? new Date(end).toISOString() : undefined;
-    if (endIso && new Date(endIso) <= new Date(startIso)) {
-      setError("End time must be after the start time.");
+    try {
+      validateEventTimes(startIso, endIso);
+    } catch (err) {
+      setError(getErrorMessage(err, "End time must be after the start time."));
       return;
     }
 
@@ -98,7 +100,7 @@ export function EventEditPanel({
       });
       requestClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the event");
+      setError(getErrorMessage(err, "Could not save the event"));
     } finally {
       setBusy(false);
     }
@@ -116,6 +118,7 @@ export function EventEditPanel({
   return (
     <div className={`edit-overlay${open ? " edit-overlay-open" : ""}`} onClick={requestClose}>
       <div
+        ref={panelRef}
         className={`edit-panel${open ? " edit-panel-open" : ""}`}
         style={originStyle}
         role="dialog"

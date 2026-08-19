@@ -9,7 +9,10 @@ import { z } from "zod";
 export const EncryptedEnvelopeSchema = z.object({
   v: z.literal(1), // envelope format version, for future crypto migration
   algo: z.literal("xchacha20poly1305"),
-  keyId: z.string().min(1), // identifies which key (user key or event key) encrypted this
+  // Identifies which key (user key or event key) encrypted this. Bounded
+  // for the same reason as nonce/ciphertext below: predictable worst-case
+  // row/response size.
+  keyId: z.string().min(1).max(256),
   nonce: z.string().min(1).max(128), // base64
   // Bounded so a client can't store arbitrarily large blobs. 128KB of
   // base64 is far beyond any realistic event's encrypted content while
@@ -30,20 +33,6 @@ export const UserPublicSchema = z.object({
   createdAt: z.string().datetime(),
 });
 export type UserPublic = z.infer<typeof UserPublicSchema>;
-
-/**
- * A stored event record, from the server's point of view: an opaque
- * encrypted blob owned by a user. The server cannot read start/end times,
- * titles, or any other content in phase 1 (single-user, no sharing yet).
- */
-export const EventRecordSchema = z.object({
-  id: z.string().uuid(),
-  ownerId: z.string().uuid(),
-  envelope: EncryptedEnvelopeSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-export type EventRecord = z.infer<typeof EventRecordSchema>;
 
 /**
  * A recurrence rule, modeled after the widely-used iCalendar RRULE
@@ -68,13 +57,18 @@ export type RecurrenceFrequency = z.infer<typeof RecurrenceFrequencySchema>;
 export const WeekdaySchema = z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
 export type Weekday = z.infer<typeof WeekdaySchema>;
 
-export const RecurrenceRuleSchema = z.object({
-  freq: RecurrenceFrequencySchema,
-  interval: z.number().int().positive().default(1), // e.g. every 37 minutes -> freq MINUTELY, interval 37
-  byDay: z.array(WeekdaySchema).optional(), // e.g. every weekday -> [MO,TU,WE,TH,FR]
-  count: z.number().int().positive().optional(), // stop after N occurrences
-  until: z.string().datetime().optional(), // stop after this date (mutually used with count, not both)
-});
+export const RecurrenceRuleSchema = z
+  .object({
+    freq: RecurrenceFrequencySchema,
+    interval: z.number().int().positive().default(1), // e.g. every 37 minutes -> freq MINUTELY, interval 37
+    byDay: z.array(WeekdaySchema).optional(), // e.g. every weekday -> [MO,TU,WE,TH,FR]
+    count: z.number().int().positive().optional(), // stop after N occurrences
+    until: z.string().datetime().optional(), // stop after this date
+  })
+  .refine((rule) => rule.count === undefined || rule.until === undefined, {
+    message: "count and until are mutually exclusive",
+    path: ["until"],
+  });
 export type RecurrenceRule = z.infer<typeof RecurrenceRuleSchema>;
 
 /** How important the user considers this event -- distinct from, and unrelated
@@ -132,87 +126,3 @@ export const EventContentSchema = z
     }
   );
 export type EventContent = z.infer<typeof EventContentSchema>;
-
-/**
- * Group scheduling: the organizer proposes candidate time slots, invites
- * participants (including themselves -- see GroupEventParticipantSchema),
- * and everyone votes. The server only ever sees opaque slot IDs and
- * ranks -- never the real times, title, or description, which live only
- * inside GroupEventContent, encrypted under a per-event key that's
- * wrapped individually to each participant (see docs/ARCHITECTURE.md and
- * packages/crypto's wrapKey/unwrapKey/deriveSharedWrapKey).
- */
-export const SlotSchema = z
-  .object({
-    startTime: z.string().datetime(),
-    endTime: z.string().datetime(),
-  })
-  .refine((slot) => new Date(slot.endTime) > new Date(slot.startTime), {
-    message: "endTime must be after startTime",
-    path: ["endTime"],
-  });
-export type Slot = z.infer<typeof SlotSchema>;
-
-/** The plaintext payload encrypted under the per-event key. Slot IDs here
- * are the same opaque strings the server tracks in the group_events row. */
-export const GroupEventContentSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(10_000).optional(),
-  location: z.string().max(500).optional(),
-  slots: z.record(z.string(), SlotSchema).refine((slots) => Object.keys(slots).length > 0, {
-    message: "at least one candidate slot is required",
-  }),
-});
-export type GroupEventContent = z.infer<typeof GroupEventContentSchema>;
-
-export const GroupEventStatusSchema = z.enum(["open", "resolved"]);
-export type GroupEventStatus = z.infer<typeof GroupEventStatusSchema>;
-
-/** One participant's wrapped copy of the event key. The organizer is a
- * participant of their own event too (self-wrapped), so there's no special
- * case for "am I the organizer" when fetching/decrypting -- everyone goes
- * through the same wrappedKey -> eventKey -> content pipeline. */
-export const GroupEventParticipantSchema = z.object({
-  userId: z.string().uuid(),
-  wrappedKey: EncryptedEnvelopeSchema,
-});
-export type GroupEventParticipant = z.infer<typeof GroupEventParticipantSchema>;
-
-/** One voter's ranking of the proposed slots (1 = most preferred). Ranks
- * need not be contiguous or cover every slot -- a voter can rank only the
- * slots they care about. */
-export const VoteRankingSchema = z.object({
-  slotId: z.string().min(1),
-  rank: z.number().int().positive(),
-});
-
-export const GroupEventRecordSchema = z.object({
-  id: z.string().uuid(),
-  organizerId: z.string().uuid(),
-  /** Denormalized onto the record so an invitee can derive the shared
-   * wrap key without a separate lookup -- it's already public information
-   * the server knows, and the invitee is already sharing an event with
-   * this organizer, so there's no new exposure in including it here. */
-  organizerPublicKey: z.string(),
-  slotIds: z.array(z.string()).min(1),
-  contentEnvelope: EncryptedEnvelopeSchema,
-  status: GroupEventStatusSchema,
-  resolvedSlotId: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  /** This requesting user's own wrapped copy of the event key. */
-  myWrappedKey: EncryptedEnvelopeSchema,
-  /** This requesting user's own current rankings, if they've voted. */
-  myVotes: z.array(VoteRankingSchema),
-});
-export type GroupEventRecord = z.infer<typeof GroupEventRecordSchema>;
-
-export const SubmitVotesRequestSchema = z.object({
-  rankings: z
-    .array(VoteRankingSchema)
-    .min(1)
-    .refine((rankings) => new Set(rankings.map((r) => r.slotId)).size === rankings.length, {
-      message: "duplicate slotId in rankings",
-    }),
-});
-export type SubmitVotesRequest = z.infer<typeof SubmitVotesRequestSchema>;

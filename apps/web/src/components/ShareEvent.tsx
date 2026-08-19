@@ -2,6 +2,7 @@ import { useState } from "react";
 import { resolveTag, sendInvite, getFriendCode } from "../lib/social.js";
 import { createShareCode } from "../lib/events.js";
 import { loadKeyring } from "../lib/keyring.js";
+import { getErrorMessage } from "../lib/http.js";
 import type { Session } from "../lib/session.js";
 
 interface ShareEventProps {
@@ -50,7 +51,7 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
       );
       setTag("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send the invitation");
+      setError(getErrorMessage(err, "Could not send the invitation"));
     } finally {
       setBusy(false);
     }
@@ -62,7 +63,7 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
     try {
       setShareCode(await createShareCode(session, eventId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create a code");
+      setError(getErrorMessage(err, "Could not create a code"));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,29 @@
+import type { Session } from "./session.js";
+
+/** `hasBody` matters: sending Content-Type: application/json with no body
+ * makes Fastify reject the request outright (FST_ERR_CTP_EMPTY_JSON_BODY),
+ * which is what broke DELETE. `capability` adds the per-event capability
+ * token header (see docs/ARCHITECTURE.md's capability model) when set. */
+export function authHeaders(
+  session: Session,
+  opts: { capability?: string; hasBody?: boolean } = {}
+): Record<string, string> {
+  const { capability, hasBody = true } = opts;
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${session.token}`,
+  };
+  if (hasBody) headers["Content-Type"] = "application/json";
+  if (capability) headers["x-event-capability"] = capability;
+  return headers;
+}
+
+/** Extracts a human-readable message from a caught value, falling back to a
+ * generic message for non-Error throws (e.g. a rejected promise with a
+ * string or object reason). */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 interface ZodIssueLike {
   path?: (string | number)[];
   message?: string;

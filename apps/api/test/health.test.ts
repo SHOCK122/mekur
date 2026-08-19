@@ -46,10 +46,10 @@ describe("GET /openapi.json", () => {
     const body = response.json();
     expect(body.openapi).toBe("3.0.3");
     expect(body.paths).toHaveProperty("/events");
+    expect(body.paths).toHaveProperty("/events/{id}");
     expect(body.paths).toHaveProperty("/users");
     expect(body.paths).toHaveProperty("/sessions");
-    expect(body.paths).toHaveProperty("/group-events");
-    expect(body.paths).toHaveProperty("/group-events/{id}/votes");
-    expect(body.paths).toHaveProperty("/group-events/{id}/resolve");
+    expect(body.paths).toHaveProperty("/keyring");
+    expect(body.paths).toHaveProperty("/inbox");
   });
 });

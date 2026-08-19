@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { register, login } from "../lib/api.js";
+import { getErrorMessage } from "../lib/http.js";
 import type { Session } from "../lib/session.js";
 
 interface AuthFormProps {
@@ -25,7 +26,7 @@ export function AuthForm({ onAuthenticated }: AuthFormProps) {
           : await login(username, password);
       onAuthenticated(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(getErrorMessage(err, "Something went wrong"));
     } finally {
       setBusy(false);
     }

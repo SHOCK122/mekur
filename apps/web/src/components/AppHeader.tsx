@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getErrorMessage } from "../lib/http.js";
 import {
   getFriendCode,
   rotateFriendCode,
@@ -38,9 +39,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
 
   async function refreshInvitations() {
     try {
-      // Sender public keys we might need to decrypt with. Own key included
-      // because an invite can be self-addressed during testing.
-      const found = await listInvitations(session, [session.identityPublicKey]);
+      const found = await listInvitations(session);
       setInvitations(found.filter((i) => !isBlocked(session.userId, i.payload.fromFriendCode)));
     } catch {
       // Inbox unavailable (offline, most likely) -- not worth an alarm.
@@ -59,7 +58,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
     try {
       setCode((await rotateFriendCode(session)).code);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not rotate your code");
+      setError(getErrorMessage(err, "Could not rotate your code"));
     } finally {
       setBusy(false);
     }
@@ -73,7 +72,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
       await refreshInvitations();
       onInvitationAccepted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not accept the invitation");
+      setError(getErrorMessage(err, "Could not accept the invitation"));
     } finally {
       setBusy(false);
     }
@@ -113,7 +112,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
       setJoinStatus("Event added to your schedule.");
       onInvitationAccepted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not use that code");
+      setError(getErrorMessage(err, "Could not use that code"));
     } finally {
       setBusy(false);
     }

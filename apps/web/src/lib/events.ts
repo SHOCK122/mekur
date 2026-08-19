@@ -1,6 +1,6 @@
 import { encryptEnvelope, decryptEnvelope } from "@schedule-app/crypto";
 import type { EventContent } from "@schedule-app/shared";
-import { parseJsonOrThrow } from "./http.js";
+import { authHeaders, parseJsonOrThrow } from "./http.js";
 import type { Session } from "./session.js";
 import {
   loadKeyring,
@@ -12,16 +12,13 @@ import {
 
 const API_BASE = "/api";
 
-/** `hasBody` matters: sending Content-Type: application/json with no body
- * makes Fastify reject the request outright (FST_ERR_CTP_EMPTY_JSON_BODY),
- * which is what broke DELETE. */
-function authHeaders(session: Session, capability?: string, hasBody = true) {
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${session.token}`,
-  };
-  if (hasBody) headers["Content-Type"] = "application/json";
-  if (capability) headers["x-event-capability"] = capability;
-  return headers;
+/** Shared by the create form and the edit panel so both enforce the same
+ * rule the server-side schema also enforces (see EventContentSchema in
+ * packages/shared): an event with an end time can't end before it starts. */
+export function validateEventTimes(startIso: string, endIso: string | undefined): void {
+  if (endIso && new Date(endIso) <= new Date(startIso)) {
+    throw new Error("End time must be after the start time.");
+  }
 }
 
 export interface DecryptedEvent extends EventContent {
@@ -119,7 +116,7 @@ export async function updateEvent(
   const envelope = encryptEnvelope(content, entry.eventKey, "event");
   const response = await fetch(`${API_BASE}/events/${eventId}`, {
     method: "PUT",
-    headers: authHeaders(session, entry.editToken),
+    headers: authHeaders(session, { capability: entry.editToken }),
     body: JSON.stringify({ envelope }),
   });
   await parseJsonOrThrow(response);
@@ -133,7 +130,7 @@ export async function deleteEvent(session: Session, eventId: string): Promise<vo
   }
   const response = await fetch(`${API_BASE}/events/${eventId}`, {
     method: "DELETE",
-    headers: authHeaders(session, entry.editToken, false),
+    headers: authHeaders(session, { capability: entry.editToken, hasBody: false }),
   });
   if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
   await removeKeyringEntry(session, eventId);
@@ -152,7 +149,7 @@ export async function mintJoinCode(
   }
   const response = await fetch(`${API_BASE}/events/${eventId}/capabilities`, {
     method: "POST",
-    headers: authHeaders(session, entry.editToken),
+    headers: authHeaders(session, { capability: entry.editToken }),
     body: JSON.stringify({ level, expiresAt }),
   });
   const body = await parseJsonOrThrow(response);
@@ -221,7 +218,7 @@ export async function redeemShareCode(session: Session, code: string): Promise<s
   // fails now with a clear message rather than appearing to succeed and
   // then silently producing an unreadable event.
   const response = await fetch(`${API_BASE}/events/${payload.eventId}`, {
-    headers: authHeaders(session, payload.viewToken, false),
+    headers: authHeaders(session, { capability: payload.viewToken, hasBody: false }),
   });
   if (!response.ok) {
     throw new Error("That code isn't valid, or the event is no longer shared.");

@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { deriveAuthAndEncryptionKeys, decryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
 import { encodeShareCode, decodeShareCode, createShareCode, redeemShareCode } from "../src/lib/events.js";
-import { sendInvite } from "../src/lib/social.js";
+import { sendInvite, listInvitations } from "../src/lib/social.js";
 import { loadKeyring } from "../src/lib/keyring.js";
 import { stubCapabilityServer } from "./mockServer.js";
 import type { Session } from "../src/lib/session.js";
+
+/** Decrypts an invite the way sendInvite packages it: the wrap key comes
+ * from the recipient's own identity secret plus the ephemeral public key
+ * the message carries, never from the sender's identity. */
+function decryptInviteBody(session: Session, body: { envelope: { ephemeralPublicKey: string; payload: unknown } }) {
+  const wrapKey = deriveSharedWrapKey(session.identitySecretKey, body.envelope.ephemeralPublicKey);
+  return decryptEnvelope<Record<string, unknown>>(body.envelope.payload as Parameters<typeof decryptEnvelope>[0], wrapKey);
+}
 
 let session: Session;
 
@@ -131,8 +139,7 @@ describe("sendInvite", () => {
     // Decrypt as the recipient would and confirm nothing identifies the
     // sender. Enforced at construction so the UI cannot leak it later.
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-    const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
-    const invite = decryptEnvelope<Record<string, unknown>>(body.envelope, wrapKey);
+    const invite = decryptInviteBody(session, body);
     expect(invite.fromDisplayName).toBeUndefined();
     expect(invite.fromUsername).toBeUndefined();
     expect(invite.fromFriendCode).toBeUndefined();
@@ -147,9 +154,63 @@ describe("sendInvite", () => {
       { eventId: "e1", viewToken: "vt", eventKey: "ek", fromDisplayName: "ada", fromFriendCode: "ADACODE1" }
     );
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-    const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
-    const invite = decryptEnvelope<Record<string, unknown>>(body.envelope, wrapKey);
+    const invite = decryptInviteBody(session, body);
     expect(invite.fromDisplayName).toBe("ada");
     expect(invite.fromFriendCode).toBe("ADACODE1");
+  }, 20_000);
+
+  it("lets a DIFFERENT recipient decrypt the invite using only their own key", async () => {
+    // Regression test for a real bug: sendInvite used to wrap the invite
+    // key with deriveSharedWrapKey(sender's secret, recipient's public),
+    // which only the sender (or someone who already knew the sender's
+    // public key) could reproduce. A genuine recipient -- who by design
+    // doesn't know the sender's identity in advance -- could never decrypt
+    // a real invite. Every existing test above sent to itself
+    // (target.publicKey === session.identityPublicKey), which hid this
+    // because sender and recipient were the same keypair. This test uses
+    // two distinct keypairs to catch that class of bug.
+    const bobKeys = await deriveAuthAndEncryptionKeys("bob-pw");
+    const bobSession: Session = {
+      userId: "u2",
+      username: "bob",
+      token: "t2",
+      encryptionKey: bobKeys.encryptionKey,
+      identityPublicKey: bobKeys.identityKeyPair.publicKey,
+      identitySecretKey: bobKeys.identityKeyPair.secretKey,
+    };
+
+    let delivered: { recipientId: string; envelope: unknown } | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === "/api/inbox/deliver") {
+          delivered = JSON.parse(init!.body as string);
+          return { ok: true, status: 204, json: async () => ({}) };
+        }
+        if (url === "/api/inbox") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              messages: delivered
+                ? [{ id: "msg-1", envelope: delivered.envelope, createdAt: "2026-01-01T00:00:00.000Z" }]
+                : [],
+            }),
+          };
+        }
+        throw new Error("unexpected " + url);
+      })
+    );
+
+    await sendInvite(
+      session, // alice (organizer), from the outer beforeEach
+      { userId: bobSession.userId, publicKey: bobSession.identityPublicKey, displayName: "Bob", viaCode: false },
+      { eventId: "e1", viewToken: "vt", eventKey: "ek", fromDisplayName: "ada" }
+    );
+
+    const invitations = await listInvitations(bobSession);
+    expect(invitations).toHaveLength(1);
+    expect(invitations[0]!.payload.eventId).toBe("e1");
+    expect(invitations[0]!.payload.fromDisplayName).toBe("ada");
   }, 20_000);
 });
