@@ -5,6 +5,7 @@ import {
   enablePushNotifications,
   disablePushNotifications,
 } from "../lib/push.js";
+import { getErrorMessage } from "../lib/http.js";
 import type { Session } from "../lib/session.js";
 
 interface NotificationToggleProps {
@@ -47,7 +48,7 @@ export function NotificationToggle({ session }: NotificationToggleProps) {
         setEnabled(true);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change notification settings");
+      setError(getErrorMessage(err, "Could not change notification settings"));
     } finally {
       setBusy(false);
     }

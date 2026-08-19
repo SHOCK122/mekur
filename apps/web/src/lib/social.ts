@@ -1,15 +1,9 @@
 import { encryptEnvelope, decryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
-import { parseJsonOrThrow } from "./http.js";
+import { authHeaders, parseJsonOrThrow } from "./http.js";
 import type { Session } from "./session.js";
 import { acceptSharedEvent } from "./events.js";
 
 const API_BASE = "/api";
-
-function headers(session: Session, hasBody = true) {
-  const h: Record<string, string> = { authorization: `Bearer ${session.token}` };
-  if (hasBody) h["Content-Type"] = "application/json";
-  return h;
-}
 
 export interface FriendCode {
   code: string;
@@ -17,14 +11,14 @@ export interface FriendCode {
 }
 
 export async function getFriendCode(session: Session): Promise<FriendCode> {
-  const response = await fetch(`${API_BASE}/friend-code`, { headers: headers(session, false) });
+  const response = await fetch(`${API_BASE}/friend-code`, { headers: authHeaders(session, { hasBody: false }) });
   return (await parseJsonOrThrow(response)).friendCode;
 }
 
 export async function rotateFriendCode(session: Session): Promise<FriendCode> {
   const response = await fetch(`${API_BASE}/friend-code/rotate`, {
     method: "POST",
-    headers: headers(session, false),
+    headers: authHeaders(session, { hasBody: false }),
   });
   return (await parseJsonOrThrow(response)).friendCode;
 }
@@ -42,7 +36,7 @@ export interface ResolvedTarget {
 export async function resolveTag(session: Session, tag: string): Promise<ResolvedTarget> {
   const response = await fetch(`${API_BASE}/tags/resolve`, {
     method: "POST",
-    headers: headers(session),
+    headers: authHeaders(session),
     body: JSON.stringify({ tag: tag.trim() }),
   });
   return (await parseJsonOrThrow(response)).target;
@@ -90,7 +84,7 @@ export async function sendInvite(
   const envelope = encryptEnvelope(invite, wrapKey, "invite");
   const response = await fetch(`${API_BASE}/inbox/deliver`, {
     method: "POST",
-    headers: headers(session),
+    headers: authHeaders(session),
     body: JSON.stringify({ recipientId: target.userId, envelope }),
   });
   if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
@@ -117,7 +111,7 @@ export async function listInvitations(
   session: Session,
   candidateSenderKeys: string[]
 ): Promise<Invitation[]> {
-  const response = await fetch(`${API_BASE}/inbox`, { headers: headers(session, false) });
+  const response = await fetch(`${API_BASE}/inbox`, { headers: authHeaders(session, { hasBody: false }) });
   const body = await parseJsonOrThrow(response);
   const invitations: Invitation[] = [];
 
@@ -159,7 +153,7 @@ export async function acceptInvitation(session: Session, invitation: Invitation)
 export async function dismissInvitation(session: Session, messageId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/inbox/${messageId}`, {
     method: "DELETE",
-    headers: headers(session, false),
+    headers: authHeaders(session, { hasBody: false }),
   });
   if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
 }

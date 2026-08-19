@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EventContent } from "@schedule-app/shared";
-import { listEvents, createEvent, updateEvent, deleteEvent, type DecryptedEvent } from "../lib/events.js";
+import {
+  listEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  validateEventTimes,
+  type DecryptedEvent,
+} from "../lib/events.js";
 import {
   expandOccurrences,
   describeRecurrence,
@@ -8,6 +15,8 @@ import {
   withoutSkippedOccurrence,
 } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
+import { toLocalInputValue } from "../lib/dateInput.js";
+import { getErrorMessage } from "../lib/http.js";
 import { NotificationToggle } from "./NotificationToggle.js";
 import { ShareEvent } from "./ShareEvent.js";
 import { Timeline } from "./Timeline.js";
@@ -34,14 +43,9 @@ function formatDateTime(date: Date): string {
 const DISPLAY_WINDOW_PAST_DAYS = 30;
 const DISPLAY_WINDOW_FUTURE_DAYS = 90;
 
-/** Formats an instant for a datetime-local input, which wants local time
- * with no zone suffix. Seconds included so "now" is exact. */
-function toLocalInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
+// "Now" is exact to the second so it stays current while the field is
+// still following the clock (see startTouched below).
+const toLocalInput = (date: Date) => toLocalInputValue(date, { seconds: true });
 
 export function Calendar({ session, onLogout }: CalendarProps) {
   const [events, setEvents] = useState<DecryptedEvent[]>(() => loadEventCache(session.userId) ?? []);
@@ -93,7 +97,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
         setEvents(cached);
         setOffline(true);
       } else {
-        setError(err instanceof Error ? err.message : "Could not load events");
+        setError(getErrorMessage(err, "Could not load events"));
       }
     } finally {
       setLoading(false);
@@ -133,8 +137,10 @@ export function Calendar({ session, onLogout }: CalendarProps) {
     // and may be open-ended.
     const startIso = (start ? new Date(start) : new Date()).toISOString();
     const endIso = end ? new Date(end).toISOString() : undefined;
-    if (endIso && new Date(endIso) <= new Date(startIso)) {
-      setError("End time must be after the start time.");
+    try {
+      validateEventTimes(startIso, endIso);
+    } catch (err) {
+      setError(getErrorMessage(err, "End time must be after the start time."));
       return;
     }
 
@@ -156,7 +162,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       setRepeatUntil("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create event");
+      setError(getErrorMessage(err, "Could not create event"));
     }
   }
 
@@ -173,7 +179,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       await updateEvent(session, id, { ...toContent(target), priority: target.priority + 1 });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update priority");
+      setError(getErrorMessage(err, "Could not update priority"));
     }
   }
 
@@ -189,7 +195,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       );
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update priority");
+      setError(getErrorMessage(err, "Could not update priority"));
     }
   }
 
@@ -215,7 +221,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not skip that occurrence");
+      setError(getErrorMessage(err, "Could not skip that occurrence"));
     }
   }
 
@@ -230,7 +236,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       });
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not restore that occurrence");
+      setError(getErrorMessage(err, "Could not restore that occurrence"));
     }
   }
 
@@ -245,7 +251,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       await updateEvent(session, eventId, content);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the change");
+      setError(getErrorMessage(err, "Could not save the change"));
     }
   }
 
@@ -255,7 +261,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       await deleteEvent(session, id);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete event");
+      setError(getErrorMessage(err, "Could not delete event"));
     }
   }
 

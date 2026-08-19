@@ -9,6 +9,11 @@ import type { EncryptedEnvelope } from "@schedule-app/shared";
 const NONCE_LENGTH = 24; // bytes, required by xchacha20poly1305
 const KEY_LENGTH = 32; // bytes, 256-bit symmetric key
 
+// scrypt cost params shared by every password-derived key in this module.
+// N is tuned for interactive login (~131k iterations-equivalent); revisit
+// against real low-end device timing per docs/ROADMAP.md.
+const SCRYPT_PARAMS = { N: 2 ** 17, r: 8, p: 1, dkLen: KEY_LENGTH } as const;
+
 /** Cross-environment base64 encode (works in Node and browsers). */
 export function toBase64(bytes: Uint8Array): string {
   if (typeof Buffer !== "undefined") {
@@ -46,30 +51,6 @@ export function generateKeyPair(): KeyPair {
   return { publicKey: toBase64(publicKey), secretKey: toBase64(secretKey) };
 }
 
-export interface DerivedKey {
-  key: string; // base64, 32-byte symmetric key
-  salt: string; // base64, must be stored to re-derive the same key later
-}
-
-/**
- * Derives a symmetric master key from a user's password using scrypt.
- * This happens entirely client-side; the password and derived key are
- * never transmitted to the server.
- */
-export async function deriveKeyFromPassword(
-  password: string,
-  salt?: Uint8Array
-): Promise<DerivedKey> {
-  const usedSalt = salt ?? randomBytes(16);
-  const key = await scryptAsync(password.normalize("NFKC"), usedSalt, {
-    N: 2 ** 17, // ~131k iterations-equivalent cost factor; tuned for interactive login
-    r: 8,
-    p: 1,
-    dkLen: KEY_LENGTH,
-  });
-  return { key: toBase64(key), salt: toBase64(usedSalt) };
-}
-
 /**
  * Derives three independent things from one password: an `authKey`
  * (proves knowledge of the password to the server during login), an
@@ -96,12 +77,7 @@ export async function deriveAuthAndEncryptionKeys(
   salt?: Uint8Array
 ): Promise<AuthAndEncryptionKeys> {
   const usedSalt = salt ?? randomBytes(16);
-  const master = await scryptAsync(password.normalize("NFKC"), usedSalt, {
-    N: 2 ** 17,
-    r: 8,
-    p: 1,
-    dkLen: 32,
-  });
+  const master = await scryptAsync(password.normalize("NFKC"), usedSalt, SCRYPT_PARAMS);
   const authKey = hkdf(sha256, master, usedSalt, "schedule-app:auth-key:v1", KEY_LENGTH);
   const encryptionKey = hkdf(
     sha256,
@@ -203,6 +179,9 @@ export function decryptEnvelope<T = unknown>(
     throw new Error(`Decryption key must be ${KEY_LENGTH} bytes`);
   }
   const nonce = fromBase64(envelope.nonce);
+  if (nonce.length !== NONCE_LENGTH) {
+    throw new Error(`Envelope nonce must be ${NONCE_LENGTH} bytes`);
+  }
   const ciphertext = fromBase64(envelope.ciphertext);
   const plaintext = xchacha20poly1305(key, nonce).decrypt(ciphertext);
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;

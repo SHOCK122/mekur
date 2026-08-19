@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   generateKeyPair,
-  deriveKeyFromPassword,
   deriveAuthAndEncryptionKeys,
   sha256Base64,
   generateSymmetricKey,
@@ -36,27 +35,6 @@ describe("generateKeyPair", () => {
     expect(a.secretKey).not.toEqual(b.secretKey);
   });
 });
-
-describe("deriveKeyFromPassword", () => {
-  it("derives the same key for the same password and salt", async () => {
-    const salt = randomBytes(16);
-    const a = await deriveKeyFromPassword("correct horse battery staple", salt);
-    const b = await deriveKeyFromPassword("correct horse battery staple", salt);
-    expect(a.key).toEqual(b.key);
-  });
-
-  it("derives a different key for a different password", async () => {
-    const salt = randomBytes(16);
-    const a = await deriveKeyFromPassword("password one", salt);
-    const b = await deriveKeyFromPassword("password two", salt);
-    expect(a.key).not.toEqual(b.key);
-  });
-
-  it("produces a 32-byte key", async () => {
-    const derived = await deriveKeyFromPassword("some password");
-    expect(fromBase64(derived.key)).toHaveLength(32);
-  });
-}, 20_000);
 
 describe("deriveAuthAndEncryptionKeys", () => {
   it("derives distinct authKey and encryptionKey from the same password", async () => {
@@ -192,32 +170,39 @@ describe("deriveSharedWrapKey / wrapKey / unwrapKey", () => {
 });
 
 describe("encryptEnvelope / decryptEnvelope", () => {
-  it("round-trips arbitrary JSON payloads", async () => {
-    const derived = await deriveKeyFromPassword("test password");
+  it("round-trips arbitrary JSON payloads", () => {
+    const key = generateSymmetricKey();
     const payload = { title: "Team sync", startTime: "2026-08-01T10:00:00.000Z" };
-    const envelope = encryptEnvelope(payload, derived.key, "user-key-1");
-    const decrypted = decryptEnvelope(envelope, derived.key);
+    const envelope = encryptEnvelope(payload, key, "user-key-1");
+    const decrypted = decryptEnvelope(envelope, key);
     expect(decrypted).toEqual(payload);
   });
 
-  it("fails to decrypt with the wrong key", async () => {
-    const derivedA = await deriveKeyFromPassword("password A");
-    const derivedB = await deriveKeyFromPassword("password B");
-    const envelope = encryptEnvelope({ secret: true }, derivedA.key, "user-key-1");
-    expect(() => decryptEnvelope(envelope, derivedB.key)).toThrow();
+  it("fails to decrypt with the wrong key", () => {
+    const keyA = generateSymmetricKey();
+    const keyB = generateSymmetricKey();
+    const envelope = encryptEnvelope({ secret: true }, keyA, "user-key-1");
+    expect(() => decryptEnvelope(envelope, keyB)).toThrow();
   });
 
-  it("fails to decrypt if ciphertext is tampered with", async () => {
-    const derived = await deriveKeyFromPassword("test password");
-    const envelope = encryptEnvelope({ secret: true }, derived.key, "user-key-1");
+  it("fails to decrypt if ciphertext is tampered with", () => {
+    const key = generateSymmetricKey();
+    const envelope = encryptEnvelope({ secret: true }, key, "user-key-1");
     const tampered = { ...envelope, ciphertext: toBase64(randomBytes(fromBase64(envelope.ciphertext).length)) };
-    expect(() => decryptEnvelope(tampered, derived.key)).toThrow();
+    expect(() => decryptEnvelope(tampered, key)).toThrow();
   });
 
-  it("never leaks plaintext into the envelope's serialized form", async () => {
-    const derived = await deriveKeyFromPassword("test password");
+  it("never leaks plaintext into the envelope's serialized form", () => {
+    const key = generateSymmetricKey();
     const secretMarker = "MY_SECRET_MARKER_VALUE";
-    const envelope = encryptEnvelope({ note: secretMarker }, derived.key, "user-key-1");
+    const envelope = encryptEnvelope({ note: secretMarker }, key, "user-key-1");
     expect(JSON.stringify(envelope)).not.toContain(secretMarker);
   });
-}, 20_000);
+
+  it("rejects an envelope whose nonce is the wrong length", () => {
+    const key = generateSymmetricKey();
+    const envelope = encryptEnvelope({ secret: true }, key, "user-key-1");
+    const tampered = { ...envelope, nonce: toBase64(randomBytes(12)) };
+    expect(() => decryptEnvelope(tampered, key)).toThrow(/nonce must be/);
+  });
+});
