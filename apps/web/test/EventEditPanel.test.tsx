@@ -26,6 +26,26 @@ describe("EventEditPanel", () => {
     expect(screen.getByLabelText(/title/i)).toHaveValue("Standup");
   });
 
+  it("does not steal focus from a field the user already moved to", async () => {
+    // Regression test: the panel used to unconditionally move focus to
+    // Title 180ms after opening (an accessibility affordance for keyboard
+    // users), with no check for whether the user had already moved focus
+    // elsewhere. A person who tabbed or clicked into a different field
+    // before that timer fired -- or was mid-keystroke typing into one --
+    // had their focus (and in-progress input) yanked back to Title.
+    render(
+      <EventEditPanel event={makeEvent()} onSave={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />
+    );
+    const endsField = screen.getByLabelText(/ends/i);
+    endsField.focus();
+    expect(document.activeElement).toBe(endsField);
+
+    // Wait past the panel's open-animation focus timer (180ms).
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(document.activeElement).toBe(endsField);
+  }, 15_000);
+
   it("saves edited values", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -64,8 +84,19 @@ describe("EventEditPanel", () => {
       <EventEditPanel event={makeEvent()} onSave={onSave} onDelete={vi.fn()} onClose={vi.fn()} />
     );
 
+    // Derived from whatever the "starts" field actually renders (local
+    // time), rather than a hardcoded clock time: the fixture's startTime is
+    // a UTC string, so a hardcoded local time only lands "before" it by
+    // coincidence of the machine's timezone. This used to pass only under
+    // UTC (e.g. CI) and silently fail on any other local timezone.
+    const startField = screen.getByLabelText(/starts/i) as HTMLInputElement;
+    const before = new Date(startField.value);
+    before.setMinutes(before.getMinutes() - 30);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const beforeLocal = `${before.getFullYear()}-${pad(before.getMonth() + 1)}-${pad(before.getDate())}T${pad(before.getHours())}:${pad(before.getMinutes())}`;
+
     await user.clear(screen.getByLabelText(/ends/i));
-    await user.type(screen.getByLabelText(/ends/i), "2026-08-01T08:00");
+    await user.type(screen.getByLabelText(/ends/i), beforeLocal);
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/must be after/i);

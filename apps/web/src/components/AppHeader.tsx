@@ -39,9 +39,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
 
   async function refreshInvitations() {
     try {
-      // Sender public keys we might need to decrypt with. Own key included
-      // because an invite can be self-addressed during testing.
-      const found = await listInvitations(session, [session.identityPublicKey]);
+      const found = await listInvitations(session);
       setInvitations(found.filter((i) => !isBlocked(session.userId, i.payload.fromFriendCode)));
     } catch {
       // Inbox unavailable (offline, most likely) -- not worth an alarm.

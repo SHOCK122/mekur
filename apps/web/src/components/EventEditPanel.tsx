@@ -32,12 +32,21 @@ export function EventEditPanel({
   // finish so the panel visibly collapses back rather than vanishing.
   const [open, setOpen] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setOpen(true));
     // Focus moves into the panel so keyboard users aren't left behind on
-    // the timeline.
-    const focusTimer = setTimeout(() => titleRef.current?.focus(), ANIMATION_MS);
+    // the timeline -- but only if nothing inside the panel has already
+    // been focused by the time the animation finishes. Without this guard,
+    // a keyboard/fast typist who starts interacting with a different field
+    // (e.g. "Ends") before this timer fires gets their focus -- and
+    // whatever they were mid-typing -- yanked back to Title.
+    const focusTimer = setTimeout(() => {
+      if (!panelRef.current?.contains(document.activeElement)) {
+        titleRef.current?.focus();
+      }
+    }, ANIMATION_MS);
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(focusTimer);
@@ -109,6 +118,7 @@ export function EventEditPanel({
   return (
     <div className={`edit-overlay${open ? " edit-overlay-open" : ""}`} onClick={requestClose}>
       <div
+        ref={panelRef}
         className={`edit-panel${open ? " edit-panel-open" : ""}`}
         style={originStyle}
         role="dialog"

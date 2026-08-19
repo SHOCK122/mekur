@@ -1,4 +1,4 @@
-import { encryptEnvelope, decryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
+import { encryptEnvelope, decryptEnvelope, deriveSharedWrapKey, generateKeyPair } from "@schedule-app/crypto";
 import { authHeaders, parseJsonOrThrow } from "./http.js";
 import type { Session } from "./session.js";
 import { acceptSharedEvent } from "./events.js";
@@ -61,16 +61,28 @@ export interface InvitePayload {
 }
 
 /**
- * Shares an event by delivering a capability to someone's inbox,
- * encrypted to their public key. The server relays an opaque blob and
- * records no sender.
+ * Shares an event by delivering a capability to someone's inbox, encrypted
+ * to their public key using a fresh ephemeral keypair (the same
+ * hybrid-encryption pattern noted in docs/ARCHITECTURE.md).
+ *
+ * This is deliberately NOT `deriveSharedWrapKey(session.identitySecretKey,
+ * target.publicKey)` -- that derives a key from the *sender's* persistent
+ * identity, which only the sender and someone who already knows the
+ * sender's public key can reproduce. The recipient has no way to learn an
+ * unknown sender's public key in advance (that's the whole point of the
+ * capability model's inbox), so a message "encrypted to the sender" is
+ * undecryptable by anyone but the sender themselves. Using a one-off
+ * ephemeral keypair instead means the wrap key only ever depends on the
+ * recipient's own (persistent) key plus the ephemeral public key travelling
+ * alongside the ciphertext -- which the recipient always has both halves of.
  */
 export async function sendInvite(
   session: Session,
   target: ResolvedTarget,
   payload: Omit<InvitePayload, "kind" | "viaCode">
 ): Promise<void> {
-  const wrapKey = deriveSharedWrapKey(session.identitySecretKey, target.publicKey);
+  const ephemeral = generateKeyPair();
+  const wrapKey = deriveSharedWrapKey(ephemeral.secretKey, target.publicKey);
   const invite: InvitePayload = {
     kind: "event-invite",
     viaCode: target.viaCode,
@@ -81,11 +93,14 @@ export async function sendInvite(
     fromUsername: target.viaCode ? undefined : payload.fromUsername,
     fromFriendCode: target.viaCode ? undefined : payload.fromFriendCode,
   };
-  const envelope = encryptEnvelope(invite, wrapKey, "invite");
+  const payloadEnvelope = encryptEnvelope(invite, wrapKey, "invite");
   const response = await fetch(`${API_BASE}/inbox/deliver`, {
     method: "POST",
     headers: authHeaders(session),
-    body: JSON.stringify({ recipientId: target.userId, envelope }),
+    body: JSON.stringify({
+      recipientId: target.userId,
+      envelope: { ephemeralPublicKey: ephemeral.publicKey, payload: payloadEnvelope },
+    }),
   });
   if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
 }
@@ -94,47 +109,34 @@ export interface Invitation {
   messageId: string;
   payload: InvitePayload;
   receivedAt: string;
-  /** The sender's public key, needed to decrypt. Recovered by trying each
-   * known sender is impractical, so invites include it in the clear-ish
-   * outer layer via the sender's own ECDH -- see decryptInvite. */
-  senderPublicKey?: string;
 }
 
 /**
- * Reads the inbox. Each message is encrypted to this user's public key
- * using ECDH with the *sender's* key, so decryption needs the sender's
- * public key. Since the server records no sender, the client tries the
- * public keys it knows about; invites therefore include the sender's
- * public key inside a wrapper the recipient can always open.
+ * Reads the inbox and decrypts every message using the recipient's own
+ * identity key plus the ephemeral public key each message carries -- see
+ * sendInvite for why that's the only combination the recipient can always
+ * reproduce. Malformed or foreign-shaped messages are skipped rather than
+ * failing the whole list.
  */
-export async function listInvitations(
-  session: Session,
-  candidateSenderKeys: string[]
-): Promise<Invitation[]> {
+export async function listInvitations(session: Session): Promise<Invitation[]> {
   const response = await fetch(`${API_BASE}/inbox`, { headers: authHeaders(session, { hasBody: false }) });
   const body = await parseJsonOrThrow(response);
   const invitations: Invitation[] = [];
 
-  for (const message of body.messages as { id: string; envelope: unknown; createdAt: string }[]) {
-    for (const senderKey of candidateSenderKeys) {
-      try {
-        const wrapKey = deriveSharedWrapKey(session.identitySecretKey, senderKey);
-        const payload = decryptEnvelope<InvitePayload>(
-          message.envelope as Parameters<typeof decryptEnvelope>[0],
-          wrapKey
-        );
-        if (payload.kind === "event-invite") {
-          invitations.push({
-            messageId: message.id,
-            payload,
-            receivedAt: message.createdAt,
-            senderPublicKey: senderKey,
-          });
-        }
-        break;
-      } catch {
-        // Wrong sender key for this message; try the next.
+  type InboxMessage = {
+    id: string;
+    envelope: { ephemeralPublicKey: string; payload: Parameters<typeof decryptEnvelope>[0] };
+    createdAt: string;
+  };
+  for (const message of body.messages as InboxMessage[]) {
+    try {
+      const wrapKey = deriveSharedWrapKey(session.identitySecretKey, message.envelope.ephemeralPublicKey);
+      const payload = decryptEnvelope<InvitePayload>(message.envelope.payload, wrapKey);
+      if (payload.kind === "event-invite") {
+        invitations.push({ messageId: message.id, payload, receivedAt: message.createdAt });
       }
+    } catch {
+      // Malformed message, or not an event-invite this client understands.
     }
   }
   return invitations;

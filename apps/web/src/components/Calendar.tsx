@@ -13,6 +13,7 @@ import {
   describeRecurrence,
   withSkippedOccurrence,
   withoutSkippedOccurrence,
+  buildRecurrenceRule,
 } from "../lib/recurrence.js";
 import { loadEventCache, saveEventCache } from "../lib/eventCache.js";
 import { toLocalInputValue } from "../lib/dateInput.js";
@@ -149,7 +150,7 @@ export function Calendar({ session, onLogout }: CalendarProps) {
       startTime: startIso,
       endTime: endIso,
       priority: 0,
-      recurrence: repeatEnabled ? { freq: customUnit, interval: Math.max(1, customInterval) } : undefined,
+      recurrence: buildRecurrenceRule(repeatEnabled, customUnit, customInterval, repeatUntil),
     };
 
     try {
