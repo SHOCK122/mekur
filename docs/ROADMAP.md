@@ -190,9 +190,36 @@ worth of dead code and fixes what the model switch broke.
 
 ## Phase 8 -- Timeline completion & accessibility
 
-- [ ] **Keyboard alternatives for every drag** (WCAG 2.5.7): move, resize
-      and re-rank a focused event with arrow keys / modifier+arrows, with
-      the change announced via a live region.
+- [x] **Keyboard alternatives for every drag** (WCAG 2.5.7). On a
+      focused, editable event: arrows along the time axis move it,
+      Shift+arrows move its end, Alt+Shift+arrows its start, arrows across
+      the axis re-rank it (away from the base = higher priority). Keys
+      follow the orientation, so "later" is whichever arrow points the way
+      the event visibly travels. Each press is announced in a polite live
+      region, and the keys are described via `aria-describedby`.
+      - Step is the largest round unit <= ~1% of the visible span (15 min
+        on a day view, never under 1s).
+      - Presses preview immediately and are saved as **one** write once
+        the keys go quiet for 500ms (or on blur), so holding an arrow is
+        not dozens of encrypted round trips -- and later presses build on
+        the pending preview rather than a stale copy of the event.
+      - Re-ranking passes the next event the focused one actually
+        *overlaps* (label separation included, as in `assignLanes`);
+        passing a non-overlapping event would change nothing visible. The
+        new rank is placed against the passed event's global neighbour so
+        it can't tie with anything.
+      - Plain Alt is deliberately unused: Alt+Left/Right is browser
+        history navigation. Ctrl/Meta combinations are left to the
+        browser/OS.
+      - Simplification: there are no separately focusable resize handles
+        (that would be three tab stops per event); modifiers on the one
+        focusable label cover all three drags.
+      - Found while exercising it: moving an event entirely out of the
+        visible window unmounts its label, so keyboard focus is lost (the
+        pending change is still saved). Auto-panning to keep the focused
+        event in view is left open below.
+- [ ] Keep a keyboard-moved event in view: pan the timeline when a nudge
+      would carry the focused event off screen, instead of dropping focus.
 - [ ] Label collision: guarantee text never overlaps text, with overlapping
       modals separated by at least one text-height.
 - [ ] Clear affordance that the stack axis scrolls when lanes overflow.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   TIME_SCALES,
   DEFAULT_SCALE_INDEX,
@@ -21,7 +21,13 @@ import {
   resizeEvent,
   moveEvent,
   rankForLane,
+  keyboardAdjustment,
+  keyboardStepMs,
+  rankStep,
+  timeAxisKeys,
+  stackAxisKeys,
   type ResizeEdge,
+  type KeyboardAdjustment,
 } from "../lib/timelineInteraction.js";
 import type { EventContent } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
@@ -30,6 +36,9 @@ const LANE_SIZE = 28;
 /** Roughly the width a short label needs, used to stop two events that
  * merely look adjacent from putting their text in the same lane. */
 const LABEL_WIDTH_PX = 90;
+/** Keyboard nudges are saved once the keys go quiet for this long, so
+ * holding an arrow down is one encrypted write rather than dozens. */
+const KEYBOARD_COMMIT_DELAY_MS = 500;
 
 interface TimelineProps {
   events: DecryptedEvent[];
@@ -51,8 +60,28 @@ interface DragState {
   original: { startTime: string; endTime?: string };
   /** Preview of the change, applied visually before it is saved so the
    * drag feels immediate rather than waiting on a round trip. */
-  preview: { startTime: string; endTime?: string; rank?: string } | null;
+  preview: EventPreview | null;
 }
+
+interface EventPreview {
+  startTime: string;
+  endTime?: string;
+  rank?: string;
+}
+
+/** Keyboard changes not yet saved. Shown exactly like a drag preview. */
+interface Nudge {
+  eventId: string;
+  original: { startTime: string; endTime?: string };
+  preview: EventPreview;
+}
+
+const KEY_NAMES: Record<string, string> = {
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+};
 
 export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -67,6 +96,15 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   const [now, setNow] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 320 });
+  const [nudge, setNudge] = useState<Nudge | null>(null);
+  // The latest nudge and save callback, for the debounce timer, blur and
+  // unmount, which would otherwise see a stale render's values.
+  const nudgeRef = useRef<Nudge | null>(null);
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onChangeRef = useRef(onChangeEvent);
+  onChangeRef.current = onChangeEvent;
+  const [announcement, setAnnouncement] = useState("");
+  const keysHelpId = useId();
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -94,6 +132,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     return () => observer.disconnect();
   }, []);
 
+  // Save anything still pending if the timeline goes away mid-nudge.
+  useEffect(() => () => commitNudge(), []);
+
   const viewStart = useMemo(() => new Date(centre - (spanSeconds * 1000) / 2), [centre, spanSeconds]);
   const viewEnd = useMemo(() => new Date(centre + (spanSeconds * 1000) / 2), [centre, spanSeconds]);
 
@@ -103,10 +144,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * its own. A daily standup is one row, not thirty. Non-repeating events
    * are simply series of one, which keeps a single rendering path.
    */
+  const separation = LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, viewportSize.width));
   const placements = useMemo(() => {
-    const withPreview = events.map((event) =>
-      drag?.preview && drag.eventId === event.id ? { ...event, ...drag.preview } : event
-    );
+    const withPreview = events.map((event) => {
+      if (drag?.preview && drag.eventId === event.id) return { ...event, ...drag.preview };
+      if (nudge && nudge.eventId === event.id) return { ...event, ...nudge.preview };
+      return event;
+    });
 
     const knownRanks = withPreview.map((e) => e.rank).filter((r): r is string => Boolean(r));
     let fallbackSeed = knownRanks;
@@ -134,10 +178,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-    const msPerPixel = (spanSeconds * 1000) / Math.max(1, viewportSize.width);
-    const separation = LABEL_WIDTH_PX * msPerPixel;
     return assignLanes(series, viewEnd.getTime(), separation);
-  }, [events, drag, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+  }, [events, drag, nudge, viewStart, viewEnd, spanSeconds, viewportSize.width]);
 
   const lanes = laneCount(placements);
   const stackExtent = lanes * LANE_SIZE;
@@ -168,6 +210,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     if (!event.canEdit) return;
     e.preventDefault();
     e.stopPropagation();
+    commitNudge();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     setDrag({
       eventId: event.id,
@@ -260,6 +303,127 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     await onChangeEvent(eventId, preview);
   }
 
+  function updateNudge(next: Nudge | null) {
+    nudgeRef.current = next;
+    setNudge(next);
+  }
+
+  /** Saves the pending keyboard change, keeping it on screen until the
+   * save lands so the event doesn't flick back to where it was. */
+  function commitNudge() {
+    if (commitTimer.current) {
+      clearTimeout(commitTimer.current);
+      commitTimer.current = null;
+    }
+    const pending = nudgeRef.current;
+    if (!pending) return;
+    const { preview, original } = pending;
+    const save = onChangeRef.current;
+    const unchanged =
+      preview.startTime === original.startTime &&
+      preview.endTime === original.endTime &&
+      !preview.rank;
+    if (!save || unchanged) {
+      updateNudge(null);
+      return;
+    }
+    void Promise.resolve(save(pending.eventId, preview)).finally(() => {
+      // Further presses during the save replaced the nudge; those are
+      // still pending and must stay.
+      if (nudgeRef.current === pending) updateNudge(null);
+    });
+  }
+
+  /**
+   * The keyboard equivalent of every drag (WCAG 2.5.7): arrows along the
+   * time axis move the focused event, Shift moves its end, Alt+Shift its
+   * start, and arrows across the axis re-rank it. Changes preview at once,
+   * are announced, and are saved together once the keys go quiet.
+   */
+  function handleEventKeyDown(e: React.KeyboardEvent, event: DecryptedEvent) {
+    if (!event.canEdit || !onChangeEvent) return;
+    const adjustment = keyboardAdjustment(e.key, e, orientation);
+    if (!adjustment) return;
+    e.preventDefault();
+
+    if (nudgeRef.current && nudgeRef.current.eventId !== event.id) commitNudge();
+    const pending = nudgeRef.current;
+    const original = pending?.original ?? { startTime: event.startTime, endTime: event.endTime };
+    const current: EventPreview = pending?.preview ?? { ...original };
+    const name = event.title?.trim() || "Untitled event";
+
+    const next = applyAdjustment(adjustment, event, name, current);
+    if (!next) return;
+
+    updateNudge({ eventId: event.id, original, preview: next });
+    if (commitTimer.current) clearTimeout(commitTimer.current);
+    commitTimer.current = setTimeout(commitNudge, KEYBOARD_COMMIT_DELAY_MS);
+  }
+
+  /** The preview after one key press, announcing the result. Null when
+   * there was nothing to do. */
+  function applyAdjustment(
+    adjustment: KeyboardAdjustment,
+    event: DecryptedEvent,
+    name: string,
+    current: EventPreview
+  ): EventPreview | null {
+    const stepMs = keyboardStepMs(spanSeconds * 1000);
+    const format = (iso: string) =>
+      new Date(iso).toLocaleString(undefined, {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        ...(stepMs < 60_000 ? { second: "2-digit" } : {}),
+      });
+
+    if (adjustment.kind === "rank") {
+      const step = rankStep(
+        event.id,
+        adjustment.direction,
+        placements.map((p) => p.item),
+        viewEnd.getTime(),
+        separation
+      );
+      const raising = adjustment.direction === 1;
+      if (!step) {
+        setAnnouncement(
+          `${name} is already ${raising ? "above" : "below"} every event it overlaps.`
+        );
+        return null;
+      }
+      const other = step.past.event.title?.trim() || "untitled event";
+      setAnnouncement(`${name} ${raising ? "raised above" : "lowered below"} ${other}.`);
+      return { ...current, rank: step.rank };
+    }
+
+    const delta = adjustment.direction * stepMs;
+    if (adjustment.kind === "move") {
+      const moved = moveEvent(current, delta);
+      setAnnouncement(
+        `${name} moved to ${format(moved.startTime)}${
+          moved.endTime ? ` until ${format(moved.endTime)}` : ""
+        }.`
+      );
+      return { ...current, startTime: moved.startTime, endTime: moved.endTime ?? undefined };
+    }
+
+    const resized = resizeEvent(current, adjustment.edge, delta);
+    setAnnouncement(
+      adjustment.edge === "start"
+        ? `${name} starts ${format(resized.startTime)}.`
+        : `${name} ends ${format(resized.endTime!)}.`
+    );
+    return { ...current, startTime: resized.startTime, endTime: resized.endTime ?? undefined };
+  }
+
+  const [earlierKey, laterKey] = timeAxisKeys(orientation).map((k) => KEY_NAMES[k]);
+  const [towardKey, awayKey] = stackAxisKeys(orientation).map((k) => KEY_NAMES[k]);
+  const keysHelp =
+    `Arrow keys: ${laterKey} or ${earlierKey} moves the event later or earlier; ` +
+    `with Shift, changes its end; with Alt and Shift, changes its start. ` +
+    `${awayKey} or ${towardKey} raises or lowers its priority.`;
+
   function handleZoom(factor: number) {
     setSpanSeconds((current) => zoomSpan(current, factor));
   }
@@ -318,6 +482,17 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           {showLayoutOptions ? "Hide layout options" : "Layout options"}
         </button>
       </div>
+
+      <p id={keysHelpId} className="visually-hidden">
+        {keysHelp}
+      </p>
+      <p
+        className="visually-hidden"
+        aria-live="polite"
+        data-testid="timeline-announcer"
+      >
+        {announcement}
+      </p>
 
       {showLayoutOptions && (
         <div className="timeline-controls-panel">
@@ -493,7 +668,12 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                         <button
                           type="button"
                           className="event-modal-label"
+                          aria-describedby={
+                            event.canEdit && onChangeEvent ? keysHelpId : undefined
+                          }
                           onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
+                          onKeyDown={(e) => handleEventKeyDown(e, event)}
+                          onBlur={commitNudge}
                           onClick={(e) =>
                             onEditEvent(
                               event.id,

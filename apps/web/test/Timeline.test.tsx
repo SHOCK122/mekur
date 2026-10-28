@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Timeline } from "../src/components/Timeline.js";
 import type { DecryptedEvent } from "../src/lib/events.js";
@@ -347,5 +347,140 @@ describe("Timeline", () => {
   it("renders a live present indicator", () => {
     render(<Timeline events={[]} onEditEvent={() => {}} />);
     expect(screen.getByTestId("present-indicator")).toBeInTheDocument();
+  });
+  describe("keyboard alternatives to dragging", () => {
+    const MINUTE = 60_000;
+    // A day view steps by 15 minutes per press.
+    const STEP = 15 * MINUTE;
+
+    function label(name: string) {
+      return screen.getByRole("button", { name: new RegExp(name) });
+    }
+
+    it("moves a focused event with the arrow keys, saving the presses as one write", async () => {
+      const event = makeEvent();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.keyDown(button, { key: "ArrowLeft" });
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [id, changes] = onChange.mock.calls[0]!;
+      expect(id).toBe("e1");
+      expect(new Date(changes.startTime).getTime()).toBe(
+        new Date(event.startTime).getTime() + 2 * STEP
+      );
+      expect(new Date(changes.endTime).getTime()).toBe(
+        new Date(event.endTime!).getTime() + 2 * STEP
+      );
+    });
+
+    it("moves the end with Shift and the start with Alt+Shift", async () => {
+      const event = makeEvent();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight", shiftKey: true });
+      fireEvent.keyDown(button, { key: "ArrowLeft", shiftKey: true, altKey: true });
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const changes = onChange.mock.calls[0]![1];
+      expect(new Date(changes.startTime).getTime()).toBe(new Date(event.startTime).getTime() - STEP);
+      expect(new Date(changes.endTime).getTime()).toBe(new Date(event.endTime!).getTime() + STEP);
+    });
+
+    it("saves straight away when focus leaves the event", async () => {
+      const onChange = vi.fn();
+      render(<Timeline events={[makeEvent()]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.blur(button);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it("raises priority past an overlapping event, away from the base", async () => {
+      const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const onChange = vi.fn();
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "low", title: "Low", rank: "A", startTime: start }),
+            makeEvent({ id: "high", title: "High", rank: "Z", startTime: start }),
+          ]}
+          onEditEvent={() => {}}
+          onChangeEvent={onChange}
+        />
+      );
+      const button = label("Low");
+      button.focus();
+      // Base is at the bottom by default, so Up is away from it.
+      fireEvent.keyDown(button, { key: "ArrowUp" });
+
+      // Shown immediately, before the save.
+      const lowLane = Number(screen.getByTestId("event-modal-low").getAttribute("data-lane"));
+      const highLane = Number(screen.getByTestId("event-modal-high").getAttribute("data-lane"));
+      expect(lowLane).toBeGreaterThan(highLane);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      expect(onChange.mock.calls[0]![0]).toBe("low");
+      expect(onChange.mock.calls[0]![1].rank > "Z").toBe(true);
+    });
+
+    it("announces each change in a live region", () => {
+      const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "low", title: "Low", rank: "A", startTime: start }),
+            makeEvent({ id: "high", title: "High", rank: "Z", startTime: start }),
+          ]}
+          onEditEvent={() => {}}
+          onChangeEvent={() => {}}
+        />
+      );
+      const announcer = screen.getByTestId("timeline-announcer");
+      expect(announcer.getAttribute("aria-live")).toBe("polite");
+
+      const button = label("Low");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      expect(announcer.textContent).toMatch(/Low moved/);
+      fireEvent.keyDown(button, { key: "ArrowRight", shiftKey: true });
+      expect(announcer.textContent).toMatch(/Low ends/);
+      fireEvent.keyDown(button, { key: "ArrowUp" });
+      expect(announcer.textContent).toMatch(/Low raised above High/);
+      fireEvent.keyDown(button, { key: "ArrowUp" });
+      // Nothing left to pass: say so rather than staying silent.
+      expect(announcer.textContent).toMatch(/already/i);
+    });
+
+    it("describes the keys on every editable event", () => {
+      render(<Timeline events={[makeEvent()]} onEditEvent={() => {}} onChangeEvent={() => {}} />);
+      expect(label("Standup")).toHaveAccessibleDescription(/arrow/i);
+    });
+
+    it("leaves arrow keys alone on a view-only event", () => {
+      const onChange = vi.fn();
+      render(
+        <Timeline
+          events={[makeEvent({ canEdit: false })]}
+          onEditEvent={() => {}}
+          onChangeEvent={onChange}
+        />
+      );
+      const button = label("Standup");
+      expect(button).not.toHaveAccessibleDescription(/arrow/i);
+      button.focus();
+      // fireEvent returns false when the default was prevented.
+      expect(fireEvent.keyDown(button, { key: "ArrowRight" })).toBe(true);
+      fireEvent.blur(button);
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 });
