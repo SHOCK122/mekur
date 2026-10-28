@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { SealedEnvelopeSchema } from "@schedule-app/shared";
 import type { InboxRepository } from "../repositories/inboxRepository.js";
 import type { UserRepository } from "../repositories/userRepository.js";
 import type { NotificationService } from "../services/notificationService.js";
@@ -7,15 +8,17 @@ import { isValidUuid } from "../lib/params.js";
 
 const DeliverSchema = z.object({
   recipientId: z.string().uuid(),
-  envelope: z.unknown(),
+  envelope: SealedEnvelopeSchema,
 });
 
 /**
  * Capability delivery. Requests are authenticated so the endpoint is not an
  * open relay, but the sender's identity is deliberately NOT recorded
  * against the message -- doing so would rebuild the social graph the
- * capability model exists to avoid. If a sender wants to be known, they say
- * so inside the encrypted envelope.
+ * capability model exists to avoid. Envelopes are sealed with an ephemeral
+ * key (packages/crypto's sealToRecipient), so even the ciphertext carries
+ * nothing linking it to the sender; a sender who wants to be known proves
+ * it inside the encryption, to the recipient only.
  */
 export function registerInboxRoutes(
   app: FastifyInstance,

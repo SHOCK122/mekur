@@ -1,22 +1,26 @@
 import { useState } from "react";
-import { resolveTag, sendInvite, getFriendCode } from "../lib/social.js";
-import { createShareCode } from "../lib/events.js";
-import { loadKeyring } from "../lib/keyring.js";
+import { resolveTag, sendInvite, loadConnections } from "../lib/social.js";
+import { createShareCode, type DecryptedEvent } from "../lib/events.js";
+import { findEntry } from "../lib/keyring.js";
 import type { Session } from "../lib/session.js";
 
 interface ShareEventProps {
   session: Session;
-  eventId: string;
-  eventTitle: string;
+  event: DecryptedEvent;
   onClose: () => void;
 }
 
-export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEventProps) {
+export function ShareEvent({ session, event, onClose }: ShareEventProps) {
   const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [shareCode, setShareCode] = useState<string | null>(null);
+  // Saved connections become suggestions; they're the people you've chosen
+  // to keep, so they're the likeliest to invite.
+  const [suggestions] = useState(() =>
+    loadConnections(session.userId).filter((c) => c.state === "connected" && c.username)
+  );
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -25,27 +29,19 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
     setError(null);
     setStatus(null);
     try {
-      const target = await resolveTag(session, tag);
-      const keyring = await loadKeyring(session);
-      const entry = keyring.entries.find((k) => k.eventId === eventId);
+      const entry = await findEntry(session, event.id);
       if (!entry) throw new Error("You no longer have access to this event.");
-
-      // Include our own friend code only for named invites, so the
-      // recipient has something durable to connect to. An anonymous
-      // recipient gets nothing identifying -- sendInvite enforces that too.
-      const myCode = target.viaCode ? undefined : (await getFriendCode(session)).code;
-
+      const target = await resolveTag(session, tag);
+      // View access only: an invitee who should edit can be given an edit
+      // capability later, but over-granting can't be taken back.
       await sendInvite(session, target, {
-        eventId,
+        eventId: event.id,
         viewToken: entry.viewToken,
         eventKey: entry.eventKey,
-        fromDisplayName: session.username,
-        fromUsername: session.username,
-        fromFriendCode: myCode,
       });
       setStatus(
         target.viaCode
-          ? "Invitation sent. They won't see who you are."
+          ? "Invitation sent. Neither of you learns who the other is."
           : `Invitation sent to ${target.displayName}.`
       );
       setTag("");
@@ -60,7 +56,7 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
     setBusy(true);
     setError(null);
     try {
-      setShareCode(await createShareCode(session, eventId));
+      setShareCode(await createShareCode(session, event.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create a code");
     } finally {
@@ -69,8 +65,8 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
   }
 
   return (
-    <div className="share-panel">
-      <h3>Share &ldquo;{eventTitle}&rdquo;</h3>
+    <section className="share-panel" aria-label={`Share ${event.title}`}>
+      <h3>Share &ldquo;{event.title}&rdquo;</h3>
 
       <form onSubmit={handleInvite} className="share-form">
         <label className="inline-label">
@@ -78,12 +74,21 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
           <input
             value={tag}
             onChange={(e) => setTag(e.target.value)}
-            aria-label="Username or one-time code"
             placeholder="e.g. ada or ABCD2345"
+            list={suggestions.length > 0 ? "share-suggestions" : undefined}
           />
         </label>
+        {suggestions.length > 0 && (
+          <datalist id="share-suggestions">
+            {suggestions.map((c) => (
+              <option key={c.publicKey} value={c.username}>
+                {c.displayName}
+              </option>
+            ))}
+          </datalist>
+        )}
         <button type="submit" disabled={busy || !tag.trim()}>
-          {busy ? "Working\u2026" : "Send invitation"}
+          {busy ? "Working…" : "Send invitation"}
         </button>
       </form>
 
@@ -120,6 +125,6 @@ export function ShareEvent({ session, eventId, eventTitle, onClose }: ShareEvent
       <button type="button" className="header-link" onClick={onClose}>
         Done
       </button>
-    </div>
+    </section>
   );
 }

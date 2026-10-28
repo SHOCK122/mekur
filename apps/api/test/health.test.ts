@@ -30,9 +30,17 @@ describe("GET /health", () => {
 describe("GET /openapi.json", () => {
   let app: FastifyInstance;
   let db: Database;
+  const routes: { method: string; url: string }[] = [];
 
   beforeAll(async () => {
     ({ app, db } = await setupTestApp());
+    // Plugins load lazily on ready(), so a root-level hook added now still
+    // sees every route.
+    app.addHook("onRoute", (route) => {
+      const methods = Array.isArray(route.method) ? route.method : [route.method];
+      for (const method of methods) routes.push({ method: method.toLowerCase(), url: route.url });
+    });
+    await app.ready();
   });
 
   afterAll(async () => {
@@ -40,16 +48,27 @@ describe("GET /openapi.json", () => {
     await db.end();
   });
 
-  it("returns a valid-looking OpenAPI document describing the real routes", async () => {
+  it("documents every registered route, and nothing that doesn't exist", async () => {
     const response = await app.inject({ method: "GET", url: "/openapi.json" });
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.openapi).toBe("3.0.3");
-    expect(body.paths).toHaveProperty("/events");
-    expect(body.paths).toHaveProperty("/users");
-    expect(body.paths).toHaveProperty("/sessions");
-    expect(body.paths).toHaveProperty("/group-events");
-    expect(body.paths).toHaveProperty("/group-events/{id}/votes");
-    expect(body.paths).toHaveProperty("/group-events/{id}/resolve");
+
+    const toOpenApiPath = (url: string) => url.replace(/:(\w+)/g, "{$1}");
+    // /health and /openapi.json are registered synchronously in buildApp,
+    // before this hook exists.
+    const registered = new Set([
+      "get /health",
+      "get /openapi.json",
+      ...routes
+        .filter((r) => r.method !== "head" && r.method !== "options")
+        .map((r) => `${r.method} ${toOpenApiPath(r.url)}`),
+    ]);
+    const documented = new Set(
+      Object.entries(body.paths as Record<string, Record<string, unknown>>).flatMap(([path, ops]) =>
+        Object.keys(ops).map((method) => `${method} ${path}`)
+      )
+    );
+    expect([...documented].sort()).toEqual([...registered].sort());
   });
 });

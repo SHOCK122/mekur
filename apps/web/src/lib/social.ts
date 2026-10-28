@@ -1,15 +1,8 @@
-import { encryptEnvelope, decryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
-import { parseJsonOrThrow } from "./http.js";
+import { sealToRecipient, openSealed } from "@schedule-app/crypto";
+import type { SealedEnvelope } from "@schedule-app/shared";
+import { apiFetch } from "./http.js";
 import type { Session } from "./session.js";
 import { acceptSharedEvent } from "./events.js";
-
-const API_BASE = "/api";
-
-function headers(session: Session, hasBody = true) {
-  const h: Record<string, string> = { authorization: `Bearer ${session.token}` };
-  if (hasBody) h["Content-Type"] = "application/json";
-  return h;
-}
 
 export interface FriendCode {
   code: string;
@@ -17,16 +10,11 @@ export interface FriendCode {
 }
 
 export async function getFriendCode(session: Session): Promise<FriendCode> {
-  const response = await fetch(`${API_BASE}/friend-code`, { headers: headers(session, false) });
-  return (await parseJsonOrThrow(response)).friendCode;
+  return (await apiFetch(session, "/friend-code")).friendCode;
 }
 
 export async function rotateFriendCode(session: Session): Promise<FriendCode> {
-  const response = await fetch(`${API_BASE}/friend-code/rotate`, {
-    method: "POST",
-    headers: headers(session, false),
-  });
-  return (await parseJsonOrThrow(response)).friendCode;
+  return (await apiFetch(session, "/friend-code/rotate", { method: "POST" })).friendCode;
 }
 
 export interface ResolvedTarget {
@@ -34,22 +22,19 @@ export interface ResolvedTarget {
   publicKey: string;
   displayName: string;
   username?: string;
+  /** True when reached through a one-time code: the recipient stays
+   * anonymous to the sender, and the sender stays anonymous in return. */
   viaCode: boolean;
 }
 
 /** Resolves a username or one-time friend code to someone invitable.
  * Resolving a CODE consumes it, which is why this is a POST. */
 export async function resolveTag(session: Session, tag: string): Promise<ResolvedTarget> {
-  const response = await fetch(`${API_BASE}/tags/resolve`, {
-    method: "POST",
-    headers: headers(session),
-    body: JSON.stringify({ tag: tag.trim() }),
-  });
-  return (await parseJsonOrThrow(response)).target;
+  return (await apiFetch(session, "/tags/resolve", { method: "POST", body: { tag: tag.trim() } })).target;
 }
 
-/** What an invite carries, encrypted to the recipient. The capability and
- * the event key travel together -- without both the recipient can't read
+/** What an invite carries, sealed to the recipient. The capability and the
+ * event key travel together -- without both the recipient can't read
  * anything, and the server can read neither. */
 export interface InvitePayload {
   kind: "event-invite";
@@ -57,117 +42,111 @@ export interface InvitePayload {
   viewToken: string;
   editToken?: string;
   eventKey: string;
-  /** Who sent it. Present only for username invites: an anonymous code
-   * invite deliberately withholds this, and it is what lets the client
-   * decide whether to offer "add as connection". */
+  /** Self-described name, present only on named invites. Bound to the
+   * sender's verified key, but the *name* is whatever they chose to send. */
   fromDisplayName?: string;
   fromUsername?: string;
-  fromFriendCode?: string;
   viaCode: boolean;
 }
 
 /**
- * Shares an event by delivering a capability to someone's inbox,
- * encrypted to their public key. The server relays an opaque blob and
- * records no sender.
+ * Shares an event by sealing a capability to someone's public key and
+ * dropping it in their inbox. The server relays an opaque blob, records no
+ * sender, and -- because each envelope uses a fresh ephemeral key -- can't
+ * link two invites from the same person either.
+ *
+ * Named invites prove who sent them, inside the encryption, so the
+ * recipient can connect with or block a real identity. Invites to someone
+ * reached by one-time code stay anonymous both ways: that is the code's
+ * whole purpose.
  */
 export async function sendInvite(
   session: Session,
   target: ResolvedTarget,
-  payload: Omit<InvitePayload, "kind" | "viaCode">
+  capability: { eventId: string; viewToken: string; editToken?: string; eventKey: string }
 ): Promise<void> {
-  const wrapKey = deriveSharedWrapKey(session.identitySecretKey, target.publicKey);
   const invite: InvitePayload = {
     kind: "event-invite",
+    ...capability,
     viaCode: target.viaCode,
-    ...payload,
-    // Never disclose who sent it when the recipient was reached
-    // anonymously -- that is the whole purpose of a one-time code.
-    fromDisplayName: target.viaCode ? undefined : payload.fromDisplayName,
-    fromUsername: target.viaCode ? undefined : payload.fromUsername,
-    fromFriendCode: target.viaCode ? undefined : payload.fromFriendCode,
+    ...(target.viaCode ? {} : { fromDisplayName: session.username, fromUsername: session.username }),
   };
-  const envelope = encryptEnvelope(invite, wrapKey, "invite");
-  const response = await fetch(`${API_BASE}/inbox/deliver`, {
+  const sender = target.viaCode
+    ? undefined
+    : { publicKey: session.identityPublicKey, secretKey: session.identitySecretKey };
+  await apiFetch(session, "/inbox/deliver", {
     method: "POST",
-    headers: headers(session),
-    body: JSON.stringify({ recipientId: target.userId, envelope }),
+    body: { recipientId: target.userId, envelope: sealToRecipient(invite, target.publicKey, sender) },
   });
-  if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
 }
 
 export interface Invitation {
   messageId: string;
   payload: InvitePayload;
   receivedAt: string;
-  /** The sender's public key, needed to decrypt. Recovered by trying each
-   * known sender is impractical, so invites include it in the clear-ish
-   * outer layer via the sender's own ECDH -- see decryptInvite. */
-  senderPublicKey?: string;
+  /** The sender's *verified* public key, or null for an anonymous invite.
+   * This, not any name, is what connections and blocks are keyed by. */
+  senderPublicKey: string | null;
+}
+
+export interface Inbox {
+  invitations: Invitation[];
+  /** Messages that can never be opened: corrupt, a forged sender proof, or
+   * sealed to a stale key. Returned so the caller can delete them -- left
+   * in place they'd count toward the server's inbox cap forever. */
+  unreadable: string[];
 }
 
 /**
- * Reads the inbox. Each message is encrypted to this user's public key
- * using ECDH with the *sender's* key, so decryption needs the sender's
- * public key. Since the server records no sender, the client tries the
- * public keys it knows about; invites therefore include the sender's
- * public key inside a wrapper the recipient can always open.
+ * Reads the inbox. Every message is sealed to this account's public key, so
+ * it opens with our own secret key alone -- no need to know, or guess, who
+ * sent it. A message that fails to open is reported, not thrown, so one bad
+ * message can't break the whole list.
  */
-export async function listInvitations(
-  session: Session,
-  candidateSenderKeys: string[]
-): Promise<Invitation[]> {
-  const response = await fetch(`${API_BASE}/inbox`, { headers: headers(session, false) });
-  const body = await parseJsonOrThrow(response);
+export async function readInbox(session: Session): Promise<Inbox> {
+  const body = await apiFetch(session, "/inbox");
   const invitations: Invitation[] = [];
-
-  for (const message of body.messages as { id: string; envelope: unknown; createdAt: string }[]) {
-    for (const senderKey of candidateSenderKeys) {
-      try {
-        const wrapKey = deriveSharedWrapKey(session.identitySecretKey, senderKey);
-        const payload = decryptEnvelope<InvitePayload>(
-          message.envelope as Parameters<typeof decryptEnvelope>[0],
-          wrapKey
-        );
-        if (payload.kind === "event-invite") {
-          invitations.push({
-            messageId: message.id,
-            payload,
-            receivedAt: message.createdAt,
-            senderPublicKey: senderKey,
-          });
-        }
-        break;
-      } catch {
-        // Wrong sender key for this message; try the next.
+  const unreadable: string[] = [];
+  for (const message of body.messages as { id: string; envelope: SealedEnvelope; createdAt: string }[]) {
+    try {
+      const opened = openSealed<InvitePayload>(message.envelope, session.identitySecretKey);
+      if (opened.payload.kind !== "event-invite") {
+        unreadable.push(message.id);
+        continue;
       }
+      invitations.push({
+        messageId: message.id,
+        payload: opened.payload,
+        receivedAt: message.createdAt,
+        senderPublicKey: opened.senderPublicKey,
+      });
+    } catch {
+      unreadable.push(message.id);
     }
   }
-  return invitations;
+  return { invitations, unreadable };
 }
 
 export async function acceptInvitation(session: Session, invitation: Invitation): Promise<void> {
-  await acceptSharedEvent(session, {
-    eventId: invitation.payload.eventId,
-    viewToken: invitation.payload.viewToken,
-    editToken: invitation.payload.editToken,
-    eventKey: invitation.payload.eventKey,
-  });
+  const { eventId, viewToken, editToken, eventKey } = invitation.payload;
+  await acceptSharedEvent(session, { eventId, viewToken, editToken, eventKey });
   await dismissInvitation(session, invitation.messageId);
 }
 
 export async function dismissInvitation(session: Session, messageId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/inbox/${messageId}`, {
-    method: "DELETE",
-    headers: headers(session, false),
-  });
-  if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
+  await apiFetch(session, `/inbox/${messageId}`, { method: "DELETE" });
 }
 
-/** Connections and blocks live only on this device: the server cannot
- * filter for you without learning who contacts whom. */
+/**
+ * Connections and blocks live only on this device: the server cannot
+ * filter for you without learning who contacts whom.
+ *
+ * Keyed by the sender's verified public key. (They used to be keyed by the
+ * sender's friend code, which replaces itself the moment anyone uses it --
+ * so a block stopped working almost immediately.)
+ */
 export interface Connection {
-  friendCode: string;
+  publicKey: string;
   displayName: string;
   username?: string;
   state: "connected" | "blocked";
@@ -178,24 +157,25 @@ const CONNECTIONS_KEY = (userId: string) => `schedule-app:connections:${userId}`
 export function loadConnections(userId: string): Connection[] {
   try {
     const raw = localStorage.getItem(CONNECTIONS_KEY(userId));
-    return raw ? (JSON.parse(raw) as Connection[]) : [];
+    const parsed = raw ? (JSON.parse(raw) as Connection[]) : [];
+    // Entries from the friend-code era have no public key and can't match
+    // anything; drop them.
+    return parsed.filter((c) => typeof c.publicKey === "string");
   } catch {
     return [];
   }
 }
 
 export function saveConnection(userId: string, connection: Connection): void {
-  const existing = loadConnections(userId).filter((c) => c.friendCode !== connection.friendCode);
+  const others = loadConnections(userId).filter((c) => c.publicKey !== connection.publicKey);
   try {
-    localStorage.setItem(CONNECTIONS_KEY(userId), JSON.stringify([...existing, connection]));
+    localStorage.setItem(CONNECTIONS_KEY(userId), JSON.stringify([...others, connection]));
   } catch {
     // Storage failures must not break the app.
   }
 }
 
-export function isBlocked(userId: string, friendCode?: string): boolean {
-  if (!friendCode) return false;
-  return loadConnections(userId).some(
-    (c) => c.friendCode === friendCode && c.state === "blocked"
-  );
+export function findConnection(userId: string, publicKey: string | null): Connection | null {
+  if (!publicKey) return null;
+  return loadConnections(userId).find((c) => c.publicKey === publicKey) ?? null;
 }

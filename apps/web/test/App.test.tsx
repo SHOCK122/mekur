@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../src/App.js";
+import { stubCapabilityServer } from "./mockServer.js";
+import { testSession } from "./testSession.js";
 
 describe("App", () => {
   afterEach(() => {
@@ -24,19 +26,23 @@ describe("App", () => {
     expect(screen.getByLabelText(/display name/i)).toBeInTheDocument();
   });
 
-  it("shows the calendar once a session is present in localStorage", async () => {
-    localStorage.setItem(
-      "schedule-app:session",
-      JSON.stringify({ userId: "u1", username: "ada", token: "t", encryptionKey: "k" })
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ events: [] }) })
-    );
+  it("shows the schedule once a session is present, with a single sign-out", async () => {
+    const session = testSession();
+    localStorage.setItem("schedule-app:session", JSON.stringify(session));
+    stubCapabilityServer(session);
     render(<App />);
-    expect(screen.getByRole("heading", { name: /your schedule/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /view options/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^list$/i }));
-    await waitFor(() => expect(screen.getByText(/no events yet/i)).toBeInTheDocument());
+    expect(await screen.findByText(/no events yet/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /sign out/i })).toHaveLength(1);
+  });
+
+  it("signing out returns to the sign-in form", async () => {
+    const session = testSession();
+    localStorage.setItem("schedule-app:session", JSON.stringify(session));
+    stubCapabilityServer(session);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /sign out/i }));
+    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(localStorage.getItem("schedule-app:session")).toBeNull();
   });
 });

@@ -2,23 +2,36 @@ import { useEffect, useState } from "react";
 import {
   getFriendCode,
   rotateFriendCode,
-  listInvitations,
+  readInbox,
   acceptInvitation,
   dismissInvitation,
   saveConnection,
-  isBlocked,
+  findConnection,
   type Invitation,
 } from "../lib/social.js";
 import { redeemShareCode } from "../lib/events.js";
 import type { Session } from "../lib/session.js";
+import { NotificationToggle } from "./NotificationToggle.js";
 
 interface AppHeaderProps {
   session: Session;
   onLogout: () => void;
-  onInvitationAccepted: () => void;
+  /** Called after something was added to the schedule from here, so the
+   * owner can reload it. */
+  onEventsChanged: () => void;
 }
 
-export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeaderProps) {
+/** Who an invitation is from, as this person should see it. A saved
+ * connection's name wins over whatever name the sender put in the invite:
+ * the key is verified, the name in the invite is only self-described. */
+function senderLabel(session: Session, invitation: Invitation): string {
+  if (invitation.payload.viaCode || !invitation.senderPublicKey) return "Someone";
+  const known = findConnection(session.userId, invitation.senderPublicKey);
+  if (known) return known.displayName;
+  return invitation.payload.fromDisplayName ?? "Someone";
+}
+
+export function AppHeader({ session, onLogout, onEventsChanged }: AppHeaderProps) {
   const [code, setCode] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -38,10 +51,19 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
 
   async function refreshInvitations() {
     try {
-      // Sender public keys we might need to decrypt with. Own key included
-      // because an invite can be self-addressed during testing.
-      const found = await listInvitations(session, [session.identityPublicKey]);
-      setInvitations(found.filter((i) => !isBlocked(session.userId, i.payload.fromFriendCode)));
+      const { invitations: found, unreadable } = await readInbox(session);
+      // Blocking is enforced here, on the device: the server can't filter
+      // without learning who contacts whom.
+      const blocked = found.filter(
+        (i) => findConnection(session.userId, i.senderPublicKey)?.state === "blocked"
+      );
+      setInvitations(found.filter((i) => !blocked.includes(i)));
+      // Delete what will never be shown. Hidden messages still count toward
+      // the server's inbox cap, so leaving them would let a blocked sender
+      // (or garbage) push real invitations out of view.
+      await Promise.allSettled(
+        [...unreadable, ...blocked.map((i) => i.messageId)].map((id) => dismissInvitation(session, id))
+      );
     } catch {
       // Inbox unavailable (offline, most likely) -- not worth an alarm.
     }
@@ -71,7 +93,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
     try {
       await acceptInvitation(session, invitation);
       await refreshInvitations();
-      onInvitationAccepted();
+      onEventsChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not accept the invitation");
     } finally {
@@ -81,24 +103,28 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
 
   async function handleReject(invitation: Invitation) {
     setBusy(true);
+    setError(null);
     try {
       await dismissInvitation(session, invitation.messageId);
       await refreshInvitations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reject the invitation");
     } finally {
       setBusy(false);
     }
   }
 
-  function handleConnect(invitation: Invitation, state: "connected" | "blocked") {
-    const from = invitation.payload.fromFriendCode;
-    if (!from) return;
+  async function handleConnect(invitation: Invitation, state: "connected" | "blocked") {
+    if (!invitation.senderPublicKey) return;
     saveConnection(session.userId, {
-      friendCode: from,
+      publicKey: invitation.senderPublicKey,
       displayName: invitation.payload.fromDisplayName ?? "Unknown",
       username: invitation.payload.fromUsername,
       state,
     });
-    refreshInvitations();
+    // A block also discards what they sent: refreshInvitations deletes
+    // messages from blocked senders.
+    await refreshInvitations();
   }
 
   async function handleJoin(e: React.FormEvent) {
@@ -111,7 +137,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
       await redeemShareCode(session, joinCode);
       setJoinCode("");
       setJoinStatus("Event added to your schedule.");
-      onInvitationAccepted();
+      onEventsChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not use that code");
     } finally {
@@ -129,6 +155,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
       </div>
 
       <nav className="app-header-actions" aria-label="Account">
+        <NotificationToggle session={session} />
         <button
           type="button"
           className="header-link"
@@ -169,7 +196,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
           />
         </label>
         <button type="submit" disabled={busy || !joinCode.trim()}>
-          Add event
+          Join event
         </button>
       </form>
       {joinStatus && (
@@ -186,11 +213,7 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
           <ul>
             {invitations.map((invitation) => (
               <li key={invitation.messageId} className="invitation">
-                <span>
-                  {invitation.payload.viaCode
-                    ? "Someone invited you to an event"
-                    : `${invitation.payload.fromDisplayName ?? "Someone"} invited you to an event`}
-                </span>
+                <span>{senderLabel(session, invitation)} invited you to an event</span>
                 <div className="invitation-actions">
                   <button type="button" onClick={() => handleAccept(invitation)} disabled={busy}>
                     Accept
@@ -201,7 +224,9 @@ export function AppHeader({ session, onLogout, onInvitationAccepted }: AppHeader
                   {/* No connect or block option for an anonymous invite: the
                       code existed so that no lasting identity was exchanged,
                       and there is nothing stable to connect to or block. */}
-                  {!invitation.payload.viaCode && invitation.payload.fromFriendCode && (
+                  {!invitation.payload.viaCode &&
+                    invitation.senderPublicKey &&
+                    !findConnection(session.userId, invitation.senderPublicKey) && (
                     <>
                       <button
                         type="button"

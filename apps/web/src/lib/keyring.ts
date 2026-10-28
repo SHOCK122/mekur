@@ -1,8 +1,6 @@
 import { encryptEnvelope, decryptEnvelope, generateSymmetricKey } from "@schedule-app/crypto";
-import { parseJsonOrThrow } from "./http.js";
+import { apiFetch, ApiError } from "./http.js";
 import type { Session } from "./session.js";
-
-const API_BASE = "/api";
 
 /**
  * The keyring is the client-side index of which events this account can
@@ -33,39 +31,38 @@ export interface Keyring {
   version: number;
 }
 
-function authHeaders(session: Session) {
-  return { authorization: `Bearer ${session.token}` };
+/**
+ * The last keyring this tab loaded or wrote, keyed by session token so a
+ * sign-out/sign-in never serves one account's keyring to another. Reads
+ * that only need a token or key (editing, sharing) use it instead of
+ * re-downloading and re-decrypting the whole keyring every time. Writes
+ * always reload first, because the version check needs the server's copy.
+ */
+let cache: { token: string; keyring: Keyring } | null = null;
+
+export function clearKeyringCache(): void {
+  cache = null;
 }
 
+/** Fetches the keyring from the server. */
 export async function loadKeyring(session: Session): Promise<Keyring> {
-  const response = await fetch(`${API_BASE}/keyring`, { headers: authHeaders(session) });
-  const body = await parseJsonOrThrow(response);
-  if (!body.keyring) return { entries: [], version: 0 };
-  const decrypted = decryptEnvelope<{ entries: KeyringEntry[] }>(
-    body.keyring,
-    session.encryptionKey
-  );
-  return { entries: decrypted.entries ?? [], version: body.version };
+  const body = await apiFetch(session, "/keyring");
+  const keyring: Keyring = body.keyring
+    ? {
+        entries:
+          decryptEnvelope<{ entries: KeyringEntry[] }>(body.keyring, session.encryptionKey).entries ?? [],
+        version: body.version,
+      }
+    : { entries: [], version: 0 };
+  cache = { token: session.token, keyring };
+  return keyring;
 }
 
-async function writeKeyring(
-  session: Session,
-  entries: KeyringEntry[],
-  expectedVersion: number
-): Promise<number> {
-  const envelope = encryptEnvelope({ entries }, session.encryptionKey, "keyring");
-  const response = await fetch(`${API_BASE}/keyring`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
-    body: JSON.stringify({ envelope, expectedVersion }),
-  });
-  if (response.status === 409) {
-    const conflict = new Error("keyring-conflict");
-    conflict.name = "KeyringConflict";
-    throw conflict;
-  }
-  const body = await parseJsonOrThrow(response);
-  return body.version as number;
+/** This account's entry for an event, from the cached keyring if one is
+ * loaded. */
+export async function findEntry(session: Session, eventId: string): Promise<KeyringEntry | null> {
+  const keyring = cache?.token === session.token ? cache.keyring : await loadKeyring(session);
+  return keyring.entries.find((e) => e.eventId === eventId) ?? null;
 }
 
 /**
@@ -79,36 +76,43 @@ export async function mutateKeyring(
   mutate: (entries: KeyringEntry[]) => KeyringEntry[],
   attempts = 3
 ): Promise<KeyringEntry[]> {
-  let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const current = await loadKeyring(session);
-    const next = mutate(current.entries);
+    const entries = mutate(current.entries);
+    const envelope = encryptEnvelope({ entries }, session.encryptionKey, "keyring");
     try {
-      await writeKeyring(session, next, current.version);
-      return next;
+      const body = await apiFetch(session, "/keyring", {
+        method: "PUT",
+        body: { envelope, expectedVersion: current.version },
+      });
+      cache = { token: session.token, keyring: { entries, version: body.version } };
+      return entries;
     } catch (err) {
-      if ((err as Error).name !== "KeyringConflict") throw err;
-      lastError = err;
-      // Loop: reload and re-apply against whatever the other device wrote.
+      if (!(err instanceof ApiError && err.status === 409)) throw err;
+      // Another device wrote first: loop, reload, and re-apply on top of it.
     }
   }
-  throw lastError ?? new Error("Could not save your keyring after several attempts.");
+  throw new Error("Could not save your keyring after several attempts.");
 }
 
 export async function addKeyringEntry(
   session: Session,
   entry: Omit<KeyringEntry, "addedAt">
 ): Promise<void> {
-  await mutateKeyring(session, (entries) => [
+  await mutateKeyring(session, (entries) => {
     // Replace rather than duplicate if the same event arrives twice, e.g.
-    // an invite for something already held. Keep the stronger capability.
-    ...entries.filter((e) => e.eventId !== entry.eventId),
-    {
-      ...entry,
-      editToken: entry.editToken ?? entries.find((e) => e.eventId === entry.eventId)?.editToken,
-      addedAt: new Date().toISOString(),
-    },
-  ]);
+    // an invite for something already held -- but never downgrade: keep an
+    // edit token we already had.
+    const existing = entries.find((e) => e.eventId === entry.eventId);
+    return [
+      ...entries.filter((e) => e.eventId !== entry.eventId),
+      {
+        ...entry,
+        editToken: entry.editToken ?? existing?.editToken,
+        addedAt: existing?.addedAt ?? new Date().toISOString(),
+      },
+    ];
+  });
 }
 
 export async function removeKeyringEntry(session: Session, eventId: string): Promise<void> {

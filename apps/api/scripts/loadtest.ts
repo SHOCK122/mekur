@@ -101,9 +101,21 @@ async function main() {
     )
   );
 
+  // The server can't list "my events" -- reads present capabilities from
+  // the client's keyring. Measure a realistic keyring-sized batch.
+  const BATCH_SIZE = 100;
+  const capabilities: { eventId: string; token: string }[] = [];
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    const created = (await (
+      await fetch(`${BASE_URL}/events`, { method: "POST", headers: authHeaders, body: JSON.stringify({ envelope }) })
+    ).json()) as { event: { id: string }; viewToken: string };
+    capabilities.push({ eventId: created.event.id, token: created.viewToken });
+  }
+  const batchBody = JSON.stringify({ events: capabilities });
+
   report(
-    await runScenario("GET /events (authenticated read)", () =>
-      fetch(`${BASE_URL}/events`, { headers: authHeaders })
+    await runScenario(`POST /events/batch-read (${BATCH_SIZE} capabilities)`, () =>
+      fetch(`${BASE_URL}/events/batch-read`, { method: "POST", headers: authHeaders, body: batchBody })
     )
   );
 

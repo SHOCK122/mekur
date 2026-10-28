@@ -15,7 +15,7 @@ export interface NotificationServiceOptions {
 /**
  * Sends Web Push notifications. Payloads must stay generic -- the server
  * never has access to event titles/content (they're end-to-end encrypted),
- * so a notification can say "You've been invited to a group event" but
+ * so a notification can say "Someone shared an event with you" but
  * never the event's actual title. This is a natural consequence of the
  * encryption model, not an extra restriction bolted on here.
  */
@@ -29,7 +29,7 @@ export function createNotificationService(
     /** Sends to every device the user has subscribed. Never throws for an
      * individual failed delivery -- a dead/expired subscription is pruned
      * instead, and one failure doesn't block others (this is called for
-     * potentially many recipients, e.g. every invitee of a group event). */
+     * potentially many devices per recipient). */
     async notifyUser(userId: string, payload: NotificationPayload): Promise<void> {
       const subscriptions = await pushSubscriptions.listForUser(userId);
       await Promise.all(

@@ -1,40 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../src/db/pool.js";
-import { deriveAuthAndEncryptionKeys, generateKeyPair } from "@schedule-app/crypto";
-import { setupTestApp, truncateAll } from "./testHelpers.js";
-
-const ENVELOPE = {
-  v: 1,
-  algo: "xchacha20poly1305",
-  keyId: "k",
-  nonce: "bm9uY2U=",
-  ciphertext: "Y2lwaGVydGV4dA==",
-};
-
-async function registerUser(app: FastifyInstance, username: string) {
-  const keys = await deriveAuthAndEncryptionKeys("some strong password");
-  const { publicKey } = generateKeyPair();
-  const response = await app.inject({
-    method: "POST",
-    url: "/users",
-    payload: {
-      username,
-      displayName: username,
-      publicKey,
-      authKey: keys.authKey,
-      authSalt: keys.salt,
-    },
-  });
-  const body = response.json();
-  return { userId: body.user.id as string, token: body.token as string };
-}
-
-function auth(token: string, capability?: string) {
-  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-  if (capability) headers["x-event-capability"] = capability;
-  return headers;
-}
+import { setupTestApp, truncateAll, registerUser, auth, ENVELOPE, SEALED_ENVELOPE } from "./testHelpers.js";
 
 describe("capability-based events", () => {
   let app: FastifyInstance;
@@ -236,6 +203,45 @@ describe("capability-based events", () => {
     expect(ids).toEqual([mine.event.id]);
   }, 20_000);
 
+  it("batch-read omits revoked capabilities and de-duplicates repeated events", async () => {
+    const alice = await registerUser(app, "alice");
+    const created = await createEvent(alice.token);
+    const minted = await app.inject({
+      method: "POST",
+      url: `/events/${created.event.id}/capabilities`,
+      headers: auth(alice.token, created.editToken),
+      payload: { level: "view" },
+    });
+    const joinToken = minted.json().token as string;
+    await app.inject({
+      method: "POST",
+      url: `/events/${created.event.id}/capabilities/revoke`,
+      headers: auth(alice.token, created.editToken),
+      payload: { token: joinToken },
+    });
+
+    const revokedOnly = await app.inject({
+      method: "POST",
+      url: "/events/batch-read",
+      headers: auth(alice.token),
+      payload: { events: [{ eventId: created.event.id, token: joinToken }] },
+    });
+    expect(revokedOnly.json().events).toHaveLength(0);
+
+    const both = await app.inject({
+      method: "POST",
+      url: "/events/batch-read",
+      headers: auth(alice.token),
+      payload: {
+        events: [
+          { eventId: created.event.id, token: created.viewToken },
+          { eventId: created.event.id, token: created.editToken },
+        ],
+      },
+    });
+    expect(both.json().events).toHaveLength(1);
+  });
+
   it("accepts a DELETE that declares a JSON content-type but sends no body", async () => {
     // Regression: the client sent Content-Type: application/json on DELETE
     // with no body, and Fastify rejected it outright with
@@ -378,7 +384,7 @@ describe("inbox", () => {
       method: "POST",
       url: "/inbox/deliver",
       headers: auth(alice.token),
-      payload: { recipientId: bob.userId, envelope: ENVELOPE },
+      payload: { recipientId: bob.userId, envelope: SEALED_ENVELOPE },
     });
     expect(delivered.statusCode).toBe(204);
 
@@ -401,7 +407,7 @@ describe("inbox", () => {
       method: "POST",
       url: "/inbox/deliver",
       headers: auth(alice.token),
-      payload: { recipientId: bob.userId, envelope: ENVELOPE },
+      payload: { recipientId: bob.userId, envelope: SEALED_ENVELOPE },
     });
 
     // Inspect the raw row: nothing in it may point back at Alice.
@@ -418,7 +424,7 @@ describe("inbox", () => {
       method: "POST",
       url: "/inbox/deliver",
       headers: auth(alice.token),
-      payload: { recipientId: bob.userId, envelope: ENVELOPE },
+      payload: { recipientId: bob.userId, envelope: SEALED_ENVELOPE },
     });
     const alicesInbox = await app.inject({
       method: "GET",
@@ -427,4 +433,16 @@ describe("inbox", () => {
     });
     expect(alicesInbox.json().messages).toHaveLength(0);
   }, 20_000);
+
+  it("rejects an envelope that isn't sealed, rather than storing arbitrary JSON", async () => {
+    const alice = await registerUser(app, "alice");
+    const bob = await registerUser(app, "bob");
+    const response = await app.inject({
+      method: "POST",
+      url: "/inbox/deliver",
+      headers: auth(alice.token),
+      payload: { recipientId: bob.userId, envelope: { anything: "goes" } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
 });

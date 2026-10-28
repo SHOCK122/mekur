@@ -1,17 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { FriendCodeRepository } from "../repositories/friendCodeRepository.js";
+import {
+  FRIEND_CODE_PATTERN,
+  type FriendCodeRepository,
+} from "../repositories/friendCodeRepository.js";
 import type { UserRepository } from "../repositories/userRepository.js";
 
 const ResolveTagRequestSchema = z.object({
   tag: z.string().min(1).max(64),
 });
-
-/** A tag is either a username or a one-time friend code. Codes come from a
- * fixed uppercase alphabet, usernames are lowercase -- so they can't be
- * confused, and we can tell which was meant without asking the person to
- * say which kind of thing they're typing. */
-const FRIEND_CODE_PATTERN = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
 
 /**
  * Blocking is deliberately absent here. Under the capability model the
@@ -29,7 +26,7 @@ export function registerSocialRoutes(
     scoped.addHook("preHandler", scoped.authenticate);
 
     scoped.get("/friend-code", async (request, reply) => {
-      const code = await friendCodes.getOrCreateActive(request.userId!);
+      const code = await friendCodes.getOrCreate(request.userId!);
       return reply.send({ friendCode: code });
     });
 
@@ -90,6 +87,5 @@ export function registerSocialRoutes(
         },
       });
     });
-
   });
 }

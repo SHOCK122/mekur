@@ -4,15 +4,14 @@ import type { Database } from "../src/db/pool.js";
 import { createPool } from "../src/db/pool.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { buildApp } from "../src/app.js";
-import { deriveAuthAndEncryptionKeys, generateKeyPair } from "@schedule-app/crypto";
-import { truncateAll } from "./testHelpers.js";
+import { truncateAll, registerUser, ENVELOPE } from "./testHelpers.js";
 
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/scheduleapp_test";
 
 /** Builds an app with production-like (low) rate limits, unlike the shared
  * test helper which raises them to avoid flakes. */
-async function setupStrictApp(authRateLimitMax: number) {
+async function setupStrictApp(authRateLimitMax: number, trustProxy = 0) {
   const db = createPool(TEST_DATABASE_URL);
   await runMigrations(db);
   const app = buildApp({
@@ -23,6 +22,7 @@ async function setupStrictApp(authRateLimitMax: number) {
     vapidSubject: "mailto:test@example.com",
     rateLimitMax: 100_000,
     authRateLimitMax,
+    trustProxy,
   });
   return { app, db };
 }
@@ -67,6 +67,35 @@ describe("security hardening", () => {
     }, 20_000);
   });
 
+  describe("rate limiting behind a reverse proxy", () => {
+    let app: FastifyInstance;
+    let db: Database;
+
+    beforeAll(async () => {
+      ({ app, db } = await setupStrictApp(2, 1));
+    });
+
+    afterAll(async () => {
+      await app.close();
+      await db.end();
+    });
+
+    it("limits each client separately rather than everyone behind the proxy together", async () => {
+      // Without trusting the proxy, every request appears to come from
+      // nginx, so one person's failed logins would lock out every user.
+      const attempt = (client: string) =>
+        app.inject({
+          method: "POST",
+          url: "/sessions",
+          headers: { "x-forwarded-for": client },
+          payload: { username: "victim", authKey: "d3JvbmctZ3Vlc3M=" },
+        });
+      for (let i = 0; i < 5; i++) await attempt("203.0.113.1");
+      expect((await attempt("203.0.113.1")).statusCode).toBe(429);
+      expect((await attempt("203.0.113.2")).statusCode).toBe(401);
+    });
+  });
+
   describe("headers, tokens, and payload bounds", () => {
     let app: FastifyInstance;
     let db: Database;
@@ -92,20 +121,7 @@ describe("security hardening", () => {
     });
 
     it("issues session tokens that actually expire", async () => {
-      const keys = await deriveAuthAndEncryptionKeys("some strong password");
-      const { publicKey } = generateKeyPair();
-      const response = await app.inject({
-        method: "POST",
-        url: "/users",
-        payload: {
-          username: "expiryuser",
-          displayName: "Expiry User",
-          publicKey,
-          authKey: keys.authKey,
-          authSalt: keys.salt,
-        },
-      });
-      const token = response.json().token as string;
+      const { token } = await registerUser(app, "expiryuser");
 
       // A JWT without an exp claim would be valid forever, which is what
       // this guards against.
@@ -115,20 +131,7 @@ describe("security hardening", () => {
     }, 20_000);
 
     it("rejects an oversized encrypted payload instead of storing unbounded blobs", async () => {
-      const keys = await deriveAuthAndEncryptionKeys("some strong password");
-      const { publicKey } = generateKeyPair();
-      const registerResponse = await app.inject({
-        method: "POST",
-        url: "/users",
-        payload: {
-          username: "bigpayload",
-          displayName: "Big Payload",
-          publicKey,
-          authKey: keys.authKey,
-          authSalt: keys.salt,
-        },
-      });
-      const token = registerResponse.json().token as string;
+      const { token } = await registerUser(app, "bigpayload");
 
       const response = await app.inject({
         method: "POST",
@@ -140,7 +143,7 @@ describe("security hardening", () => {
             algo: "xchacha20poly1305",
             keyId: "k",
             nonce: "bm9uY2U=",
-            ciphertext: "A".repeat(200 * 1024), // over the 128KB cap
+            ciphertext: "A".repeat(200 * 1024), // over the 128KB event cap
           },
         },
       });
@@ -150,33 +153,14 @@ describe("security hardening", () => {
     }, 20_000);
 
     it("still accepts a normally-sized encrypted event", async () => {
-      const keys = await deriveAuthAndEncryptionKeys("some strong password");
-      const { publicKey } = generateKeyPair();
-      const registerResponse = await app.inject({
-        method: "POST",
-        url: "/users",
-        payload: {
-          username: "normalpayload",
-          displayName: "Normal Payload",
-          publicKey,
-          authKey: keys.authKey,
-          authSalt: keys.salt,
-        },
-      });
-      const token = registerResponse.json().token as string;
+      const { token } = await registerUser(app, "normalpayload");
 
       const response = await app.inject({
         method: "POST",
         url: "/events",
         headers: { authorization: `Bearer ${token}` },
         payload: {
-          envelope: {
-            v: 1,
-            algo: "xchacha20poly1305",
-            keyId: "k",
-            nonce: "bm9uY2U=",
-            ciphertext: "Y2lwaGVydGV4dA==",
-          },
+          envelope: ENVELOPE,
         },
       });
       expect(response.statusCode).toBe(201);
@@ -186,29 +170,15 @@ describe("security hardening", () => {
       // Previously the malformed id reached Postgres, which throws on the
       // invalid uuid cast, surfacing as an unhandled 500 -- both the wrong
       // status (the resource simply isn't there) and a hint about internals.
-      const keys = await deriveAuthAndEncryptionKeys("some strong password");
-      const { publicKey } = generateKeyPair();
-      const registerResponse = await app.inject({
-        method: "POST",
-        url: "/users",
-        payload: {
-          username: "uuidguard",
-          displayName: "UUID Guard",
-          publicKey,
-          authKey: keys.authKey,
-          authSalt: keys.salt,
-        },
-      });
-      const token = registerResponse.json().token as string;
+      const { token } = await registerUser(app, "uuidguard");
       const auth = { authorization: `Bearer ${token}` };
 
-      for (const url of [
-        "/events/not-a-uuid",
-        "/group-events/not-a-uuid",
-      ]) {
-        const response = await app.inject({ method: "GET", url, headers: auth });
-        expect(response.statusCode).toBe(404);
-      }
+      const getResponse = await app.inject({
+        method: "GET",
+        url: "/events/not-a-uuid",
+        headers: { ...auth, "x-event-capability": "anything" },
+      });
+      expect(getResponse.statusCode).toBe(404);
 
       const deleteResponse = await app.inject({
         method: "DELETE",
@@ -224,5 +194,16 @@ describe("security hardening", () => {
       });
       expect(apiKeyResponse.statusCode).toBe(404);
     }, 20_000);
+
+    it("accepts a keyring larger than the global body limit, up to its own cap", async () => {
+      const { token } = await registerUser(app, "bigkeyring");
+      const response = await app.inject({
+        method: "PUT",
+        url: "/keyring",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { envelope: { ...ENVELOPE, ciphertext: "A".repeat(400 * 1024) }, expectedVersion: 0 },
+      });
+      expect(response.statusCode).toBe(200);
+    });
   });
 });

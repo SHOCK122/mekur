@@ -1,24 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { deriveAuthAndEncryptionKeys, decryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
+import { generateKeyPair, openSealed } from "@schedule-app/crypto";
 import { encodeShareCode, decodeShareCode, createShareCode, redeemShareCode } from "../src/lib/events.js";
 import { sendInvite } from "../src/lib/social.js";
 import { loadKeyring } from "../src/lib/keyring.js";
 import { stubCapabilityServer } from "./mockServer.js";
 import type { Session } from "../src/lib/session.js";
+import { testSession } from "./testSession.js";
 
 let session: Session;
 
-beforeEach(async () => {
+beforeEach(() => {
   localStorage.clear();
-  const keys = await deriveAuthAndEncryptionKeys("pw");
-  session = {
-    userId: "u1",
-    username: "ada",
-    token: "t",
-    encryptionKey: keys.encryptionKey,
-    identityPublicKey: keys.identityKeyPair.publicKey,
-    identitySecretKey: keys.identityKeyPair.secretKey,
-  };
+  session = testSession();
 });
 
 afterEach(() => {
@@ -29,7 +22,6 @@ const content = {
   title: "Offsite",
   startTime: "2026-09-01T09:00:00.000Z",
   endTime: "2026-09-01T10:00:00.000Z",
-  priority: 0,
 };
 
 describe("share codes", () => {
@@ -101,55 +93,55 @@ describe("sendInvite", () => {
     return fetchMock;
   }
 
-  it("encrypts the invite so the server sees no event id, token or key", async () => {
+  const recipient = generateKeyPair();
+  const target = (viaCode: boolean) => ({
+    userId: "u2",
+    publicKey: recipient.publicKey,
+    displayName: viaCode ? "Anonymous invitee" : "Bob",
+    username: viaCode ? undefined : "bob",
+    viaCode,
+  });
+  const capability = { eventId: "EVENT-ID", viewToken: "VIEW-TOKEN", eventKey: "EVENT-KEY" };
+
+  function openAsRecipient(fetchMock: ReturnType<typeof vi.fn>) {
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    return openSealed<Record<string, unknown>>(body.envelope, recipient.secretKey);
+  }
+
+  it("seals the invite so the server sees no event id, token, key or sender", async () => {
     const fetchMock = stubInboxServer();
-    await sendInvite(
-      session,
-      { userId: "u2", publicKey: session.identityPublicKey, displayName: "Bob", viaCode: false },
-      { eventId: "EVENT-ID", viewToken: "VIEW-TOKEN", eventKey: "EVENT-KEY", fromDisplayName: "ada" }
-    );
+    await sendInvite(session, target(false), capability);
     const body = fetchMock.mock.calls[0]![1].body as string;
-    expect(body).not.toContain("EVENT-ID");
-    expect(body).not.toContain("VIEW-TOKEN");
-    expect(body).not.toContain("EVENT-KEY");
-  }, 20_000);
+    for (const secret of ["EVENT-ID", "VIEW-TOKEN", "EVENT-KEY", session.identityPublicKey, "ada"]) {
+      expect(body).not.toContain(secret);
+    }
+  });
 
-  it("strips sender identity when the recipient was reached by anonymous code", async () => {
+  it("can be opened by the recipient with only their own key", async () => {
+    // Regression: invites used to be encrypted with ECDH(sender, recipient),
+    // so the recipient needed the sender's public key -- which the server
+    // deliberately doesn't record. Only self-addressed invites ever opened.
     const fetchMock = stubInboxServer();
-    await sendInvite(
-      session,
-      { userId: "u2", publicKey: session.identityPublicKey, displayName: "Anonymous invitee", viaCode: true },
-      {
-        eventId: "e1",
-        viewToken: "vt",
-        eventKey: "ek",
-        fromDisplayName: "ada",
-        fromUsername: "ada",
-        fromFriendCode: "ADACODE1",
-      }
-    );
-    // Decrypt as the recipient would and confirm nothing identifies the
-    // sender. Enforced at construction so the UI cannot leak it later.
-    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-    const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
-    const invite = decryptEnvelope<Record<string, unknown>>(body.envelope, wrapKey);
-    expect(invite.fromDisplayName).toBeUndefined();
-    expect(invite.fromUsername).toBeUndefined();
-    expect(invite.fromFriendCode).toBeUndefined();
-    expect(invite.viaCode).toBe(true);
-  }, 20_000);
+    await sendInvite(session, target(false), capability);
+    expect(openAsRecipient(fetchMock).payload.eventId).toBe("EVENT-ID");
+  });
 
-  it("keeps sender identity for a named invite, so it can be connected to", async () => {
+  it("proves the sender of a named invite, so it can be connected to or blocked", async () => {
     const fetchMock = stubInboxServer();
-    await sendInvite(
-      session,
-      { userId: "u2", publicKey: session.identityPublicKey, displayName: "Bob", username: "bob", viaCode: false },
-      { eventId: "e1", viewToken: "vt", eventKey: "ek", fromDisplayName: "ada", fromFriendCode: "ADACODE1" }
-    );
-    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-    const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
-    const invite = decryptEnvelope<Record<string, unknown>>(body.envelope, wrapKey);
-    expect(invite.fromDisplayName).toBe("ada");
-    expect(invite.fromFriendCode).toBe("ADACODE1");
-  }, 20_000);
+    await sendInvite(session, target(false), capability);
+    const opened = openAsRecipient(fetchMock);
+    expect(opened.senderPublicKey).toBe(session.identityPublicKey);
+    expect(opened.payload.fromDisplayName).toBe("ada");
+  });
+
+  it("stays anonymous when the recipient was reached by one-time code", async () => {
+    const fetchMock = stubInboxServer();
+    await sendInvite(session, target(true), capability);
+    // Enforced at construction, so no UI path can leak it later.
+    const opened = openAsRecipient(fetchMock);
+    expect(opened.senderPublicKey).toBeNull();
+    expect(opened.payload.fromDisplayName).toBeUndefined();
+    expect(opened.payload.fromUsername).toBeUndefined();
+    expect(opened.payload.viaCode).toBe(true);
+  });
 });

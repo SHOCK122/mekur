@@ -1,20 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../src/db/pool.js";
-import { deriveAuthAndEncryptionKeys, generateKeyPair, encryptEnvelope } from "@schedule-app/crypto";
-import { setupTestApp, truncateAll } from "./testHelpers.js";
-
-async function registerAndLogin(app: FastifyInstance, username: string) {
-  const keys = await deriveAuthAndEncryptionKeys("some strong password");
-  const { publicKey } = generateKeyPair();
-  const response = await app.inject({
-    method: "POST",
-    url: "/users",
-    payload: { username, displayName: username, publicKey, authKey: keys.authKey, authSalt: keys.salt },
-  });
-  const body = response.json();
-  return { token: body.token as string, userId: body.user.id as string, encryptionKey: keys.encryptionKey };
-}
+import { setupTestApp, truncateAll, registerUser, ENVELOPE } from "./testHelpers.js";
 
 describe("API keys", () => {
   let app: FastifyInstance;
@@ -34,7 +21,7 @@ describe("API keys", () => {
   });
 
   it("mints a key and returns the raw value exactly once", async () => {
-    const { token } = await registerAndLogin(app, "alice");
+    const { token } = await registerUser(app, "alice");
     const response = await app.inject({
       method: "POST",
       url: "/api-keys",
@@ -51,7 +38,7 @@ describe("API keys", () => {
   });
 
   it("authenticates ordinary API requests using a minted API key, same as a JWT would", async () => {
-    const { token, encryptionKey } = await registerAndLogin(app, "bob");
+    const { token } = await registerUser(app, "bob");
     const mintResp = await app.inject({
       method: "POST",
       url: "/api-keys",
@@ -60,7 +47,7 @@ describe("API keys", () => {
     });
     const rawKey = mintResp.json().rawKey;
 
-    const envelope = encryptEnvelope({ title: "Agent-created event" }, encryptionKey, "user-key-1");
+    const envelope = ENVELOPE;
     const createResp = await app.inject({
       method: "POST",
       url: "/events",
@@ -90,7 +77,7 @@ describe("API keys", () => {
   });
 
   it("stops working immediately after revocation", async () => {
-    const { token } = await registerAndLogin(app, "carol");
+    const { token } = await registerUser(app, "carol");
     const mintResp = await app.inject({
       method: "POST",
       url: "/api-keys",
@@ -122,8 +109,8 @@ describe("API keys", () => {
   });
 
   it("lists only the authenticated user's own keys, and cannot revoke someone else's", async () => {
-    const alice = await registerAndLogin(app, "alice2");
-    const bob = await registerAndLogin(app, "bob2");
+    const alice = await registerUser(app, "alice2");
+    const bob = await registerUser(app, "bob2");
 
     const aliceKeyResp = await app.inject({
       method: "POST",
@@ -146,5 +133,26 @@ describe("API keys", () => {
       headers: { authorization: `Bearer ${bob.token}` },
     });
     expect(bobRevokeAttempt.statusCode).toBe(404);
+  });
+
+  it("will not mint a new API key when authenticated with an API key", async () => {
+    // Otherwise one leaked key becomes a self-renewing set that survives
+    // its own revocation.
+    const { token } = await registerUser(app, "dave");
+    const mintResp = await app.inject({
+      method: "POST",
+      url: "/api-keys",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "agent" },
+    });
+    const { rawKey } = mintResp.json();
+
+    const attempt = await app.inject({
+      method: "POST",
+      url: "/api-keys",
+      headers: { authorization: `Bearer ${rawKey}` },
+      payload: { name: "escalation" },
+    });
+    expect(attempt.statusCode).toBe(403);
   });
 });

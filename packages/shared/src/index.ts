@@ -9,7 +9,7 @@ import { z } from "zod";
 export const EncryptedEnvelopeSchema = z.object({
   v: z.literal(1), // envelope format version, for future crypto migration
   algo: z.literal("xchacha20poly1305"),
-  keyId: z.string().min(1), // identifies which key (user key or event key) encrypted this
+  keyId: z.string().min(1).max(64), // identifies which key (user key or event key) encrypted this
   nonce: z.string().min(1).max(128), // base64
   // Bounded so a client can't store arbitrarily large blobs. 128KB of
   // base64 is far beyond any realistic event's encrypted content while
@@ -17,33 +17,6 @@ export const EncryptedEnvelopeSchema = z.object({
   ciphertext: z.string().min(1).max(128 * 1024), // base64
 });
 export type EncryptedEnvelope = z.infer<typeof EncryptedEnvelopeSchema>;
-
-/**
- * Public account record. Only public-key material and non-sensitive
- * bookkeeping fields live here; everything else about a user's schedule
- * is stored as EncryptedEnvelope blobs elsewhere.
- */
-export const UserPublicSchema = z.object({
-  id: z.string().uuid(),
-  displayName: z.string().min(1).max(200),
-  publicKey: z.string().min(1), // base64 x25519 public key
-  createdAt: z.string().datetime(),
-});
-export type UserPublic = z.infer<typeof UserPublicSchema>;
-
-/**
- * A stored event record, from the server's point of view: an opaque
- * encrypted blob owned by a user. The server cannot read start/end times,
- * titles, or any other content in phase 1 (single-user, no sharing yet).
- */
-export const EventRecordSchema = z.object({
-  id: z.string().uuid(),
-  ownerId: z.string().uuid(),
-  envelope: EncryptedEnvelopeSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-export type EventRecord = z.infer<typeof EventRecordSchema>;
 
 /**
  * A recurrence rule, modeled after the widely-used iCalendar RRULE
@@ -77,13 +50,6 @@ export const RecurrenceRuleSchema = z.object({
 });
 export type RecurrenceRule = z.infer<typeof RecurrenceRuleSchema>;
 
-/** How important the user considers this event -- distinct from, and unrelated
- * to, the per-slot preference ranking used in group-scheduling (docs/ARCHITECTURE.md);
- * this is a personal attribute of a single event. Higher is more important;
- * no fixed range is enforced, so users/clients can adopt whatever scale suits them. */
-export const EventPrioritySchema = z.number().int().default(0);
-export type EventPriority = z.infer<typeof EventPrioritySchema>;
-
 /**
  * The plaintext shape of an event, as it exists only on the client after
  * decryption. This is what gets encrypted into an EncryptedEnvelope before
@@ -99,12 +65,11 @@ export const EventContentSchema = z
      * to the edge of the view and fade toward the future rather than
      * claiming a definite finish. */
     endTime: z.string().datetime().optional(),
-    priority: EventPrioritySchema,
     /** Fractional ordering rank. Determines how far from the timeline's
      * base an event stacks when it overlaps others. Unique per event, so
-     * stacking order is never ambiguous. Optional for now so events
-     * created before fractional ordering still parse; the client assigns
-     * one on first render. */
+     * stacking order is never ambiguous. Optional so events created
+     * before fractional ordering still parse; the timeline assigns one at
+     * render time until the event is next saved. */
     rank: z.string().min(1).optional(),
     /** Importance is deliberately separate from rank: it changes styling
      * only, never position. Folding it into the sort key would reintroduce
@@ -134,85 +99,22 @@ export const EventContentSchema = z
 export type EventContent = z.infer<typeof EventContentSchema>;
 
 /**
- * Group scheduling: the organizer proposes candidate time slots, invites
- * participants (including themselves -- see GroupEventParticipantSchema),
- * and everyone votes. The server only ever sees opaque slot IDs and
- * ranks -- never the real times, title, or description, which live only
- * inside GroupEventContent, encrypted under a per-event key that's
- * wrapped individually to each participant (see docs/ARCHITECTURE.md and
- * packages/crypto's wrapKey/unwrapKey/deriveSharedWrapKey).
+ * An envelope sealed to one recipient's X25519 public key with a fresh
+ * ephemeral keypair (see packages/crypto's sealToRecipient). `epk` is the
+ * ephemeral public key: needed to open the envelope, and linked to no
+ * account, so the server relaying it learns nothing about the sender.
+ * Used for inbox delivery, where the server deliberately records no sender.
  */
-export const SlotSchema = z
-  .object({
-    startTime: z.string().datetime(),
-    endTime: z.string().datetime(),
-  })
-  .refine((slot) => new Date(slot.endTime) > new Date(slot.startTime), {
-    message: "endTime must be after startTime",
-    path: ["endTime"],
-  });
-export type Slot = z.infer<typeof SlotSchema>;
-
-/** The plaintext payload encrypted under the per-event key. Slot IDs here
- * are the same opaque strings the server tracks in the group_events row. */
-export const GroupEventContentSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(10_000).optional(),
-  location: z.string().max(500).optional(),
-  slots: z.record(z.string(), SlotSchema).refine((slots) => Object.keys(slots).length > 0, {
-    message: "at least one candidate slot is required",
-  }),
+export const SealedEnvelopeSchema = EncryptedEnvelopeSchema.extend({
+  epk: z.string().min(1).max(64),
 });
-export type GroupEventContent = z.infer<typeof GroupEventContentSchema>;
+export type SealedEnvelope = z.infer<typeof SealedEnvelopeSchema>;
 
-export const GroupEventStatusSchema = z.enum(["open", "resolved"]);
-export type GroupEventStatus = z.infer<typeof GroupEventStatusSchema>;
-
-/** One participant's wrapped copy of the event key. The organizer is a
- * participant of their own event too (self-wrapped), so there's no special
- * case for "am I the organizer" when fetching/decrypting -- everyone goes
- * through the same wrappedKey -> eventKey -> content pipeline. */
-export const GroupEventParticipantSchema = z.object({
-  userId: z.string().uuid(),
-  wrappedKey: EncryptedEnvelopeSchema,
+/**
+ * The keyring is one envelope holding every capability an account has, so
+ * it outgrows the per-event ciphertext cap. 1MB of base64 comfortably fits
+ * the 500-event batch-read limit with room to spare.
+ */
+export const KeyringEnvelopeSchema = EncryptedEnvelopeSchema.extend({
+  ciphertext: z.string().min(1).max(1024 * 1024),
 });
-export type GroupEventParticipant = z.infer<typeof GroupEventParticipantSchema>;
-
-/** One voter's ranking of the proposed slots (1 = most preferred). Ranks
- * need not be contiguous or cover every slot -- a voter can rank only the
- * slots they care about. */
-export const VoteRankingSchema = z.object({
-  slotId: z.string().min(1),
-  rank: z.number().int().positive(),
-});
-
-export const GroupEventRecordSchema = z.object({
-  id: z.string().uuid(),
-  organizerId: z.string().uuid(),
-  /** Denormalized onto the record so an invitee can derive the shared
-   * wrap key without a separate lookup -- it's already public information
-   * the server knows, and the invitee is already sharing an event with
-   * this organizer, so there's no new exposure in including it here. */
-  organizerPublicKey: z.string(),
-  slotIds: z.array(z.string()).min(1),
-  contentEnvelope: EncryptedEnvelopeSchema,
-  status: GroupEventStatusSchema,
-  resolvedSlotId: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  /** This requesting user's own wrapped copy of the event key. */
-  myWrappedKey: EncryptedEnvelopeSchema,
-  /** This requesting user's own current rankings, if they've voted. */
-  myVotes: z.array(VoteRankingSchema),
-});
-export type GroupEventRecord = z.infer<typeof GroupEventRecordSchema>;
-
-export const SubmitVotesRequestSchema = z.object({
-  rankings: z
-    .array(VoteRankingSchema)
-    .min(1)
-    .refine((rankings) => new Set(rankings.map((r) => r.slotId)).size === rankings.length, {
-      message: "duplicate slotId in rankings",
-    }),
-});
-export type SubmitVotesRequest = z.infer<typeof SubmitVotesRequestSchema>;

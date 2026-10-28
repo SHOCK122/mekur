@@ -1,11 +1,5 @@
-import { parseJsonOrThrow } from "./http.js";
+import { apiFetch } from "./http.js";
 import type { Session } from "./session.js";
-
-const API_BASE = "/api";
-
-function authHeaders(session: Session) {
-  return { authorization: `Bearer ${session.token}` };
-}
 
 /** Converts a base64url VAPID public key into the Uint8Array shape
  * PushManager.subscribe() requires for applicationServerKey. The explicit
@@ -30,11 +24,6 @@ export async function getExistingSubscription(): Promise<PushSubscription | null
   return registration.pushManager.getSubscription();
 }
 
-async function fetchVapidPublicKey(): Promise<string> {
-  const response = await fetch(`${API_BASE}/push/vapid-public-key`);
-  const body = await parseJsonOrThrow(response);
-  return body.publicKey;
-}
 
 /** Requests notification permission, subscribes via the browser's Push API,
  * and registers the subscription with the server. Throws if the person
@@ -50,7 +39,7 @@ export async function enablePushNotifications(session: Session): Promise<void> {
     throw new Error("Notification permission was not granted.");
   }
 
-  const vapidPublicKey = await fetchVapidPublicKey();
+  const { publicKey: vapidPublicKey } = await apiFetch(null, "/push/vapid-public-key");
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
@@ -58,17 +47,10 @@ export async function enablePushNotifications(session: Session): Promise<void> {
   });
 
   const json = subscription.toJSON();
-  const response = await fetch(`${API_BASE}/push-subscriptions`, {
+  await apiFetch(session, "/push-subscriptions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
-    body: JSON.stringify({
-      endpoint: json.endpoint,
-      keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
-    }),
+    body: { endpoint: json.endpoint, keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth } },
   });
-  if (!response.ok) {
-    await parseJsonOrThrow(response);
-  }
 }
 
 export async function disablePushNotifications(session: Session): Promise<void> {
@@ -78,15 +60,8 @@ export async function disablePushNotifications(session: Session): Promise<void> 
   const endpoint = subscription.endpoint;
   await subscription.unsubscribe();
 
-  const response = await fetch(`${API_BASE}/push-subscriptions`, {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json", ...authHeaders(session) },
-    body: JSON.stringify({ endpoint }),
-  });
   // 404 is fine here: the server may have already pruned this subscription
   // (e.g. the push service reported it as gone), which isn't an error from
   // the person's point of view -- they wanted it off, and it's off.
-  if (!response.ok && response.status !== 404) {
-    await parseJsonOrThrow(response);
-  }
+  await apiFetch(session, "/push-subscriptions", { method: "DELETE", body: { endpoint }, allow: [404] });
 }

@@ -10,6 +10,9 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     userId?: string;
+    /** How the request authenticated. Some actions (minting API keys) are
+     * reserved for interactive sessions. */
+    authMethod?: "session" | "api-key";
   }
 }
 
@@ -41,12 +44,14 @@ export const authPlugin = fp(async function authPlugin(app: FastifyInstance, opt
         return;
       }
       request.userId = userId;
+      request.authMethod = "api-key";
       return;
     }
 
     try {
       await request.jwtVerify();
       request.userId = request.user.userId;
+      request.authMethod = "session";
     } catch {
       reply.code(401).send({ error: "Unauthorized" });
     }

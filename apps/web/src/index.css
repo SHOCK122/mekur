@@ -73,6 +73,7 @@ label {
 }
 
 input {
+  min-width: 0;
   font: inherit;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--border);
@@ -133,7 +134,7 @@ button:disabled {
   margin: 0;
 }
 
-.calendar {
+.schedule {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -142,29 +143,12 @@ button:disabled {
   max-width: 560px;
 }
 
-.calendar-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-}
-
-.calendar-header .logout {
-  background: none;
-  color: var(--text-muted);
-  font-weight: 500;
-  padding: 0.3rem 0;
-}
-
-.calendar-header .logout:hover {
-  color: var(--text);
-  background: none;
-  text-decoration: underline;
-}
-
+/* minmax(0, ...) rather than 1fr: a bare 1fr can't shrink below its
+   content's intrinsic width, and datetime inputs are wide enough to push
+   the form out past the card. */
 .event-form {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.6rem;
   padding-bottom: 1.5rem;
   margin-bottom: 1.5rem;
@@ -206,7 +190,7 @@ button:disabled {
 
 .event-form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.6rem;
 }
 
@@ -232,193 +216,6 @@ button:disabled {
   margin-top: 0.15rem;
 }
 
-.event-item-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.priority-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.priority-arrow {
-  background: none;
-  color: var(--text-muted);
-  padding: 0.05rem 0.4rem;
-  line-height: 1;
-  font-size: 0.7rem;
-  border-radius: 4px;
-}
-
-.priority-arrow:hover {
-  background: var(--bg);
-  color: var(--text);
-}
-
-.tab-bar {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.tab {
-  background: none;
-  color: var(--text-muted);
-  font-weight: 600;
-  padding: 0.5rem 0.25rem;
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-}
-
-.tab:hover {
-  background: none;
-  color: var(--text);
-}
-
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.group-events {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2rem;
-  width: 100%;
-  max-width: 560px;
-}
-
-.group-events-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.group-events-header h2 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  margin: 0;
-}
-
-.pending-badge {
-  background: #fff7e6;
-  color: #8a5a00;
-  border: 1px solid #f0dca3;
-  border-radius: 999px;
-  padding: 0.15rem 0.6rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.slot-row {
-  grid-template-columns: 1fr 1fr auto;
-  align-items: center;
-}
-
-.slot-row button {
-  background: none;
-  color: var(--text-muted);
-  padding: 0.3rem 0.5rem;
-}
-
-.add-slot {
-  background: none;
-  color: var(--accent);
-  font-weight: 500;
-  padding: 0.3rem 0;
-  text-align: left;
-}
-
-.add-slot:hover {
-  background: none;
-  text-decoration: underline;
-}
-
-.group-event-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.group-event-item {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem;
-}
-
-.group-event-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.group-event-description {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin: 0 0 0.5rem;
-}
-
-.status-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-}
-
-.status-open {
-  background: #e4ecfd;
-  color: var(--accent);
-}
-
-.status-resolved {
-  background: #e6f4ea;
-  color: #1e7e34;
-}
-
-.resolved-time {
-  font-weight: 600;
-  margin: 0.5rem 0;
-}
-
-.vote-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.vote-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.vote-row label {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.vote-row input {
-  width: 4rem;
-}
-
-.resolve-button {
-  margin-top: 0.75rem;
-}
-
 .offline-banner {
   background: #fff7e6;
   color: #8a5a00;
@@ -433,48 +230,6 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.event-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.event-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.event-time {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin-top: 0.15rem;
-}
-
-.event-item button {
-  background: none;
-  color: var(--danger);
-  font-weight: 500;
-  padding: 0.3rem 0.5rem;
-}
-
-.event-item button:hover {
-  background: none;
-  text-decoration: underline;
-}
-
-.calendar-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
 .notification-button {
   background: none;
   color: var(--text-muted);
@@ -486,38 +241,6 @@ button:disabled {
 .notification-button:hover {
   background: none;
   color: var(--text);
-  text-decoration: underline;
-}
-
-.conflict-banner {
-  background: #fdf2f2;
-  border: 1px solid #f5c6c6;
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
-  color: #7a2020;
-}
-
-.conflict-banner p {
-  margin: 0.4rem 0;
-}
-
-.conflict-banner ul {
-  margin: 0.4rem 0;
-  padding-left: 1.1rem;
-}
-
-.conflict-banner button {
-  background: none;
-  color: #7a2020;
-  font-weight: 600;
-  padding: 0.3rem 0;
-  font-size: 0.8rem;
-}
-
-.conflict-banner button:hover {
-  background: none;
   text-decoration: underline;
 }
 
@@ -707,11 +430,6 @@ button:disabled {
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
-}
-
-.event-item-skipped {
-  opacity: 0.55;
-  border-style: dashed;
 }
 
 /* ---- Timeline ---- */
@@ -922,12 +640,6 @@ button:disabled {
   border: 0;
 }
 
-.view-toggle {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
 /* ---- Drag handles ---- */
 
 .resize-handle {
@@ -1005,10 +717,39 @@ button:disabled {
   opacity: 1;
 }
 
-.edit-form {
+.edit-form,
+.edit-fields {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* A fieldset only to disable every input at once for view-only events;
+   it shouldn't look like one. */
+.edit-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.skipped-occurrences h3 {
+  font-size: 0.85rem;
+  margin: 0 0 0.25rem;
+}
+
+.skipped-occurrences ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.skipped-occurrences li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
 }
 
 .checkbox-label {
@@ -1021,6 +762,7 @@ button:disabled {
 
 .edit-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
   margin-top: 0.25rem;
@@ -1065,12 +807,6 @@ button:disabled {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-}
-
-.view-toggle-buttons {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
 }
 
 /* A series groups every repeat of one event, so they share a row. */

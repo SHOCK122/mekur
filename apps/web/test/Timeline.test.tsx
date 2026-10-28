@@ -11,7 +11,6 @@ function makeEvent(overrides: Partial<DecryptedEvent> = {}): DecryptedEvent {
     title: "Standup",
     startTime: start.toISOString(),
     endTime: new Date(start.getTime() + 30 * 60 * 1000).toISOString(),
-    priority: 0,
     canEdit: true,
     ...overrides,
   } as DecryptedEvent;

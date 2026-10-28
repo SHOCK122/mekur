@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseJsonOrThrow } from "../src/lib/http.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { parseJsonOrThrow, apiFetch } from "../src/lib/http.js";
 
 function mockResponse(ok: boolean, status: number, body: unknown): Response {
   return {
@@ -54,5 +54,33 @@ describe("parseJsonOrThrow", () => {
       },
     } as Response;
     await expect(parseJsonOrThrow(response)).rejects.toThrow("Request failed with status 500");
+  });
+});
+
+describe("apiFetch", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("omits Content-Type when there is no body, so a DELETE isn't rejected", async () => {
+    // Regression: Fastify refuses JSON-typed requests with no body, which
+    // surfaced as a bare "Bad Request" when deleting an event.
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    await apiFetch(null, "/events/x", { method: "DELETE", capability: "cap" });
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(init.headers).not.toHaveProperty("Content-Type");
+    expect(init.headers).toHaveProperty("x-event-capability", "cap");
+  });
+
+  it("keeps the status on errors so callers can branch on it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "conflict" }) })
+    );
+    await expect(apiFetch(null, "/keyring")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("treats explicitly allowed statuses as success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
+    await expect(apiFetch(null, "/push-subscriptions", { method: "DELETE", allow: [404] })).resolves.toEqual({});
   });
 });

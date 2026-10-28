@@ -1,417 +1,334 @@
 /**
  * Hand-maintained OpenAPI description of the routes that actually exist.
- * Kept in sync manually rather than generated, since the API surface is
- * still small; revisit generation (e.g. from the Zod schemas in
- * schemas.ts) if this drifts or the surface grows significantly.
+ * Kept in sync manually rather than generated, since the surface is small;
+ * health.test.ts checks every registered route appears here, so drift
+ * fails the suite rather than going unnoticed.
  */
+
+type Schema = Record<string, unknown>;
+
+const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+
+function jsonBody(schema: Schema) {
+  return { required: true, content: { "application/json": { schema } } };
+}
+
+function object(required: string[], properties: Record<string, Schema>): Schema {
+  return { type: "object", required, properties };
+}
+
+const auth = [{ bearerAuth: [] }];
+const capability = {
+  name: "x-event-capability",
+  in: "header",
+  required: true,
+  description: "A view or edit capability token for this event.",
+  schema: { type: "string" },
+};
+const idParam = { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } };
+const usernameParam = { name: "username", in: "path", required: true, schema: { type: "string" } };
+const notFound = {
+  "404": { description: "Not found -- also returned for a wrong capability, so existence isn't confirmed" },
+};
+
 export const openApiSpec = {
   openapi: "3.0.3",
   info: {
     title: "Schedule App API",
-    version: "0.1.0",
+    version: "0.2.0",
     description:
-      "Event content is end-to-end encrypted: the server only ever stores/relays opaque EncryptedEnvelope blobs and never sees plaintext titles, times, locations, or descriptions.",
+      "End-to-end encrypted, capability-based scheduling. The server stores opaque envelopes and token hashes; it never sees event content and stores no user->event association. See docs/ARCHITECTURE.md.",
   },
   servers: [{ url: "/api" }],
   components: {
     securitySchemes: {
-      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        description: "A session JWT from /users or /sessions, or an API key (prefix `sak_`).",
+      },
     },
     schemas: {
-      EncryptedEnvelope: {
-        type: "object",
-        required: ["v", "algo", "keyId", "nonce", "ciphertext"],
-        properties: {
-          v: { type: "integer", enum: [1] },
-          algo: { type: "string", enum: ["xchacha20poly1305"] },
-          keyId: { type: "string" },
-          nonce: { type: "string", description: "base64" },
-          ciphertext: { type: "string", description: "base64" },
-        },
+      EncryptedEnvelope: object(["v", "algo", "keyId", "nonce", "ciphertext"], {
+        v: { type: "integer", enum: [1] },
+        algo: { type: "string", enum: ["xchacha20poly1305"] },
+        keyId: { type: "string" },
+        nonce: { type: "string", description: "base64" },
+        ciphertext: { type: "string", description: "base64" },
+      }),
+      SealedEnvelope: {
+        allOf: [
+          ref("EncryptedEnvelope"),
+          object(["epk"], { epk: { type: "string", description: "Ephemeral X25519 public key, base64" } }),
+        ],
       },
-      User: {
-        type: "object",
-        properties: {
-          id: { type: "string", format: "uuid" },
-          username: { type: "string" },
-          displayName: { type: "string" },
-          publicKey: { type: "string", description: "base64 X25519 public key" },
-          createdAt: { type: "string", format: "date-time" },
-        },
-      },
-      EventRecord: {
-        type: "object",
-        properties: {
-          id: { type: "string", format: "uuid" },
-          ownerId: { type: "string", format: "uuid" },
-          envelope: { $ref: "#/components/schemas/EncryptedEnvelope" },
-          createdAt: { type: "string", format: "date-time" },
-          updatedAt: { type: "string", format: "date-time" },
-        },
-      },
-      GroupEventRecord: {
-        type: "object",
-        description:
-          "The server only ever sees opaque slotIds -- real times/title/description live in contentEnvelope, encrypted under a per-event key wrapped individually to each participant.",
-        properties: {
-          id: { type: "string", format: "uuid" },
-          organizerId: { type: "string", format: "uuid" },
-          slotIds: { type: "array", items: { type: "string" } },
-          contentEnvelope: { $ref: "#/components/schemas/EncryptedEnvelope" },
-          status: { type: "string", enum: ["open", "resolved"] },
-          resolvedSlotId: { type: "string", nullable: true },
-          createdAt: { type: "string", format: "date-time" },
-          updatedAt: { type: "string", format: "date-time" },
-          myWrappedKey: {
-            allOf: [{ $ref: "#/components/schemas/EncryptedEnvelope" }],
-            description: "This requesting user's own wrapped copy of the event key.",
-          },
-        },
-      },
+      User: object([], {
+        id: { type: "string", format: "uuid" },
+        username: { type: "string" },
+        displayName: { type: "string" },
+        publicKey: { type: "string", description: "base64 X25519 public key" },
+        createdAt: { type: "string", format: "date-time" },
+      }),
+      Event: object([], {
+        id: { type: "string", format: "uuid" },
+        envelope: ref("EncryptedEnvelope"),
+        createdAt: { type: "string", format: "date-time" },
+        updatedAt: { type: "string", format: "date-time" },
+      }),
+      FriendCode: object([], { code: { type: "string" }, createdAt: { type: "string", format: "date-time" } }),
     },
   },
   paths: {
-    "/health": {
-      get: {
-        summary: "Liveness check",
-        responses: { "200": { description: "OK" } },
-      },
-    },
+    "/health": { get: { summary: "Liveness check", responses: { "200": { description: "OK" } } } },
+    "/openapi.json": { get: { summary: "This document", responses: { "200": { description: "OK" } } } },
+
     "/users": {
       post: {
-        summary: "Register a new account",
+        summary: "Register",
         description:
-          "The client derives authKey/encryptionKey from the password client-side. Only authKey is ever sent here; the server hashes it again before storing, so a leaked stored hash alone can't be replayed as a login credential.",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["username", "displayName", "publicKey", "authKey", "authSalt"],
-                properties: {
-                  username: { type: "string" },
-                  displayName: { type: "string" },
-                  publicKey: { type: "string" },
-                  authKey: { type: "string", description: "base64, never the password itself" },
-                  authSalt: { type: "string", description: "base64 scrypt salt" },
-                },
-              },
-            },
-          },
-        },
+          "authKey is derived from the password client-side; the server hashes it again before storing, so a leaked hash isn't a replayable credential.",
+        requestBody: jsonBody(
+          object(["username", "displayName", "publicKey", "authKey", "authSalt"], {
+            username: { type: "string", pattern: "^[a-z0-9_.-]{3,64}$" },
+            displayName: { type: "string" },
+            publicKey: { type: "string" },
+            authKey: { type: "string", description: "base64, never the password" },
+            authSalt: { type: "string", description: "base64 scrypt salt" },
+          })
+        ),
         responses: {
-          "201": {
-            description: "Created",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    user: { $ref: "#/components/schemas/User" },
-                    token: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
+          "201": { description: "Created; returns { user, token }" },
           "409": { description: "Username already taken" },
-        },
-      },
-    },
-    "/users/{username}": {
-      get: {
-        summary: "Directory lookup: find a user's public profile/key to invite them",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "username", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          "200": { description: "OK" },
-          "401": { description: "Unauthorized" },
-          "404": { description: "Not found" },
         },
       },
     },
     "/users/{username}/salt": {
       get: {
-        summary: "Fetch a user's auth salt (needed to re-derive login keys)",
-        parameters: [{ name: "username", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          "200": {
-            description: "OK",
-            content: {
-              "application/json": {
-                schema: { type: "object", properties: { authSalt: { type: "string" } } },
-              },
-            },
-          },
-          "404": { description: "Not found" },
-        },
+        summary: "Fetch a user's auth salt, needed to re-derive login keys",
+        parameters: [usernameParam],
+        responses: { "200": { description: "{ authSalt }" }, "404": { description: "Not found" } },
       },
     },
     "/sessions": {
       post: {
         summary: "Log in",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["username", "authKey"],
-                properties: { username: { type: "string" }, authKey: { type: "string" } },
-              },
-            },
-          },
-        },
+        description:
+          "If publicKey is given and differs from the stored key, the stored key is replaced. Only possible here, where the password has just been proven.",
+        requestBody: jsonBody(
+          object(["username", "authKey"], {
+            username: { type: "string" },
+            authKey: { type: "string" },
+            publicKey: { type: "string" },
+          })
+        ),
         responses: {
-          "200": { description: "OK" },
+          "200": { description: "{ user, token }" },
           "401": { description: "Invalid username or password" },
         },
       },
     },
+
     "/events": {
       post: {
         summary: "Create an event",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["envelope"],
-                properties: { envelope: { $ref: "#/components/schemas/EncryptedEnvelope" } },
-              },
-            },
-          },
-        },
-        responses: { "201": { description: "Created" }, "401": { description: "Unauthorized" } },
+        description: "Returns view and edit tokens exactly once; only their hashes are stored.",
+        security: auth,
+        requestBody: jsonBody(object(["envelope"], { envelope: ref("EncryptedEnvelope") })),
+        responses: { "201": { description: "{ event, viewToken, editToken }" } },
       },
-      get: {
-        summary: "List the authenticated user's events",
-        security: [{ bearerAuth: [] }],
-        responses: { "200": { description: "OK" }, "401": { description: "Unauthorized" } },
+    },
+    "/events/batch-read": {
+      post: {
+        summary: "Read every event whose capability is presented (up to 500)",
+        description: "Events with a missing, revoked or expired capability are omitted.",
+        security: auth,
+        requestBody: jsonBody(
+          object(["events"], {
+            events: {
+              type: "array",
+              maxItems: 500,
+              items: object(["eventId", "token"], {
+                eventId: { type: "string", format: "uuid" },
+                token: { type: "string" },
+              }),
+            },
+          })
+        ),
+        responses: { "200": { description: "{ events: Event[] }" } },
       },
     },
     "/events/{id}": {
       get: {
-        summary: "Get one event (owner only)",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: {
-          "200": { description: "OK" },
-          "401": { description: "Unauthorized" },
-          "404": { description: "Not found" },
-        },
+        summary: "Read an event (view capability)",
+        security: auth,
+        parameters: [idParam, capability],
+        responses: { "200": { description: "{ event }" }, ...notFound },
       },
       put: {
-        summary: "Replace an event's content (owner only)",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["envelope"],
-                properties: { envelope: { $ref: "#/components/schemas/EncryptedEnvelope" } },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": { description: "OK" },
-          "401": { description: "Unauthorized" },
-          "404": { description: "Not found" },
-        },
+        summary: "Replace an event's envelope (edit capability)",
+        security: auth,
+        parameters: [idParam, capability],
+        requestBody: jsonBody(object(["envelope"], { envelope: ref("EncryptedEnvelope") })),
+        responses: { "200": { description: "{ event }" }, ...notFound },
       },
       delete: {
-        summary: "Delete an event (owner only)",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: {
-          "204": { description: "Deleted" },
-          "401": { description: "Unauthorized" },
-          "404": { description: "Not found" },
-        },
+        summary: "Delete an event for everyone (edit capability)",
+        security: auth,
+        parameters: [idParam, capability],
+        responses: { "204": { description: "Deleted" }, ...notFound },
       },
     },
-    "/group-events": {
+    "/events/{id}/capabilities": {
       post: {
-        summary: "Create a group event with candidate slots and invite participants",
-        description:
-          "The organizer must include themselves in `participants` (self-wrapped via ECDH with their own keypair) -- see docs/ARCHITECTURE.md.",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["slotIds", "contentEnvelope", "participants"],
-                properties: {
-                  slotIds: { type: "array", items: { type: "string" } },
-                  contentEnvelope: { $ref: "#/components/schemas/EncryptedEnvelope" },
-                  participants: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        userId: { type: "string", format: "uuid" },
-                        wrappedKey: { $ref: "#/components/schemas/EncryptedEnvelope" },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: { "201": { description: "Created" }, "400": { description: "Invalid request" } },
+        summary: "Mint an additional capability, e.g. a reusable event code (edit capability)",
+        security: auth,
+        parameters: [idParam, capability],
+        requestBody: jsonBody(
+          object(["level"], {
+            level: { type: "string", enum: ["view", "edit"] },
+            expiresAt: { type: "string", format: "date-time", nullable: true },
+          })
+        ),
+        responses: { "201": { description: "{ token }" }, ...notFound },
       },
+    },
+    "/events/{id}/capabilities/revoke": {
+      post: {
+        summary: "Revoke a capability (edit capability)",
+        description: "Stops future use. Cannot retract access from anyone who already copied the key.",
+        security: auth,
+        parameters: [idParam, capability],
+        requestBody: jsonBody(object(["token"], { token: { type: "string" } })),
+        responses: { "204": { description: "Revoked" }, ...notFound },
+      },
+    },
+
+    "/keyring": {
       get: {
-        summary: "List group events the authenticated user organizes or is invited to",
-        security: [{ bearerAuth: [] }],
-        responses: { "200": { description: "OK" } },
+        summary: "Fetch this account's encrypted keyring",
+        security: auth,
+        responses: { "200": { description: "{ keyring: EncryptedEnvelope | null, version }" } },
+      },
+      put: {
+        summary: "Replace the keyring (optimistic concurrency)",
+        description: "expectedVersion must match the stored version; 0 means no keyring exists yet.",
+        security: auth,
+        requestBody: jsonBody(
+          object(["envelope", "expectedVersion"], {
+            envelope: ref("EncryptedEnvelope"),
+            expectedVersion: { type: "integer", minimum: 0 },
+          })
+        ),
+        responses: {
+          "200": { description: "{ version }" },
+          "409": { description: "Changed on another device; reload and re-apply" },
+        },
       },
     },
-    "/group-events/{id}": {
+
+    "/inbox/deliver": {
+      post: {
+        summary: "Deliver a sealed envelope to an account",
+        description: "No sender is recorded. Triggers a generic push notification to the recipient.",
+        security: auth,
+        requestBody: jsonBody(
+          object(["recipientId", "envelope"], {
+            recipientId: { type: "string", format: "uuid" },
+            envelope: ref("SealedEnvelope"),
+          })
+        ),
+        responses: { "204": { description: "Delivered" }, "404": { description: "No such recipient" } },
+      },
+    },
+    "/inbox": {
       get: {
-        summary: "Get one group event (participants only)",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { "200": { description: "OK" }, "404": { description: "Not found" } },
+        summary: "List this account's inbox (newest 200)",
+        security: auth,
+        responses: { "200": { description: "{ messages: { id, envelope, createdAt }[] }" } },
       },
     },
-    "/group-events/{id}/votes": {
-      post: {
-        summary: "Submit (replacing any previous) ranked slot preferences",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["rankings"],
-                properties: {
-                  rankings: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        slotId: { type: "string" },
-                        rank: { type: "integer", minimum: 1 },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          "204": { description: "Recorded" },
-          "400": { description: "Invalid request or unknown slotId" },
-          "404": { description: "Not found" },
-        },
+    "/inbox/{id}": {
+      delete: {
+        summary: "Remove an inbox message",
+        security: auth,
+        parameters: [idParam],
+        responses: { "204": { description: "Removed" }, "404": { description: "Not found" } },
       },
     },
-    "/group-events/{id}/resolve": {
+
+    "/friend-code": {
+      get: {
+        summary: "Get this account's one-time friend code",
+        security: auth,
+        responses: { "200": { description: "{ friendCode: FriendCode }" } },
+      },
+    },
+    "/friend-code/rotate": {
       post: {
-        summary: "Resolve the event to a winning slot (organizer only)",
+        summary: "Replace this account's friend code",
+        security: auth,
+        responses: { "200": { description: "{ friendCode: FriendCode }" } },
+      },
+    },
+    "/tags/resolve": {
+      post: {
+        summary: "Resolve a username or one-time friend code to an invitable public key",
         description:
-          "Runs the default selection strategy (minimize total rank sum) over all submitted votes.",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          "Resolving a friend code consumes it. A code-resolved target is anonymous: no username or display name is returned.",
+        security: auth,
+        requestBody: jsonBody(object(["tag"], { tag: { type: "string" } })),
         responses: {
-          "200": { description: "OK" },
-          "404": { description: "Not found (not the organizer)" },
-          "409": { description: "No votes submitted yet" },
+          "200": { description: "{ target: { userId, publicKey, displayName, username?, viaCode } }" },
+          "404": { description: "Unknown username, or a code that is invalid or spent" },
         },
       },
     },
+
     "/api-keys": {
       post: {
-        summary: "Mint a new API key (for agentic/programmatic clients)",
-        description:
-          "The raw key is returned exactly once in the response and is never recoverable again -- only its hash is stored.",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["name"],
-                properties: { name: { type: "string", description: "Label to tell keys apart later" } },
-              },
-            },
-          },
+        summary: "Mint an API key (signed-in sessions only)",
+        description: "The raw key is returned once and never again; only its hash is stored.",
+        security: auth,
+        requestBody: jsonBody(object(["name"], { name: { type: "string" } })),
+        responses: {
+          "201": { description: "{ apiKey, rawKey }" },
+          "403": { description: "Called with an API key rather than a session" },
         },
-        responses: { "201": { description: "Created" } },
       },
       get: {
-        summary: "List the authenticated user's own API keys (prefix only, never the full key)",
-        security: [{ bearerAuth: [] }],
-        responses: { "200": { description: "OK" } },
+        summary: "List this account's API keys (prefix only)",
+        security: auth,
+        responses: { "200": { description: "{ apiKeys }" } },
       },
     },
     "/api-keys/{id}": {
       delete: {
         summary: "Revoke an API key",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        security: auth,
+        parameters: [idParam],
         responses: { "204": { description: "Revoked" }, "404": { description: "Not found" } },
       },
     },
+
     "/push/vapid-public-key": {
-      get: {
-        summary: "Get the VAPID public key, needed to call PushManager.subscribe()",
-        responses: { "200": { description: "OK" } },
-      },
+      get: { summary: "VAPID public key for PushManager.subscribe()", responses: { "200": { description: "{ publicKey }" } } },
     },
     "/push-subscriptions": {
       post: {
-        summary: "Register a Web Push subscription for the current device",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["endpoint", "keys"],
-                properties: {
-                  endpoint: { type: "string", format: "uri" },
-                  keys: {
-                    type: "object",
-                    properties: { p256dh: { type: "string" }, auth: { type: "string" } },
-                  },
-                },
-              },
-            },
-          },
-        },
+        summary: "Register a Web Push subscription for this device",
+        security: auth,
+        requestBody: jsonBody(
+          object(["endpoint", "keys"], {
+            endpoint: { type: "string", format: "uri" },
+            keys: object(["p256dh", "auth"], { p256dh: { type: "string" }, auth: { type: "string" } }),
+          })
+        ),
         responses: { "204": { description: "Subscribed" } },
       },
       delete: {
         summary: "Unregister a Web Push subscription",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["endpoint"],
-                properties: { endpoint: { type: "string", format: "uri" } },
-              },
-            },
-          },
-        },
+        security: auth,
+        requestBody: jsonBody(object(["endpoint"], { endpoint: { type: "string", format: "uri" } })),
         responses: { "204": { description: "Unsubscribed" }, "404": { description: "Not found" } },
       },
     },
