@@ -207,4 +207,37 @@ describe("EventEditPanel", () => {
     render(<EventEditPanel {...handlers()} event={makeEvent()} saveError="Network down" />);
     expect(screen.getByRole("alert")).toHaveTextContent("Network down");
   });
+
+  it("keeps an untouched start time exact, so a series doesn't shift on rename", async () => {
+    // Regression: the inputs show minutes, so saving any edit rounded a
+    // start like 09:00:42 down to 09:00 -- shifting every occurrence of a
+    // series and un-skipping its skipped dates.
+    const onSave = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    const event = makeEvent({
+      startTime: "2026-08-01T09:00:42.000Z",
+      endTime: "2026-08-01T09:30:42.000Z",
+      recurrence: { freq: "DAILY", interval: 1 },
+      skippedOccurrences: ["2026-08-02T09:00:42.000Z"],
+    });
+    render(<EventEditPanel {...handlers()} event={event} onSave={onSave} />);
+    const title = screen.getByLabelText(/title/i);
+    await user.clear(title);
+    await user.type(title, "Renamed");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0]![0].startTime).toBe("2026-08-01T09:00:42.000Z");
+    expect(onSave.mock.calls[0]![0].endTime).toBe("2026-08-01T09:30:42.000Z");
+  });
+
+  it("still saves a start time the person actually changed", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(<EventEditPanel {...handlers()} event={makeEvent({ startTime: "2026-08-01T09:00:42.000Z" })} onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: "2026-08-01T08:15" } });
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0]![0].startTime).toBe(new Date("2026-08-01T08:15").toISOString());
+  });
 });

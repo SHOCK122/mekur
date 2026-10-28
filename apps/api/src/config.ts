@@ -23,7 +23,7 @@ export const config = {
   // (docker-compose) this must be 1, or every request appears to come from
   // nginx and all users share one rate-limit bucket -- ten failed logins
   // anywhere would lock everyone out for a minute.
-  trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : 0,
+  trustProxy: Number(process.env.TRUST_PROXY ?? 0),
   // Same dev-only-fallback pattern as jwtSecret: a real, valid VAPID
   // keypair so local development works out of the box, but guarded
   // against production use below since it's public in this repo's
@@ -49,5 +49,11 @@ if (
     "VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY must be set to a real, privately-generated keypair in " +
       "production (NODE_ENV=production) -- the built-in fallback is public in this repo's history. " +
       "Generate one with: npx web-push generate-vapid-keys"
+  );
+}
+
+if (!Number.isInteger(config.trustProxy) || config.trustProxy < 0) {
+  throw new Error(
+    `TRUST_PROXY must be a whole number of proxy hops (e.g. 1 behind nginx), got "${process.env.TRUST_PROXY}"`
   );
 }

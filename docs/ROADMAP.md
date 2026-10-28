@@ -122,6 +122,13 @@ worth of dead code and fixes what the model switch broke.
       the event-code "Add event" button had the same accessible name as
       the create form's (now "Join event"), and the create form's
       datetime inputs overflowed the card.
+- [x] Found in PR review: saving any edit rounded an event's start to the
+      minute (the inputs show minutes; new events start to the second),
+      shifting recurring series and un-skipping their skipped dates.
+      Untouched time fields now save the original instant.
+- [x] Found in PR review: invites from blocked senders and unreadable
+      messages were hidden but never deleted, so they still counted toward
+      the 200-message inbox cap and could crowd out real invitations.
 
 ### Privacy and security fixes
 - [x] `friend_codes.consumed_by` recorded *who redeemed whose code* in

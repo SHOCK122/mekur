@@ -89,19 +89,31 @@ export interface Invitation {
   senderPublicKey: string | null;
 }
 
+export interface Inbox {
+  invitations: Invitation[];
+  /** Messages that can never be opened: corrupt, a forged sender proof, or
+   * sealed to a stale key. Returned so the caller can delete them -- left
+   * in place they'd count toward the server's inbox cap forever. */
+  unreadable: string[];
+}
+
 /**
  * Reads the inbox. Every message is sealed to this account's public key, so
  * it opens with our own secret key alone -- no need to know, or guess, who
- * sent it. Messages that fail to open (corrupt, forged sender proof, sealed
- * to a stale key) are skipped rather than breaking the whole list.
+ * sent it. A message that fails to open is reported, not thrown, so one bad
+ * message can't break the whole list.
  */
-export async function listInvitations(session: Session): Promise<Invitation[]> {
+export async function readInbox(session: Session): Promise<Inbox> {
   const body = await apiFetch(session, "/inbox");
   const invitations: Invitation[] = [];
+  const unreadable: string[] = [];
   for (const message of body.messages as { id: string; envelope: SealedEnvelope; createdAt: string }[]) {
     try {
       const opened = openSealed<InvitePayload>(message.envelope, session.identitySecretKey);
-      if (opened.payload.kind !== "event-invite") continue;
+      if (opened.payload.kind !== "event-invite") {
+        unreadable.push(message.id);
+        continue;
+      }
       invitations.push({
         messageId: message.id,
         payload: opened.payload,
@@ -109,10 +121,10 @@ export async function listInvitations(session: Session): Promise<Invitation[]> {
         senderPublicKey: opened.senderPublicKey,
       });
     } catch {
-      // Unreadable; see above.
+      unreadable.push(message.id);
     }
   }
-  return invitations;
+  return { invitations, unreadable };
 }
 
 export async function acceptInvitation(session: Session, invitation: Invitation): Promise<void> {

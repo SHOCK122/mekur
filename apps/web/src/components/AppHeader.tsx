@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   getFriendCode,
   rotateFriendCode,
-  listInvitations,
+  readInbox,
   acceptInvitation,
   dismissInvitation,
   saveConnection,
@@ -51,11 +51,18 @@ export function AppHeader({ session, onLogout, onEventsChanged }: AppHeaderProps
 
   async function refreshInvitations() {
     try {
-      const found = await listInvitations(session);
+      const { invitations: found, unreadable } = await readInbox(session);
       // Blocking is enforced here, on the device: the server can't filter
       // without learning who contacts whom.
-      setInvitations(
-        found.filter((i) => findConnection(session.userId, i.senderPublicKey)?.state !== "blocked")
+      const blocked = found.filter(
+        (i) => findConnection(session.userId, i.senderPublicKey)?.state === "blocked"
+      );
+      setInvitations(found.filter((i) => !blocked.includes(i)));
+      // Delete what will never be shown. Hidden messages still count toward
+      // the server's inbox cap, so leaving them would let a blocked sender
+      // (or garbage) push real invitations out of view.
+      await Promise.allSettled(
+        [...unreadable, ...blocked.map((i) => i.messageId)].map((id) => dismissInvitation(session, id))
       );
     } catch {
       // Inbox unavailable (offline, most likely) -- not worth an alarm.
@@ -96,9 +103,12 @@ export function AppHeader({ session, onLogout, onEventsChanged }: AppHeaderProps
 
   async function handleReject(invitation: Invitation) {
     setBusy(true);
+    setError(null);
     try {
       await dismissInvitation(session, invitation.messageId);
       await refreshInvitations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reject the invitation");
     } finally {
       setBusy(false);
     }
@@ -112,8 +122,8 @@ export function AppHeader({ session, onLogout, onEventsChanged }: AppHeaderProps
       username: invitation.payload.fromUsername,
       state,
     });
-    // Blocking someone also discards what they sent.
-    if (state === "blocked") await dismissInvitation(session, invitation.messageId);
+    // A block also discards what they sent: refreshInvitations deletes
+    // messages from blocked senders.
     await refreshInvitations();
   }
 

@@ -188,4 +188,22 @@ describe("AppHeader", () => {
       expect(fetchMock.mock.calls.some((c) => c[0] === "/api/inbox/msg-1" && c[1]?.method === "DELETE")).toBe(true)
     );
   });
+
+  it("deletes invites from blocked senders and unreadable messages, so they can't fill the inbox", async () => {
+    // Hidden messages still count toward the server's 200-message inbox cap;
+    // left in place, a blocked sender could push real invites out of view.
+    localStorage.setItem(
+      `schedule-app:connections:${session.userId}`,
+      JSON.stringify([{ publicKey: bob.publicKey, displayName: "Bob", state: "blocked" }])
+    );
+    const garbage = { ...inviteMessage(), id: "msg-garbage" };
+    garbage.envelope = sealToRecipient("not for you", generateKeyPair().publicKey);
+    const fetchMock = stubServer([inviteMessage(), garbage]);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
+
+    const deleted = () =>
+      fetchMock.mock.calls.filter((c) => c[1]?.method === "DELETE").map((c) => c[0]).sort();
+    await waitFor(() => expect(deleted()).toEqual(["/api/inbox/msg-1", "/api/inbox/msg-garbage"]));
+    expect(screen.queryByText(/invited you/i)).not.toBeInTheDocument();
+  });
 });

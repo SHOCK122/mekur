@@ -1,7 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { EncryptedEnvelopeSchema } from "@schedule-app/shared";
-import type { FastifyRequest } from "fastify";
 import { BATCH_READ_LIMIT, type EventRepository } from "../repositories/eventRepository.js";
 import { isValidUuid } from "../lib/params.js";
 

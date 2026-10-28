@@ -38,8 +38,14 @@ export function EventEditPanel({
 }: EventEditPanelProps) {
   const readOnly = !event.canEdit;
   const [title, setTitle] = useState(event.title ?? "");
-  const [start, setStart] = useState(toLocalInput(new Date(event.startTime)));
-  const [end, setEnd] = useState(event.endTime ? toLocalInput(new Date(event.endTime)) : "");
+  // The inputs show minutes, but stored times can carry seconds (new events
+  // default to "now" to the second). Remember what the fields started as so
+  // an untouched field saves the original instant: rounding it would shift
+  // a recurring series, and its skipped occurrences would stop matching.
+  const [initialStart] = useState(() => toLocalInput(new Date(event.startTime)));
+  const [initialEnd] = useState(() => (event.endTime ? toLocalInput(new Date(event.endTime)) : ""));
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState(initialEnd);
   const [important, setImportant] = useState(Boolean(event.important));
   const [recurrence, setRecurrence] = useState<RecurrenceRule | undefined>(event.recurrence);
   const [busy, setBusy] = useState(false);
@@ -88,8 +94,8 @@ export function EventEditPanel({
       setError("Give the event a title.");
       return;
     }
-    const startTime = fromLocalInput(start);
-    const endTime = fromLocalInput(end);
+    const startTime = start === initialStart ? event.startTime : fromLocalInput(start);
+    const endTime = end === initialEnd ? event.endTime : fromLocalInput(end);
     const invalid = validateTimes(startTime, endTime);
     if (invalid) {
       setError(invalid);
