@@ -1,40 +1,47 @@
 import { useEffect, useRef, useState } from "react";
+import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
+import { RecurrenceFields } from "./RecurrenceFields.js";
+import { describeRecurrence, withoutSkippedOccurrence } from "../lib/recurrence.js";
+import { toLocalInput, fromLocalInput, validateTimes } from "../lib/datetime.js";
 
 interface EventEditPanelProps {
   event: DecryptedEvent;
   /** Where on screen the event's modal sits, so the panel can visibly grow
    * out of it rather than appearing from nowhere. */
   origin?: { left: number; top: number; width: number; height: number } | null;
-  onSave: (changes: Partial<DecryptedEvent>) => Promise<void> | void;
+  /** Resolves true once saved. */
+  onSave: (changes: Partial<EventContent>) => Promise<boolean>;
+  /** Delete for everyone. Only offered with an edit capability. */
   onDelete: () => void;
+  /** Remove from this schedule only. Offered when the event is view-only. */
+  onLeave: () => void;
+  onShare: () => void;
   onClose: () => void;
-}
-
-/** Formats an instant for a datetime-local input, which expects local time
- * with no zone suffix. */
-function toLocalInput(iso: string | undefined): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
+  /** A save failure reported by the owner, shown here because the panel
+   * covers wherever else it would appear. */
+  saveError?: string | null;
 }
 
 const ANIMATION_MS = 180;
+const formatDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function EventEditPanel({
   event,
   origin,
   onSave,
   onDelete,
+  onLeave,
+  onShare,
   onClose,
+  saveError,
 }: EventEditPanelProps) {
+  const readOnly = !event.canEdit;
   const [title, setTitle] = useState(event.title ?? "");
-  const [start, setStart] = useState(toLocalInput(event.startTime));
-  const [end, setEnd] = useState(toLocalInput(event.endTime));
+  const [start, setStart] = useState(toLocalInput(new Date(event.startTime)));
+  const [end, setEnd] = useState(event.endTime ? toLocalInput(new Date(event.endTime)) : "");
   const [important, setImportant] = useState(Boolean(event.important));
+  const [recurrence, setRecurrence] = useState<RecurrenceRule | undefined>(event.recurrence);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Drives both the opening and closing animation; closing waits for it to
@@ -67,42 +74,33 @@ export function EventEditPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleSave(e: React.FormEvent) {
+  async function save(changes: Partial<EventContent>, closeAfter: boolean) {
+    setBusy(true);
+    const saved = await onSave(changes);
+    setBusy(false);
+    if (saved && closeAfter) requestClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     if (!title.trim()) {
       setError("Give the event a title.");
       return;
     }
-    if (!start) {
-      setError("An event needs a start time.");
+    const startTime = fromLocalInput(start);
+    const endTime = fromLocalInput(end);
+    const invalid = validateTimes(startTime, endTime);
+    if (invalid) {
+      setError(invalid);
       return;
     }
-    const startIso = new Date(start).toISOString();
-    const endIso = end ? new Date(end).toISOString() : undefined;
-    if (endIso && new Date(endIso) <= new Date(startIso)) {
-      setError("End time must be after the start time.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await onSave({
-        title: title.trim(),
-        startTime: startIso,
-        // Clearing the field makes the event open-ended again, rather than
-        // being an error.
-        endTime: endIso,
-        important,
-      });
-      requestClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the event");
-    } finally {
-      setBusy(false);
-    }
+    // Clearing the end makes the event open-ended again rather than being
+    // an error; clearing the repeat makes it a one-off.
+    await save({ title: title.trim(), startTime, endTime, important, recurrence }, true);
   }
+
+  const skipped = event.skippedOccurrences ?? [];
 
   // Animate outward from where the event sits, so it's obvious which one
   // is being edited without pinning the panel to the timeline.
@@ -120,50 +118,107 @@ export function EventEditPanel({
         style={originStyle}
         role="dialog"
         aria-modal="true"
-        aria-label={`Edit ${event.title || "untitled event"}`}
+        aria-label={`${readOnly ? "View" : "Edit"} ${event.title || "untitled event"}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <form onSubmit={handleSave} className="edit-form">
-          <label>
-            Title
-            <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
+        <form onSubmit={handleSubmit} className="edit-form">
+          {readOnly && (
+            <p className="field-hint">
+              Shared with you to view. You can&rsquo;t change it, but you can remove it
+              from your schedule.
+            </p>
+          )}
 
-          <label>
-            Starts
-            <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
-          </label>
+          <fieldset disabled={readOnly} className="edit-fields">
+            <label>
+              Title
+              <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} />
+            </label>
 
-          <label>
-            Ends <span className="field-hint">(leave empty for open-ended)</span>
-            <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-          </label>
+            <label>
+              Starts
+              <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+            </label>
 
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={important}
-              onChange={(e) => setImportant(e.target.checked)}
-            />
-            Mark as important
-          </label>
+            <label>
+              Ends <span className="field-hint">(leave empty for open-ended)</span>
+              <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </label>
 
-          {error && (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={important}
+                onChange={(e) => setImportant(e.target.checked)}
+              />
+              Mark as important
+            </label>
+
+            {readOnly ? (
+              event.recurrence && <p className="event-recurrence">{describeRecurrence(event.recurrence)}</p>
+            ) : (
+              <RecurrenceFields value={recurrence} onChange={setRecurrence} />
+            )}
+          </fieldset>
+
+          {skipped.length > 0 && (
+            <section className="skipped-occurrences" aria-label="Skipped occurrences">
+              <h3>Skipped</h3>
+              <ul>
+                {skipped.map((iso) => (
+                  <li key={iso}>
+                    <span>{formatDate.format(new Date(iso))}</span>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="header-link"
+                        disabled={busy}
+                        onClick={() =>
+                          save(
+                            { skippedOccurrences: withoutSkippedOccurrence(skipped, new Date(iso)) },
+                            false
+                          )
+                        }
+                        aria-label={`Restore ${formatDate.format(new Date(iso))}`}
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {(error ?? saveError) && (
             <p className="auth-error" role="alert">
-              {error}
+              {error ?? saveError}
             </p>
           )}
 
           <div className="edit-actions">
-            <button type="submit" disabled={busy}>
-              {busy ? "Saving\u2026" : "Save"}
-            </button>
+            {!readOnly && (
+              <button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </button>
+            )}
             <button type="button" className="header-link" onClick={requestClose}>
-              Cancel
+              {readOnly ? "Close" : "Cancel"}
             </button>
-            <button type="button" className="edit-delete" onClick={onDelete}>
-              Delete
-            </button>
+            {!readOnly && (
+              <button type="button" className="header-link" onClick={onShare}>
+                Share
+              </button>
+            )}
+            {readOnly ? (
+              <button type="button" className="edit-delete" onClick={onLeave}>
+                Remove from my schedule
+              </button>
+            ) : (
+              <button type="button" className="edit-delete" onClick={onDelete}>
+                Delete
+              </button>
+            )}
           </div>
         </form>
       </div>

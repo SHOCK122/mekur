@@ -11,6 +11,12 @@ export function registerApiKeyRoutes(app: FastifyInstance, apiKeys: ApiKeyReposi
     scoped.addHook("preHandler", scoped.authenticate);
 
     scoped.post("/api-keys", async (request, reply) => {
+      // An API key must not be able to mint further keys: one leaked key
+      // would otherwise become an unbounded, self-renewing set that
+      // survives its own revocation.
+      if (request.authMethod !== "session") {
+        return reply.code(403).send({ error: "API keys can only be created from a signed-in session." });
+      }
       const parsed = CreateApiKeyRequestSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });

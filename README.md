@@ -4,46 +4,49 @@ An open-source, end-to-end encrypted scheduling application. Self-hostable
 via Docker, usable by both humans and agentic AI clients, and designed to
 work on flaky connections and low-end devices.
 
-**Status:** Phases 0–3 complete and working. See
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's built, what's deliberately
-deferred, and what's next.
+**Status:** single-user scheduling, sharing, and the timeline work end to
+end. Group scheduling (candidate slots + voting) is being rebuilt on the
+capability model and is not currently available. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's built, what's deferred,
+and what's next.
 
 ## What it does today
 
-- **Personal calendar** — create, edit, and delete events. Event content
-  (title, times, location, notes) is encrypted on your device before it
-  ever reaches the server.
-- **Recurring events** — arbitrary intervals ("every 37 minutes"), daily,
-  weekly, or specific weekdays, using the iCalendar RRULE model.
-- **Priorities** — bump an event up, or push it down (which raises
-  everything else instead). No raw numbers shown.
-- **Group scheduling** — propose several candidate times, invite people,
-  everyone ranks the options, and the app picks the best slot. The server
-  only ever sees opaque slot IDs and rank numbers — never the real times
-  or the event's content.
-- **Works offline** — the app shell, your event data, *and* your edits.
-  Changes made offline queue up and replay when you reconnect, with real
-  conflict detection rather than silently overwriting another device.
-- **Push notifications** — optional browser notifications for group event
-  invites and resolutions.
-- **Agent-friendly API** — mint API keys for programmatic/AI clients; the
-  full REST surface is documented via OpenAPI at `GET /api/openapi.json`.
+- **Timeline** — a real time axis from minutes to years, in four
+  orientations, with a live present-time marker. Drag an event's edges to
+  change its times, drag it away from the base to raise its priority.
+- **Encrypted events** — title, times, location, notes and recurrence are
+  encrypted on your device with a per-event key. The server stores
+  ciphertext and never learns which events are yours.
+- **Recurring events** — any interval ("every 37 minutes", "every 2
+  weeks"), with an optional end date. Skip a single occurrence and restore
+  it later.
+- **Priority and importance** — stacking order uses fractional ranks (one
+  write per reorder, no ties); "important" is a separate flag that changes
+  styling only.
+- **Sharing** — invite someone by username, or by their one-time friend
+  code (which keeps both of you anonymous to each other), or hand out an
+  event code. Invitations are sealed so the server can't tell who sent
+  them. Connections and blocks stay on your device.
+- **Works offline for reading** — the app shell and your last-synced
+  schedule load with no network. Offline *editing* is on the roadmap.
+- **Push notifications** — optional, deliberately generic ("Someone shared
+  an event with you"): the server can't read your events, so it can't
+  leak them.
+- **Agent-friendly API** — API keys for programmatic clients; the REST
+  surface is documented via OpenAPI at `GET /api/openapi.json`.
 
 ## Design principles
 
-- **Encrypted by default.** Event content is encrypted client-side before
-  it reaches the server. The server stores and relays ciphertext; it does
-  not hold the keys needed to read it. Group scheduling uses per-event
-  keys wrapped individually to each participant via X25519 ECDH. See
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full model and
-  its honest limitations.
+- **Encrypted by default, and no social graph.** Access is by capability
+  token, not by account: the database holds no link between users and
+  events. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the model
+  and its honest limitations.
 - **Self-hostable.** A single `docker compose up` runs the whole stack.
-- **Built to scale, and actually measured.** Statelessness is verified
-  (two instances against one database, tokens and data interchangeable),
-  not just asserted, and throughput numbers are real measurements rather
-  than aspirations.
-- **Honest about gaps.** Known limitations and deliberate simplifications
-  are written down in the roadmap rather than quietly omitted.
+- **Measured, not asserted.** Statelessness is verified with two instances
+  on one database, and throughput numbers are real measurements.
+- **Honest about gaps.** Known limitations are written down in the roadmap
+  rather than quietly omitted.
 
 ## Quick start (Docker)
 
@@ -86,7 +89,8 @@ cd apps/api && npm run dev    # API on :3000
 cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to :3000
 ```
 
-Tests run against a real PostgreSQL instance, not mocks:
+API tests run against a real PostgreSQL instance, not mocks (test files
+run one at a time, since they share the database):
 
 ```bash
 createdb scheduleapp_test
@@ -111,23 +115,27 @@ packages/
 infra/
   Dockerfile.api, Dockerfile.web, nginx.conf
 docs/
-  ARCHITECTURE.md   encryption model, scaling, offline sync
+  ARCHITECTURE.md   threat model, keys, capability model, invitations, scaling
   ROADMAP.md        phase-by-phase status, decisions, known gaps
 ```
 
 ## Security notes
 
-- Passwords never leave your device. A single scrypt run derives three
-  domain-separated keys: one to prove your identity to the server, one to
-  encrypt your data, and an X25519 identity keypair for sharing.
+- Passwords never leave your device. A single scrypt run derives an auth
+  key (proves your password to the server), an encryption key (encrypts
+  your keyring), and an X25519 identity keypair (receives invitations).
 - The server stores a hash of the auth key it receives — a leaked database
   alone isn't a usable login credential.
-- **Known limitation:** the encryption key currently lives in
-  `localStorage` so a page refresh doesn't log you out, which means an XSS
-  bug could read it. Hardening options are tracked in the roadmap.
-- Push notification payloads are deliberately generic ("You've been
-  invited to a group event") — the server never has your event titles, so
-  it can't leak them even by accident.
+- Each event has its own random key; capability tokens are stored only as
+  hashes. A database dump doesn't reveal who can reach which event.
+- API keys can't mint further API keys; only a signed-in session can.
+- **Known limitation:** your keys live in `localStorage` so a refresh
+  doesn't sign you out, which means an XSS bug could read them. The page is
+  served with a strict CSP to make that harder; proper hardening is tracked
+  in the roadmap.
+- **Known limitation:** public keys come from the server, so a malicious
+  server could substitute its own. Key fingerprint verification is on the
+  roadmap.
 
 ## Contributing
 

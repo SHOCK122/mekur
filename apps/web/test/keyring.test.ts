@@ -1,21 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { deriveAuthAndEncryptionKeys, encryptEnvelope, decryptEnvelope } from "@schedule-app/crypto";
+import { encryptEnvelope, decryptEnvelope, generateSymmetricKey } from "@schedule-app/crypto";
 import { loadKeyring, mutateKeyring, addKeyringEntry } from "../src/lib/keyring.js";
 import { listEvents, createEvent, updateEvent } from "../src/lib/events.js";
 import type { Session } from "../src/lib/session.js";
+import { testSession } from "./testSession.js";
 
 let session: Session;
 
-beforeEach(async () => {
-  const keys = await deriveAuthAndEncryptionKeys("pw");
-  session = {
-    userId: "u1",
-    username: "ada",
-    token: "t",
-    encryptionKey: keys.encryptionKey,
-    identityPublicKey: keys.identityKeyPair.publicKey,
-    identitySecretKey: keys.identityKeyPair.secretKey,
-  };
+beforeEach(() => {
+  session = testSession();
 });
 
 afterEach(() => {
@@ -27,7 +20,6 @@ function content(title: string) {
     title,
     startTime: "2026-09-01T09:00:00.000Z",
     endTime: "2026-09-01T09:30:00.000Z",
-    priority: 0,
   };
 }
 
@@ -183,7 +175,7 @@ describe("events under the capability model", () => {
   }, 20_000);
 
   it("lists events by presenting keyring capabilities and decrypting each", async () => {
-    const eventKey = (await deriveAuthAndEncryptionKeys("other")).encryptionKey;
+    const eventKey = generateSymmetricKey();
     const envelope = encryptEnvelope(content("Standup"), eventKey, "event");
     const server = keyringServer(
       [{ eventId: "e1", viewToken: "vt", eventKey, addedAt: "x" }],
@@ -209,9 +201,9 @@ describe("events under the capability model", () => {
   }, 20_000);
 
   it("skips an undecryptable event rather than blanking the whole calendar", async () => {
-    const goodKey = (await deriveAuthAndEncryptionKeys("good")).encryptionKey;
+    const goodKey = generateSymmetricKey();
     const goodEnvelope = encryptEnvelope(content("Readable"), goodKey, "event");
-    const wrongKey = (await deriveAuthAndEncryptionKeys("wrong")).encryptionKey;
+    const wrongKey = generateSymmetricKey();
     const badEnvelope = encryptEnvelope(content("Unreadable"), wrongKey, "event");
 
     const server = keyringServer(

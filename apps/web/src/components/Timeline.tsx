@@ -23,6 +23,7 @@ import {
   rankForLane,
   type ResizeEdge,
 } from "../lib/timelineInteraction.js";
+import type { EventContent } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 
 const LANE_SIZE = 28;
@@ -32,10 +33,12 @@ const LABEL_WIDTH_PX = 90;
 
 interface TimelineProps {
   events: DecryptedEvent[];
-  onEditEvent: (eventId: string, origin: DOMRect | null) => void;
+  /** Opens an event. `occurrenceStart` is the occurrence whose label was
+   * clicked, so per-occurrence actions act on the right one. */
+  onEditEvent: (eventId: string, origin: DOMRect | null, occurrenceStart: Date) => void;
   /** Applies a change to an event. Kept as a callback so the timeline
    * stays presentational and the owner decides how to persist. */
-  onChangeEvent?: (eventId: string, changes: Partial<DecryptedEvent>) => Promise<void> | void;
+  onChangeEvent?: (eventId: string, changes: Partial<EventContent>) => Promise<unknown> | void;
 }
 
 type DragMode = { kind: "resize"; edge: ResizeEdge } | { kind: "move" };
@@ -494,7 +497,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                           onClick={(e) =>
                             onEditEvent(
                               event.id,
-                              (e.currentTarget as Element).getBoundingClientRect()
+                              (e.currentTarget as Element).getBoundingClientRect(),
+                              occurrence.start
                             )
                           }
                         >

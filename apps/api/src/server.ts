@@ -17,6 +17,7 @@ async function main() {
     vapidPublicKey: config.vapidPublicKey,
     vapidPrivateKey: config.vapidPrivateKey,
     vapidSubject: config.vapidSubject,
+    trustProxy: config.trustProxy,
   });
 
   await app.listen({ port: config.port, host: config.host });

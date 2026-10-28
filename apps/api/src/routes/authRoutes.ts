@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { sha256Base64 } from "@schedule-app/crypto";
 import { UsernameTakenError, type UserRepository } from "../repositories/userRepository.js";
@@ -63,7 +62,7 @@ export function registerAuthRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
     }
-    const { username, authKey } = parsed.data;
+    const { username, authKey, publicKey } = parsed.data;
 
     const user = await users.findByUsername(username);
     if (!user || sha256Base64(authKey) !== user.authHash) {
@@ -72,41 +71,25 @@ export function registerAuthRoutes(
       return reply.code(401).send({ error: "Invalid username or password" });
     }
 
+    // Self-heal a stale public key. Accounts created before the identity
+    // keypair was derived from the password registered a RANDOM key whose
+    // private half was discarded, so nothing sealed to it can be opened.
+    // The key the client derives is authoritative -- it's the only one
+    // anyone holds the private half of.
+    //
+    // This lives here, not behind its own endpoint, because swapping an
+    // account's public key redirects every future invitation to whoever
+    // holds the new private key. Only a request that has just proven
+    // knowledge of the password may do that; a stolen JWT or API key must
+    // not.
+    if (publicKey && publicKey !== user.publicKey) {
+      await users.updatePublicKey(user.id, publicKey);
+      user.publicKey = publicKey;
+    }
+
     const token = app.jwt.sign({ userId: user.id }, { expiresIn: TOKEN_TTL });
     return reply.send({ user: publicUser(user), token });
   });
-
-  // Directory lookup: find a contact's public key to invite them to a
-  // group event. Requires auth (must be a registered user of this
-  // instance) to reduce casual enumeration/scraping, even though the
-  // data itself is meant to be shared -- a modest, cheap mitigation.
-  app.get<{ Params: { username: string } }>(
-    "/users/:username",
-    { preHandler: app.authenticate },
-    async (request, reply) => {
-      const user = await users.findByUsername(request.params.username);
-      if (!user) return reply.code(404).send({ error: "Not found" });
-      return reply.send({ user: publicUser(user) });
-    }
-  );
-
-  // Lets a client repair its own stored public key when it detects that
-  // the server's copy doesn't match what its password actually derives.
-  // Scoped to the authenticated user only -- you can never rewrite someone
-  // else's key, which would let you hijack events wrapped to them.
-  app.put(
-    "/users/me/public-key",
-    { preHandler: app.authenticate },
-    async (request, reply) => {
-      const parsed = z.object({ publicKey: z.string().min(1).max(200) }).safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });
-      }
-      const updated = await users.updatePublicKey(request.userId!, parsed.data.publicKey);
-      if (!updated) return reply.code(404).send({ error: "Not found" });
-      return reply.code(204).send();
-    }
-  );
 
   // Returns the auth salt for a username, so a client can re-derive its
   // keys before attempting login. Deliberately public (no auth required)

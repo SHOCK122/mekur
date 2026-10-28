@@ -1,37 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { deriveAuthAndEncryptionKeys, encryptEnvelope, deriveSharedWrapKey } from "@schedule-app/crypto";
+import { generateKeyPair, sealToRecipient, type KeyPair } from "@schedule-app/crypto";
 import { AppHeader } from "../src/components/AppHeader.js";
 import type { Session } from "../src/lib/session.js";
+import { testSession } from "./testSession.js";
 
 let session: Session;
+let bob: KeyPair;
 
-beforeEach(async () => {
+beforeEach(() => {
   localStorage.clear();
-  const keys = await deriveAuthAndEncryptionKeys("pw");
-  session = {
-    userId: "u1",
-    username: "ada",
-    token: "t",
-    encryptionKey: keys.encryptionKey,
-    identityPublicKey: keys.identityKeyPair.publicKey,
-    identitySecretKey: keys.identityKeyPair.secretKey,
-  };
+  session = testSession();
+  bob = generateKeyPair();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Builds an inbox message the way sendInvite would, self-addressed so the
- * test can decrypt it with the same session. */
-function inviteMessage(overrides: Record<string, unknown> = {}) {
-  const wrapKey = deriveSharedWrapKey(session.identitySecretKey, session.identityPublicKey);
+/** Builds an inbox message the way sendInvite does: sealed to this
+ * session, from Bob unless told the invite is anonymous. */
+function inviteMessage(overrides: Record<string, unknown> = {}, sender: KeyPair | undefined = bob) {
   return {
     id: "msg-1",
     createdAt: "2026-01-01T00:00:00.000Z",
-    envelope: encryptEnvelope(
+    envelope: sealToRecipient(
       {
         kind: "event-invite",
         eventId: "e1",
@@ -39,11 +33,11 @@ function inviteMessage(overrides: Record<string, unknown> = {}) {
         eventKey: "ek",
         viaCode: false,
         fromDisplayName: "Bob",
-        fromFriendCode: "BOBCODE1",
+        fromUsername: "bob",
         ...overrides,
       },
-      wrapKey,
-      "invite"
+      session.identityPublicKey,
+      sender
     ),
   };
 }
@@ -74,7 +68,7 @@ function stubServer(messages: unknown[] = []) {
 describe("AppHeader", () => {
   it("shows who is signed in and offers sign out", async () => {
     stubServer();
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={() => {}} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
     expect(screen.getByText("ada")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   }, 20_000);
@@ -82,7 +76,7 @@ describe("AppHeader", () => {
   it("reveals the one-time invite code and can replace it", async () => {
     stubServer();
     const user = userEvent.setup();
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={() => {}} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
 
     await user.click(screen.getByRole("button", { name: /invite code/i }));
     await waitFor(() => expect(screen.getByText("ABCD2345")).toBeInTheDocument());
@@ -98,7 +92,7 @@ describe("AppHeader", () => {
     const fetchMock = stubServer([inviteMessage()]);
     const onAccepted = vi.fn();
     const user = userEvent.setup();
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={onAccepted} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={onAccepted} />);
 
     await waitFor(() => expect(screen.getByText(/Bob invited you/i)).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /^accept$/i }));
@@ -113,7 +107,7 @@ describe("AppHeader", () => {
 
   it("offers connect and block for a named invite", async () => {
     stubServer([inviteMessage()]);
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={() => {}} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
     await waitFor(() => expect(screen.getByText(/Bob invited you/i)).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /add connection/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /block/i })).toBeInTheDocument();
@@ -124,9 +118,9 @@ describe("AppHeader", () => {
     // is nothing stable to connect to, and offering it would imply the
     // sender is identifiable when they deliberately are not.
     stubServer([
-      inviteMessage({ viaCode: true, fromDisplayName: undefined, fromFriendCode: undefined }),
+      inviteMessage({ viaCode: true, fromDisplayName: undefined, fromUsername: undefined }, undefined),
     ]);
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={() => {}} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
 
     await waitFor(() => expect(screen.getByText(/someone invited you/i)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /add connection/i })).not.toBeInTheDocument();
@@ -138,14 +132,60 @@ describe("AppHeader", () => {
   it("hides invitations from a blocked sender, filtering client-side", async () => {
     localStorage.setItem(
       `schedule-app:connections:${session.userId}`,
-      JSON.stringify([{ friendCode: "BOBCODE1", displayName: "Bob", state: "blocked" }])
+      JSON.stringify([{ publicKey: bob.publicKey, displayName: "Bob", state: "blocked" }])
     );
     stubServer([inviteMessage()]);
-    render(<AppHeader session={session} onLogout={() => {}} onInvitationAccepted={() => {}} />);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
 
     await waitFor(() => expect(screen.getByText("ada")).toBeInTheDocument());
     // The server can't filter for us -- it doesn't know who contacts whom --
     // so this has to happen here.
     expect(screen.queryByText(/Bob invited you/i)).not.toBeInTheDocument();
   }, 20_000);
+
+  it("keeps blocking someone who renames themselves, because blocks follow the verified key", async () => {
+    localStorage.setItem(
+      `schedule-app:connections:${session.userId}`,
+      JSON.stringify([{ publicKey: bob.publicKey, displayName: "Bob", state: "blocked" }])
+    );
+    stubServer([inviteMessage({ fromDisplayName: "Definitely not Bob", fromUsername: "notbob" })]);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText("ada")).toBeInTheDocument());
+    expect(screen.queryByText(/invited you/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a saved connection's name rather than the self-described one", async () => {
+    localStorage.setItem(
+      `schedule-app:connections:${session.userId}`,
+      JSON.stringify([{ publicKey: bob.publicKey, displayName: "Bob from work", state: "connected" }])
+    );
+    stubServer([inviteMessage({ fromDisplayName: "Someone Important" })]);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/Bob from work invited you/i)).toBeInTheDocument());
+    // Already a connection, so don't offer to add them again.
+    expect(screen.queryByRole("button", { name: /add connection/i })).not.toBeInTheDocument();
+  });
+
+  it("drops an invite whose claimed sender doesn't verify", async () => {
+    const mallory = generateKeyPair();
+    // Mallory claims to be Bob's key but can only sign with her own.
+    stubServer([inviteMessage({}, { publicKey: bob.publicKey, secretKey: mallory.secretKey })]);
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText("ada")).toBeInTheDocument());
+    expect(screen.queryByText(/invited you/i)).not.toBeInTheDocument();
+  });
+
+  it("records a block against the sender's key and discards their invite", async () => {
+    const fetchMock = stubServer([inviteMessage()]);
+    const user = userEvent.setup();
+    render(<AppHeader session={session} onLogout={() => {}} onEventsChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/Bob invited you/i)).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /block/i }));
+
+    const saved = JSON.parse(localStorage.getItem(`schedule-app:connections:${session.userId}`)!);
+    expect(saved).toEqual([expect.objectContaining({ publicKey: bob.publicKey, state: "blocked" })]);
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => c[0] === "/api/inbox/msg-1" && c[1]?.method === "DELETE")).toBe(true)
+    );
+  });
 });

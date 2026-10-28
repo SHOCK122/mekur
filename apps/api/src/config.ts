@@ -19,6 +19,11 @@ export const config = {
   // if it ever leaks into a real deployment.
   jwtSecret: process.env.JWT_SECRET ?? "dev-only-insecure-secret-do-not-use-in-production",
   nodeEnv: process.env.NODE_ENV ?? "development",
+  // Number of reverse-proxy hops to trust for the client IP. Behind nginx
+  // (docker-compose) this must be 1, or every request appears to come from
+  // nginx and all users share one rate-limit bucket -- ten failed logins
+  // anywhere would lock everyone out for a minute.
+  trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : 0,
   // Same dev-only-fallback pattern as jwtSecret: a real, valid VAPID
   // keypair so local development works out of the box, but guarded
   // against production use below since it's public in this repo's

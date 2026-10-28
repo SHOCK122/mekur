@@ -1,12 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { KeyringEnvelopeSchema } from "@schedule-app/shared";
 import {
   KeyringVersionConflictError,
   type KeyringRepository,
 } from "../repositories/keyringRepository.js";
 
 const PutKeyringSchema = z.object({
-  envelope: z.unknown(),
+  envelope: KeyringEnvelopeSchema,
   expectedVersion: z.number().int().min(0),
 });
 
@@ -21,7 +22,9 @@ export function registerKeyringRoutes(app: FastifyInstance, keyrings: KeyringRep
       return reply.send({ keyring: keyring.envelope, version: keyring.version });
     });
 
-    scoped.put("/keyring", async (request, reply) => {
+    // The keyring is the one payload allowed past the global body limit:
+    // it holds every capability the account has (see KeyringEnvelopeSchema).
+    scoped.put("/keyring", { bodyLimit: 1536 * 1024 }, async (request, reply) => {
       const parsed = PutKeyringSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "Invalid request", details: parsed.error.issues });

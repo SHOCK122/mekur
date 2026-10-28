@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { encryptEnvelope } from "@schedule-app/crypto";
+import { encryptEnvelope, decryptEnvelope } from "@schedule-app/crypto";
 import type { Session } from "../src/lib/session.js";
 import type { EventContent } from "@schedule-app/shared";
 
@@ -70,6 +70,12 @@ export function stubCapabilityServer(session: Session, events: MockEvent[] = [])
         json: async () => ({ event: { id: "new-event" }, viewToken: "vt", editToken: "et" }),
       };
     }
+    if (url === "/api/inbox" && method === "GET") {
+      return { ok: true, status: 200, json: async () => ({ messages: [] }) };
+    }
+    if (url === "/api/friend-code") {
+      return { ok: true, status: 200, json: async () => ({ friendCode: { code: "ABCD2345", createdAt: "x" } }) };
+    }
     // Updates and deletes on individual events.
     if (url.startsWith("/api/events/")) {
       return { ok: true, status: method === "DELETE" ? 204 : 200, json: async () => ({ event: { id: "x" } }) };
@@ -79,4 +85,26 @@ export function stubCapabilityServer(session: Session, events: MockEvent[] = [])
 
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+/** Decrypts the keyring entries most recently written to the stub. */
+export function lastKeyringWrite(fetchMock: ReturnType<typeof vi.fn>, session: Session) {
+  const puts = fetchMock.mock.calls.filter(
+    (c) => c[0] === "/api/keyring" && (c[1] as RequestInit | undefined)?.method === "PUT"
+  );
+  const last = puts[puts.length - 1];
+  if (!last) return null;
+  const body = JSON.parse((last[1] as RequestInit).body as string);
+  return decryptEnvelope<{ entries: { eventId: string }[] }>(body.envelope, session.encryptionKey).entries;
+}
+
+/** Decrypts the content of the most recent event update sent to the stub. */
+export function lastEventUpdate(fetchMock: ReturnType<typeof vi.fn>, key: string): EventContent | null {
+  const puts = fetchMock.mock.calls.filter(
+    (c) => String(c[0]).startsWith("/api/events/") && (c[1] as RequestInit | undefined)?.method === "PUT"
+  );
+  const last = puts[puts.length - 1];
+  if (!last) return null;
+  const body = JSON.parse((last[1] as RequestInit).body as string);
+  return decryptEnvelope<EventContent>(body.envelope, key);
 }

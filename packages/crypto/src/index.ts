@@ -3,8 +3,9 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { scryptAsync } from "@noble/hashes/scrypt";
 import { hkdf } from "@noble/hashes/hkdf";
 import { sha256 } from "@noble/hashes/sha2";
+import { hmac } from "@noble/hashes/hmac";
 import { randomBytes as nobleRandomBytes } from "@noble/hashes/utils";
-import type { EncryptedEnvelope } from "@schedule-app/shared";
+import type { EncryptedEnvelope, SealedEnvelope } from "@schedule-app/shared";
 
 const NONCE_LENGTH = 24; // bytes, required by xchacha20poly1305
 const KEY_LENGTH = 32; // bytes, 256-bit symmetric key
@@ -39,43 +40,20 @@ export interface KeyPair {
   secretKey: string; // base64 — NEVER sent to the server
 }
 
-/** Generates an X25519 key pair, used for wrapping per-event keys to invitees. */
+/** Generates a random X25519 key pair. Used for the ephemeral half of a
+ * sealed envelope (see sealToRecipient). */
 export function generateKeyPair(): KeyPair {
   const secretKey = x25519.utils.randomPrivateKey();
   const publicKey = x25519.getPublicKey(secretKey);
   return { publicKey: toBase64(publicKey), secretKey: toBase64(secretKey) };
 }
 
-export interface DerivedKey {
-  key: string; // base64, 32-byte symmetric key
-  salt: string; // base64, must be stored to re-derive the same key later
-}
-
-/**
- * Derives a symmetric master key from a user's password using scrypt.
- * This happens entirely client-side; the password and derived key are
- * never transmitted to the server.
- */
-export async function deriveKeyFromPassword(
-  password: string,
-  salt?: Uint8Array
-): Promise<DerivedKey> {
-  const usedSalt = salt ?? randomBytes(16);
-  const key = await scryptAsync(password.normalize("NFKC"), usedSalt, {
-    N: 2 ** 17, // ~131k iterations-equivalent cost factor; tuned for interactive login
-    r: 8,
-    p: 1,
-    dkLen: KEY_LENGTH,
-  });
-  return { key: toBase64(key), salt: toBase64(usedSalt) };
-}
-
 /**
  * Derives three independent things from one password: an `authKey`
  * (proves knowledge of the password to the server during login), an
- * `encryptionKey` (encrypts the user's data, and is NEVER sent to the
- * server in any form), and an `identityKeyPair` (X25519, used to wrap
- * per-event keys for group scheduling -- see wrapKey/unwrapKey below).
+ * `encryptionKey` (encrypts the user's keyring, and is NEVER sent to the
+ * server in any form), and an `identityKeyPair` (X25519, the address
+ * others seal invitations to -- see sealToRecipient below).
  * All three come from a single expensive scrypt run (cheap on low-end
  * devices to only pay that cost once), then split via HKDF with
  * different domain-separation labels so none can be derived from another.
@@ -131,36 +109,9 @@ export function sha256Base64(keyBase64: string): string {
   return toBase64(sha256(fromBase64(keyBase64)));
 }
 
-/** Generates a fresh random 32-byte symmetric key (e.g. a per-event key to be
- * wrapped and shared with invitees -- see wrapKey/unwrapKey below). */
+/** Generates a fresh random 32-byte symmetric key, e.g. a per-event key. */
 export function generateSymmetricKey(): string {
   return toBase64(randomBytes(KEY_LENGTH));
-}
-
-/**
- * Derives a shared wrapping key between two people from an X25519 ECDH
- * exchange: my private key + their public key. By ECDH's symmetry, the
- * other person computes the identical key from their private key + my
- * public key -- neither side ever transmits it, and the server (which
- * only ever sees public keys) can't derive it either.
- */
-export function deriveSharedWrapKey(myPrivateKeyBase64: string, theirPublicKeyBase64: string): string {
-  const shared = x25519.getSharedSecret(fromBase64(myPrivateKeyBase64), fromBase64(theirPublicKeyBase64));
-  const derived = hkdf(sha256, shared, undefined, "schedule-app:wrap-key:v1", KEY_LENGTH);
-  return toBase64(derived);
-}
-
-/** Encrypts a symmetric key (e.g. a per-event key) under a shared wrap key,
- * so it can be handed to one specific invitee via the (untrusted) server. */
-export function wrapKey(keyToWrapBase64: string, wrapKeyBase64: string): EncryptedEnvelope {
-  return encryptEnvelope({ key: keyToWrapBase64 }, wrapKeyBase64, "wrap-key");
-}
-
-/** Recovers a symmetric key previously wrapped with wrapKey(). Throws if the
- * wrap key is wrong or the envelope was tampered with (same AEAD guarantee
- * as decryptEnvelope). */
-export function unwrapKey(envelope: EncryptedEnvelope, wrapKeyBase64: string): string {
-  return decryptEnvelope<{ key: string }>(envelope, wrapKeyBase64).key;
 }
 
 /**
@@ -206,4 +157,108 @@ export function decryptEnvelope<T = unknown>(
   const ciphertext = fromBase64(envelope.ciphertext);
   const plaintext = xchacha20poly1305(key, nonce).decrypt(ciphertext);
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Sealed envelopes (inbox delivery)
+// ---------------------------------------------------------------------------
+
+function sealKey(sharedSecret: Uint8Array, epk: Uint8Array, recipientPublicKey: Uint8Array): string {
+  // Binding both public keys into the salt ties the derived key to this
+  // exact pair, the same construction libsodium's sealed boxes use.
+  const salt = new Uint8Array(epk.length + recipientPublicKey.length);
+  salt.set(epk);
+  salt.set(recipientPublicKey, epk.length);
+  return toBase64(hkdf(sha256, sharedSecret, salt, "schedule-app:seal:v1", KEY_LENGTH));
+}
+
+function senderProof(
+  staticSharedSecret: Uint8Array,
+  epk: Uint8Array,
+  body: string
+): string {
+  const key = hkdf(sha256, staticSharedSecret, undefined, "schedule-app:sender-proof:v1", KEY_LENGTH);
+  const message = new Uint8Array([...epk, ...new TextEncoder().encode(body)]);
+  return toBase64(hmac(sha256, key, message));
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+interface SealedInner {
+  body: string;
+  sender?: { publicKey: string; proof: string };
+}
+
+/**
+ * Encrypts a payload so only the holder of `recipientPublicKey`'s private
+ * half can read it, without the envelope revealing who sent it.
+ *
+ * A fresh ephemeral keypair is generated per message; its public half
+ * travels in the clear as `epk` and is linked to no account. That is what
+ * lets the inbox work with no sender column: the recipient can always open
+ * the message using only their own secret key.
+ *
+ * Optionally, `sender` adds an authenticated identity *inside* the
+ * ciphertext: the sender's static public key plus an HMAC keyed by
+ * ECDH(sender, recipient) over the ephemeral key and body. Only the real
+ * sender (or the recipient) can compute it, so the recipient learns a
+ * verifiable sender while the server learns nothing. Omit it for anonymous
+ * invitations.
+ */
+export function sealToRecipient(
+  payload: unknown,
+  recipientPublicKeyBase64: string,
+  sender?: KeyPair
+): SealedEnvelope {
+  const recipientPublicKey = fromBase64(recipientPublicKeyBase64);
+  const ephemeral = x25519.utils.randomPrivateKey();
+  const epk = x25519.getPublicKey(ephemeral);
+  const key = sealKey(x25519.getSharedSecret(ephemeral, recipientPublicKey), epk, recipientPublicKey);
+
+  const body = JSON.stringify(payload);
+  const inner: SealedInner = { body };
+  if (sender) {
+    const staticShared = x25519.getSharedSecret(fromBase64(sender.secretKey), recipientPublicKey);
+    inner.sender = { publicKey: sender.publicKey, proof: senderProof(staticShared, epk, body) };
+  }
+  return { ...encryptEnvelope(inner, key, "sealed"), epk: toBase64(epk) };
+}
+
+export interface OpenedEnvelope<T> {
+  payload: T;
+  /** The sender's verified static public key, or null if the sender chose
+   * to stay anonymous. Never a value the sender merely claimed. */
+  senderPublicKey: string | null;
+}
+
+/**
+ * Opens an envelope produced by sealToRecipient. Throws if it wasn't sealed
+ * to this key, was tampered with, or carries a sender proof that doesn't
+ * verify -- a forged sender identity is an error, never silently dropped.
+ */
+export function openSealed<T = unknown>(
+  sealed: SealedEnvelope,
+  recipientSecretKeyBase64: string
+): OpenedEnvelope<T> {
+  const recipientSecretKey = fromBase64(recipientSecretKeyBase64);
+  const recipientPublicKey = x25519.getPublicKey(recipientSecretKey);
+  const epk = fromBase64(sealed.epk);
+  const key = sealKey(x25519.getSharedSecret(recipientSecretKey, epk), epk, recipientPublicKey);
+  const inner = decryptEnvelope<SealedInner>(sealed, key);
+
+  let senderPublicKey: string | null = null;
+  if (inner.sender) {
+    const staticShared = x25519.getSharedSecret(recipientSecretKey, fromBase64(inner.sender.publicKey));
+    const expected = senderProof(staticShared, epk, inner.body);
+    if (!constantTimeEqual(expected, inner.sender.proof)) {
+      throw new Error("Sender proof does not verify");
+    }
+    senderPublicKey = inner.sender.publicKey;
+  }
+  return { payload: JSON.parse(inner.body) as T, senderPublicKey };
 }

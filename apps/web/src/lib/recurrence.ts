@@ -39,9 +39,9 @@ const MAX_OCCURRENCES_PER_EVENT = 500;
 /**
  * Expands a single event + its optional recurrence rule into concrete
  * occurrences within [rangeStart, rangeEnd]. All occurrences share the
- * same underlying event id: editing or deleting acts on the whole
- * series, not a single occurrence -- a deliberate simplification for
- * now (see docs/ROADMAP.md).
+ * same underlying event id: edits act on the whole series, and a single
+ * occurrence can only be skipped (see skippedOccurrences). Per-occurrence
+ * overrides are roadmap Phase 8.
  */
 export function expandOccurrences(
   event: {
@@ -188,5 +188,8 @@ export function describeRecurrence(recurrence: RecurrenceRule): string {
     YEARLY: "year",
   };
   const unitLabel = interval === 1 ? unit[freq] : `${unit[freq]}s`;
-  return interval === 1 ? `Repeats every ${unitLabel}` : `Repeats every ${interval} ${unitLabel}`;
+  const every = interval === 1 ? `Repeats every ${unitLabel}` : `Repeats every ${interval} ${unitLabel}`;
+  return recurrence.until
+    ? `${every} until ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(recurrence.until))}`
+    : every;
 }

@@ -1,15 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../src/db/pool.js";
-import {
-  deriveAuthAndEncryptionKeys,
-  generateKeyPair,
-  generateSymmetricKey,
-  deriveSharedWrapKey,
-  wrapKey,
-  encryptEnvelope,
-} from "@schedule-app/crypto";
-import { setupTestApp, truncateAll } from "./testHelpers.js";
+import { setupTestApp, truncateAll, registerUser, auth, SEALED_ENVELOPE } from "./testHelpers.js";
 
 const sendNotificationMock = vi.fn().mockResolvedValue(undefined);
 
@@ -19,28 +11,6 @@ vi.mock("web-push", () => ({
     sendNotification: (...args: unknown[]) => sendNotificationMock(...args),
   },
 }));
-
-async function registerUser(app: FastifyInstance, username: string) {
-  const keys = await deriveAuthAndEncryptionKeys("some strong password");
-  const keyPair = generateKeyPair();
-  const response = await app.inject({
-    method: "POST",
-    url: "/users",
-    payload: {
-      username,
-      displayName: username,
-      publicKey: keyPair.publicKey,
-      authKey: keys.authKey,
-      authSalt: keys.salt,
-    },
-  });
-  const body = response.json();
-  return { userId: body.user.id as string, token: body.token as string, keyPair };
-}
-
-function auth(token: string) {
-  return { authorization: `Bearer ${token}` };
-}
 
 async function subscribe(app: FastifyInstance, token: string, endpoint: string) {
   return app.inject({
@@ -116,10 +86,6 @@ describe("push notifications", () => {
     expect(response.statusCode).toBe(404);
   });
 
-
-
-
-
   it("notifies a recipient when a capability is delivered to their inbox", async () => {
     // Under the capability model the server never knows an event's
     // participants, so delivery is the only moment it can legitimately
@@ -134,7 +100,7 @@ describe("push notifications", () => {
       headers: auth(sender.token),
       payload: {
         recipientId: recipient.userId,
-        envelope: { v: 1, algo: "xchacha20poly1305", keyId: "k", nonce: "bm9uY2U=", ciphertext: "c2VjcmV0" },
+        envelope: { ...SEALED_ENVELOPE, ciphertext: "c2VjcmV0" },
       },
     });
     expect(delivered.statusCode).toBe(204);
@@ -160,7 +126,7 @@ describe("push notifications", () => {
       method: "POST",
       url: "/inbox/deliver",
       headers: auth(sender.token),
-      payload: { recipientId: recipient.userId, envelope: { v: 1, algo: "xchacha20poly1305", keyId: "k", nonce: "bm9uY2U=", ciphertext: "eA==" } },
+      payload: { recipientId: recipient.userId, envelope: SEALED_ENVELOPE },
     });
     // A failed push must never break the delivery that triggered it.
     expect(delivered.statusCode).toBe(204);

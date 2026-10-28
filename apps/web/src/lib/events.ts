@@ -1,28 +1,15 @@
 import { encryptEnvelope, decryptEnvelope } from "@schedule-app/crypto";
-import type { EventContent } from "@schedule-app/shared";
-import { parseJsonOrThrow } from "./http.js";
+import type { EncryptedEnvelope, EventContent } from "@schedule-app/shared";
+import { apiFetch } from "./http.js";
 import type { Session } from "./session.js";
 import {
   loadKeyring,
+  findEntry,
   addKeyringEntry,
   removeKeyringEntry,
   newEventKey,
   type KeyringEntry,
 } from "./keyring.js";
-
-const API_BASE = "/api";
-
-/** `hasBody` matters: sending Content-Type: application/json with no body
- * makes Fastify reject the request outright (FST_ERR_CTP_EMPTY_JSON_BODY),
- * which is what broke DELETE. */
-function authHeaders(session: Session, capability?: string, hasBody = true) {
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${session.token}`,
-  };
-  if (hasBody) headers["Content-Type"] = "application/json";
-  if (capability) headers["x-event-capability"] = capability;
-  return headers;
-}
 
 export interface DecryptedEvent extends EventContent {
   id: string;
@@ -30,6 +17,12 @@ export interface DecryptedEvent extends EventContent {
   /** Whether this account holds an edit capability. The UI uses this to
    * decide what to offer; the server enforces it regardless. */
   canEdit: boolean;
+}
+
+/** Strips the client-side bookkeeping, leaving exactly what gets encrypted. */
+export function toContent(event: DecryptedEvent): EventContent {
+  const { id: _id, updatedAt: _updatedAt, canEdit: _canEdit, ...content } = event;
+  return content;
 }
 
 /**
@@ -41,27 +34,19 @@ export async function listEvents(session: Session): Promise<DecryptedEvent[]> {
   const keyring = await loadKeyring(session);
   if (keyring.entries.length === 0) return [];
 
-  const response = await fetch(`${API_BASE}/events/batch-read`, {
+  const body = await apiFetch(session, "/events/batch-read", {
     method: "POST",
-    headers: authHeaders(session),
-    body: JSON.stringify({
-      events: keyring.entries.map((e) => ({ eventId: e.eventId, token: e.viewToken })),
-    }),
+    body: { events: keyring.entries.map((e) => ({ eventId: e.eventId, token: e.viewToken })) },
   });
-  const body = await parseJsonOrThrow(response);
 
   const byId = new Map<string, KeyringEntry>(keyring.entries.map((e) => [e.eventId, e]));
   const decrypted: DecryptedEvent[] = [];
-  for (const record of body.events as { id: string; envelope: unknown; updatedAt?: string }[]) {
+  for (const record of body.events as { id: string; envelope: EncryptedEnvelope; updatedAt?: string }[]) {
     const entry = byId.get(record.id);
     if (!entry) continue;
     try {
-      const content = decryptEnvelope<EventContent>(
-        record.envelope as Parameters<typeof decryptEnvelope>[0],
-        entry.eventKey
-      );
       decrypted.push({
-        ...content,
+        ...decryptEnvelope<EventContent>(record.envelope, entry.eventKey),
         id: record.id,
         updatedAt: record.updatedAt,
         canEdit: Boolean(entry.editToken),
@@ -74,21 +59,14 @@ export async function listEvents(session: Session): Promise<DecryptedEvent[]> {
   return decrypted;
 }
 
-export async function createEvent(
-  session: Session,
-  content: EventContent
-): Promise<DecryptedEvent> {
+export async function createEvent(session: Session, content: EventContent): Promise<DecryptedEvent> {
   // A fresh per-event key, so this event can later be shared without
   // exposing anything else the account holds.
   const eventKey = newEventKey();
-  const envelope = encryptEnvelope(content, eventKey, "event");
-
-  const response = await fetch(`${API_BASE}/events`, {
+  const body = await apiFetch(session, "/events", {
     method: "POST",
-    headers: authHeaders(session),
-    body: JSON.stringify({ envelope }),
+    body: { envelope: encryptEnvelope(content, eventKey, "event") },
   });
-  const body = await parseJsonOrThrow(response);
 
   // The tokens are returned exactly once and cannot be re-fetched, so the
   // keyring write must happen now.
@@ -102,73 +80,35 @@ export async function createEvent(
   return { ...content, id: body.event.id, canEdit: true };
 }
 
-async function entryFor(session: Session, eventId: string): Promise<KeyringEntry | null> {
-  const keyring = await loadKeyring(session);
-  return keyring.entries.find((e) => e.eventId === eventId) ?? null;
+async function editableEntry(session: Session, eventId: string, action: string): Promise<KeyringEntry> {
+  const entry = await findEntry(session, eventId);
+  if (!entry?.editToken) throw new Error(`You don't have permission to ${action} this event.`);
+  return entry;
 }
 
-export async function updateEvent(
-  session: Session,
-  eventId: string,
-  content: EventContent
-): Promise<DecryptedEvent> {
-  const entry = await entryFor(session, eventId);
-  if (!entry?.editToken) {
-    throw new Error("You don't have permission to edit this event.");
-  }
-  const envelope = encryptEnvelope(content, entry.eventKey, "event");
-  const response = await fetch(`${API_BASE}/events/${eventId}`, {
+export async function updateEvent(session: Session, eventId: string, content: EventContent): Promise<void> {
+  const entry = await editableEntry(session, eventId, "edit");
+  await apiFetch(session, `/events/${eventId}`, {
     method: "PUT",
-    headers: authHeaders(session, entry.editToken),
-    body: JSON.stringify({ envelope }),
+    capability: entry.editToken,
+    body: { envelope: encryptEnvelope(content, entry.eventKey, "event") },
   });
-  await parseJsonOrThrow(response);
-  return { ...content, id: eventId, canEdit: true };
 }
 
+/** Deletes the event for everyone who holds it. */
 export async function deleteEvent(session: Session, eventId: string): Promise<void> {
-  const entry = await entryFor(session, eventId);
-  if (!entry?.editToken) {
-    throw new Error("You don't have permission to delete this event.");
-  }
-  const response = await fetch(`${API_BASE}/events/${eventId}`, {
-    method: "DELETE",
-    headers: authHeaders(session, entry.editToken, false),
-  });
-  if (!response.ok && response.status !== 204) await parseJsonOrThrow(response);
+  const entry = await editableEntry(session, eventId, "delete");
+  await apiFetch(session, `/events/${eventId}`, { method: "DELETE", capability: entry.editToken });
   await removeKeyringEntry(session, eventId);
 }
 
-/** Mints a reusable join capability -- the "event code" for inviting. */
-export async function mintJoinCode(
-  session: Session,
-  eventId: string,
-  level: "view" | "edit" = "view",
-  expiresAt: string | null = null
-): Promise<string> {
-  const entry = await entryFor(session, eventId);
-  if (!entry?.editToken) {
-    throw new Error("You don't have permission to share this event.");
-  }
-  const response = await fetch(`${API_BASE}/events/${eventId}/capabilities`, {
-    method: "POST",
-    headers: authHeaders(session, entry.editToken),
-    body: JSON.stringify({ level, expiresAt }),
-  });
-  const body = await parseJsonOrThrow(response);
-  return body.token as string;
-}
-
 /**
- * Accepts an event shared by someone else. The capability and key arrive
- * out of band (an inbox message or a share link's fragment); this records
- * them so the event shows up like any other.
+ * Removes an event from this account's schedule only, by dropping the
+ * keyring entry. The event is untouched for everyone else -- this is what a
+ * view-only holder gets instead of "delete".
  */
-export async function acceptSharedEvent(
-  session: Session,
-  shared: { eventId: string; viewToken: string; editToken?: string; eventKey: string }
-): Promise<void> {
-  await addKeyringEntry(session, shared);
+export async function leaveEvent(session: Session, eventId: string): Promise<void> {
+  await removeKeyringEntry(session, eventId);
 }
 
 /**
@@ -185,45 +125,57 @@ export interface ShareCodePayload {
 }
 
 export function encodeShareCode(payload: ShareCodePayload): string {
-  const json = JSON.stringify(payload);
-  const bytes = new TextEncoder().encode(json);
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 export function decodeShareCode(code: string): ShareCodePayload {
-  const normalised = code.trim().replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalised + "=".repeat((4 - (normalised.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  const parsed = JSON.parse(new TextDecoder().decode(bytes)) as ShareCodePayload;
+  let parsed: Partial<ShareCodePayload>;
+  try {
+    const normalised = code.trim().replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalised + "=".repeat((4 - (normalised.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    parsed = {};
+  }
   if (!parsed.eventId || !parsed.viewToken || !parsed.eventKey) {
     throw new Error("That doesn't look like a valid event code.");
   }
-  return parsed;
+  return parsed as ShareCodePayload;
 }
 
-/** Mints a reusable join capability and packages it with the event key. */
+/** Mints a reusable view capability and packages it with the event key. */
 export async function createShareCode(session: Session, eventId: string): Promise<string> {
-  const entry = await entryFor(session, eventId);
-  if (!entry?.editToken) {
-    throw new Error("You don't have permission to share this event.");
-  }
-  const joinToken = await mintJoinCode(session, eventId, "view");
-  return encodeShareCode({ eventId, viewToken: joinToken, eventKey: entry.eventKey });
+  const entry = await editableEntry(session, eventId, "share");
+  const body = await apiFetch(session, `/events/${eventId}/capabilities`, {
+    method: "POST",
+    capability: entry.editToken,
+    body: { level: "view", expiresAt: null },
+  });
+  return encodeShareCode({ eventId, viewToken: body.token, eventKey: entry.eventKey });
 }
 
-/** Redeems a share code by recording its capability in the keyring. */
+/** Records a capability received from someone else -- via an invitation or
+ * an event code -- so the event shows up like any other. */
+export async function acceptSharedEvent(
+  session: Session,
+  shared: { eventId: string; viewToken: string; editToken?: string; eventKey: string }
+): Promise<void> {
+  await addKeyringEntry(session, shared);
+}
+
+/** Redeems an event code. */
 export async function redeemShareCode(session: Session, code: string): Promise<string> {
   const payload = decodeShareCode(code);
   // Verify the capability actually works before storing it, so a bad code
   // fails now with a clear message rather than appearing to succeed and
   // then silently producing an unreadable event.
-  const response = await fetch(`${API_BASE}/events/${payload.eventId}`, {
-    headers: authHeaders(session, payload.viewToken, false),
-  });
-  if (!response.ok) {
+  try {
+    await apiFetch(session, `/events/${payload.eventId}`, { capability: payload.viewToken });
+  } catch {
     throw new Error("That code isn't valid, or the event is no longer shared.");
   }
   await acceptSharedEvent(session, payload);

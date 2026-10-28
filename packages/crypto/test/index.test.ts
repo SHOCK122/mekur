@@ -1,13 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   generateKeyPair,
-  deriveKeyFromPassword,
   deriveAuthAndEncryptionKeys,
   sha256Base64,
   generateSymmetricKey,
-  deriveSharedWrapKey,
-  wrapKey,
-  unwrapKey,
+  sealToRecipient,
+  openSealed,
   encryptEnvelope,
   decryptEnvelope,
   toBase64,
@@ -36,27 +34,6 @@ describe("generateKeyPair", () => {
     expect(a.secretKey).not.toEqual(b.secretKey);
   });
 });
-
-describe("deriveKeyFromPassword", () => {
-  it("derives the same key for the same password and salt", async () => {
-    const salt = randomBytes(16);
-    const a = await deriveKeyFromPassword("correct horse battery staple", salt);
-    const b = await deriveKeyFromPassword("correct horse battery staple", salt);
-    expect(a.key).toEqual(b.key);
-  });
-
-  it("derives a different key for a different password", async () => {
-    const salt = randomBytes(16);
-    const a = await deriveKeyFromPassword("password one", salt);
-    const b = await deriveKeyFromPassword("password two", salt);
-    expect(a.key).not.toEqual(b.key);
-  });
-
-  it("produces a 32-byte key", async () => {
-    const derived = await deriveKeyFromPassword("some password");
-    expect(fromBase64(derived.key)).toHaveLength(32);
-  });
-}, 20_000);
 
 describe("deriveAuthAndEncryptionKeys", () => {
   it("derives distinct authKey and encryptionKey from the same password", async () => {
@@ -91,16 +68,14 @@ describe("deriveAuthAndEncryptionKeys", () => {
     expect(fromBase64(a.identityKeyPair.publicKey)).toHaveLength(32);
   });
 
-  it("the derived identity keypair actually works for ECDH key wrapping", async () => {
+  it("the derived identity keypair can receive sealed envelopes", async () => {
     const alice = await deriveAuthAndEncryptionKeys("alice's password");
     const bob = await deriveAuthAndEncryptionKeys("bob's password");
 
-    const eventKey = generateSymmetricKey();
-    const aliceSideKey = deriveSharedWrapKey(alice.identityKeyPair.secretKey, bob.identityKeyPair.publicKey);
-    const wrapped = wrapKey(eventKey, aliceSideKey);
-
-    const bobSideKey = deriveSharedWrapKey(bob.identityKeyPair.secretKey, alice.identityKeyPair.publicKey);
-    expect(unwrapKey(wrapped, bobSideKey)).toEqual(eventKey);
+    const sealed = sealToRecipient({ hello: "bob" }, bob.identityKeyPair.publicKey, alice.identityKeyPair);
+    const opened = openSealed(sealed, bob.identityKeyPair.secretKey);
+    expect(opened.payload).toEqual({ hello: "bob" });
+    expect(opened.senderPublicKey).toBe(alice.identityKeyPair.publicKey);
   });
 }, 20_000);
 
@@ -127,73 +102,63 @@ describe("generateSymmetricKey", () => {
   });
 });
 
-describe("deriveSharedWrapKey / wrapKey / unwrapKey", () => {
-  it("two parties derive the identical shared key from each other's keypairs (ECDH symmetry)", () => {
-    const organizer = generateKeyPair();
-    const invitee = generateKeyPair();
-
-    const organizerSide = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
-    const inviteeSide = deriveSharedWrapKey(invitee.secretKey, organizer.publicKey);
-
-    expect(organizerSide).toEqual(inviteeSide);
+describe("sealToRecipient / openSealed", () => {
+  it("lets the recipient open an anonymous envelope with only their own secret key", () => {
+    const recipient = generateKeyPair();
+    const sealed = sealToRecipient({ eventId: "e1" }, recipient.publicKey);
+    const opened = openSealed(sealed, recipient.secretKey);
+    expect(opened.payload).toEqual({ eventId: "e1" });
+    expect(opened.senderPublicKey).toBeNull();
   });
 
-  it("a third party's keypair derives a different shared key", () => {
-    const organizer = generateKeyPair();
-    const invitee = generateKeyPair();
+  it("uses a fresh ephemeral key per message, so two envelopes can't be linked", () => {
+    const recipient = generateKeyPair();
+    const sender = generateKeyPair();
+    const a = sealToRecipient({ n: 1 }, recipient.publicKey, sender);
+    const b = sealToRecipient({ n: 1 }, recipient.publicKey, sender);
+    expect(a.epk).not.toEqual(b.epk);
+    // The sender's identity must not appear anywhere outside the ciphertext.
+    expect(JSON.stringify(a)).not.toContain(sender.publicKey);
+  });
+
+  it("cannot be opened by anyone else", () => {
+    const recipient = generateKeyPair();
     const eavesdropper = generateKeyPair();
-
-    const real = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
-    const wrong = deriveSharedWrapKey(eavesdropper.secretKey, invitee.publicKey);
-
-    expect(real).not.toEqual(wrong);
+    const sealed = sealToRecipient({ secret: true }, recipient.publicKey);
+    expect(() => openSealed(sealed, eavesdropper.secretKey)).toThrow();
   });
 
-  it("wraps and unwraps a symmetric key end to end between two parties", () => {
-    const organizer = generateKeyPair();
-    const invitee = generateKeyPair();
-    const eventKey = generateSymmetricKey();
-
-    const wrapKeyForInvitee = deriveSharedWrapKey(organizer.secretKey, invitee.publicKey);
-    const wrapped = wrapKey(eventKey, wrapKeyForInvitee);
-
-    const unwrapKeyOnInviteeSide = deriveSharedWrapKey(invitee.secretKey, organizer.publicKey);
-    const recovered = unwrapKey(wrapped, unwrapKeyOnInviteeSide);
-
-    expect(recovered).toEqual(eventKey);
+  it("verifies a named sender", () => {
+    const recipient = generateKeyPair();
+    const sender = generateKeyPair();
+    const opened = openSealed(sealToRecipient("hi", recipient.publicKey, sender), recipient.secretKey);
+    expect(opened.senderPublicKey).toBe(sender.publicKey);
   });
 
-  it("fails to unwrap with a key derived from the wrong keypair", () => {
-    const organizer = generateKeyPair();
-    const invitee = generateKeyPair();
-    const eavesdropper = generateKeyPair();
-    const eventKey = generateSymmetricKey();
-
-    const wrapped = wrapKey(eventKey, deriveSharedWrapKey(organizer.secretKey, invitee.publicKey));
-    const eavesdropperKey = deriveSharedWrapKey(eavesdropper.secretKey, invitee.publicKey);
-
-    expect(() => unwrapKey(wrapped, eavesdropperKey)).toThrow();
+  it("rejects a sender identity claimed without the matching private key", () => {
+    const recipient = generateKeyPair();
+    const victim = generateKeyPair();
+    const forger = generateKeyPair();
+    // The forger signs with their own secret but claims the victim's key.
+    const sealed = sealToRecipient("trust me", recipient.publicKey, {
+      publicKey: victim.publicKey,
+      secretKey: forger.secretKey,
+    });
+    expect(() => openSealed(sealed, recipient.secretKey)).toThrow(/Sender proof/);
   });
 
-  it("lets the wrapped key encrypt/decrypt real event content end to end", () => {
-    const organizer = generateKeyPair();
-    const invitee = generateKeyPair();
-    const eventKey = generateSymmetricKey();
-
-    const content = { slots: { slot_1: "2026-08-10T10:00:00.000Z" }, title: "Team offsite" };
-    const contentEnvelope = encryptEnvelope(content, eventKey, "group-event-key");
-
-    const wrapped = wrapKey(eventKey, deriveSharedWrapKey(organizer.secretKey, invitee.publicKey));
-    const recoveredEventKey = unwrapKey(wrapped, deriveSharedWrapKey(invitee.secretKey, organizer.publicKey));
-    const decryptedContent = decryptEnvelope(contentEnvelope, recoveredEventKey);
-
-    expect(decryptedContent).toEqual(content);
+  it("rejects a tampered envelope", () => {
+    const recipient = generateKeyPair();
+    const sealed = sealToRecipient("x", recipient.publicKey);
+    const bytes = fromBase64(sealed.ciphertext);
+    bytes[0] = bytes[0]! ^ 1;
+    expect(() => openSealed({ ...sealed, ciphertext: toBase64(bytes) }, recipient.secretKey)).toThrow();
   });
 });
 
 describe("encryptEnvelope / decryptEnvelope", () => {
   it("round-trips arbitrary JSON payloads", async () => {
-    const derived = await deriveKeyFromPassword("test password");
+    const derived = { key: generateSymmetricKey() };
     const payload = { title: "Team sync", startTime: "2026-08-01T10:00:00.000Z" };
     const envelope = encryptEnvelope(payload, derived.key, "user-key-1");
     const decrypted = decryptEnvelope(envelope, derived.key);
@@ -201,21 +166,21 @@ describe("encryptEnvelope / decryptEnvelope", () => {
   });
 
   it("fails to decrypt with the wrong key", async () => {
-    const derivedA = await deriveKeyFromPassword("password A");
-    const derivedB = await deriveKeyFromPassword("password B");
+    const derivedA = { key: generateSymmetricKey() };
+    const derivedB = { key: generateSymmetricKey() };
     const envelope = encryptEnvelope({ secret: true }, derivedA.key, "user-key-1");
     expect(() => decryptEnvelope(envelope, derivedB.key)).toThrow();
   });
 
   it("fails to decrypt if ciphertext is tampered with", async () => {
-    const derived = await deriveKeyFromPassword("test password");
+    const derived = { key: generateSymmetricKey() };
     const envelope = encryptEnvelope({ secret: true }, derived.key, "user-key-1");
     const tampered = { ...envelope, ciphertext: toBase64(randomBytes(fromBase64(envelope.ciphertext).length)) };
     expect(() => decryptEnvelope(tampered, derived.key)).toThrow();
   });
 
   it("never leaks plaintext into the envelope's serialized form", async () => {
-    const derived = await deriveKeyFromPassword("test password");
+    const derived = { key: generateSymmetricKey() };
     const secretMarker = "MY_SECRET_MARKER_VALUE";
     const envelope = encryptEnvelope({ note: secretMarker }, derived.key, "user-key-1");
     expect(JSON.stringify(envelope)).not.toContain(secretMarker);
