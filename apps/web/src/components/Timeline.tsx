@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   TIME_SCALES,
   DEFAULT_SCALE_INDEX,
@@ -21,7 +21,13 @@ import {
   resizeEvent,
   moveEvent,
   rankForLane,
+  keyboardAdjustment,
+  keyboardStepMs,
+  rankStep,
+  timeAxisKeys,
+  stackAxisKeys,
   type ResizeEdge,
+  type KeyboardAdjustment,
 } from "../lib/timelineInteraction.js";
 import type { EventContent } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
@@ -30,6 +36,9 @@ const LANE_SIZE = 28;
 /** Roughly the width a short label needs, used to stop two events that
  * merely look adjacent from putting their text in the same lane. */
 const LABEL_WIDTH_PX = 90;
+/** Keyboard nudges are saved once the keys go quiet for this long, so
+ * holding an arrow down is one encrypted write rather than dozens. */
+const KEYBOARD_COMMIT_DELAY_MS = 500;
 
 interface TimelineProps {
   events: DecryptedEvent[];
@@ -51,8 +60,36 @@ interface DragState {
   original: { startTime: string; endTime?: string };
   /** Preview of the change, applied visually before it is saved so the
    * drag feels immediate rather than waiting on a round trip. */
-  preview: { startTime: string; endTime?: string; rank?: string } | null;
+  preview: EventPreview | null;
 }
+
+interface EventPreview {
+  startTime: string;
+  endTime?: string;
+  rank?: string;
+}
+
+/** Keyboard changes not yet saved. Shown exactly like a drag preview. */
+interface Nudge {
+  eventId: string;
+  original: { startTime: string; endTime?: string };
+  preview: EventPreview;
+  name: string;
+}
+
+/** A change sent to the server but not yet confirmed. It stays on screen
+ * until the save lands so the event doesn't flick back. */
+interface Saving {
+  preview: EventPreview;
+  token: object;
+}
+
+const KEY_NAMES: Record<string, string> = {
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  ArrowDown: "Down",
+};
 
 export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -67,6 +104,20 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   const [now, setNow] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 320 });
+  const [nudge, setNudge] = useState<Nudge | null>(null);
+  // The latest nudge and save callback, for the debounce timer, blur and
+  // unmount, which would otherwise see a stale render's values.
+  const nudgeRef = useRef<Nudge | null>(null);
+  const [saving, setSaving] = useState<ReadonlyMap<string, Saving>>(new Map());
+  const savingRef = useRef<ReadonlyMap<string, Saving>>(saving);
+  // Saves run one at a time, so an older write can never land after a
+  // newer one for the same event.
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve());
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onChangeRef = useRef(onChangeEvent);
+  onChangeRef.current = onChangeEvent;
+  const [announcement, setAnnouncement] = useState("");
+  const keysHelpId = useId();
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -94,6 +145,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     return () => observer.disconnect();
   }, []);
 
+  // Save anything still pending if the timeline goes away mid-nudge.
+  useEffect(() => () => commitNudge(), []);
+
   const viewStart = useMemo(() => new Date(centre - (spanSeconds * 1000) / 2), [centre, spanSeconds]);
   const viewEnd = useMemo(() => new Date(centre + (spanSeconds * 1000) / 2), [centre, spanSeconds]);
 
@@ -103,10 +157,15 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * its own. A daily standup is one row, not thirty. Non-repeating events
    * are simply series of one, which keeps a single rendering path.
    */
+  const separation = LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, viewportSize.width));
   const placements = useMemo(() => {
-    const withPreview = events.map((event) =>
-      drag?.preview && drag.eventId === event.id ? { ...event, ...drag.preview } : event
-    );
+    const withPreview = events.map((saved) => {
+      const inFlight = saving.get(saved.id);
+      const event = inFlight ? { ...saved, ...inFlight.preview } : saved;
+      if (drag?.preview && drag.eventId === event.id) return { ...event, ...drag.preview };
+      if (nudge && nudge.eventId === event.id) return { ...event, ...nudge.preview };
+      return event;
+    });
 
     const knownRanks = withPreview.map((e) => e.rank).filter((r): r is string => Boolean(r));
     let fallbackSeed = knownRanks;
@@ -134,10 +193,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-    const msPerPixel = (spanSeconds * 1000) / Math.max(1, viewportSize.width);
-    const separation = LABEL_WIDTH_PX * msPerPixel;
     return assignLanes(series, viewEnd.getTime(), separation);
-  }, [events, drag, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+  }, [events, drag, nudge, saving, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+
+  const eventOrder = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
 
   const lanes = laneCount(placements);
   const stackExtent = lanes * LANE_SIZE;
@@ -168,13 +227,16 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     if (!event.canEdit) return;
     e.preventDefault();
     e.stopPropagation();
+    commitNudge();
     (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Build on any change still being saved, not the stale stored copy.
+    const current = latestTimes(event);
     setDrag({
       eventId: event.id,
       mode,
       startX: e.clientX,
       startY: e.clientY,
-      original: { startTime: event.startTime, endTime: event.endTime },
+      original: current,
       preview: null,
     });
   }
@@ -257,8 +319,178 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     ) {
       return;
     }
-    await onChangeEvent(eventId, preview);
+    const event = events.find((e) => e.id === eventId);
+    await enqueueSave(eventId, preview, event?.title?.trim() || "Untitled event");
   }
+
+  function updateNudge(next: Nudge | null) {
+    nudgeRef.current = next;
+    setNudge(next);
+  }
+
+  function updateSaving(next: ReadonlyMap<string, Saving>) {
+    savingRef.current = next;
+    setSaving(next);
+  }
+
+  /** An event's times including any change still being saved. */
+  function latestTimes(event: DecryptedEvent): { startTime: string; endTime?: string } {
+    const inFlight = savingRef.current.get(event.id)?.preview;
+    return {
+      startTime: inFlight?.startTime ?? event.startTime,
+      endTime: inFlight ? inFlight.endTime : event.endTime,
+    };
+  }
+
+  /**
+   * Queues a save behind any earlier one and shows it until it lands. The
+   * change is merged with whatever is still in flight for the event, so a
+   * rank saved a moment ago isn't lost by a later move.
+   */
+  function enqueueSave(eventId: string, preview: EventPreview, name: string): Promise<unknown> {
+    const merged = { ...savingRef.current.get(eventId)?.preview, ...preview };
+    const token = {};
+    updateSaving(new Map(savingRef.current).set(eventId, { preview: merged, token }));
+    const done = saveChain.current
+      .then(() => onChangeRef.current?.(eventId, merged))
+      .then(
+        (result) => {
+          if (result === false) setAnnouncement(`Couldn't save the change to ${name}.`);
+        },
+        () => setAnnouncement(`Couldn't save the change to ${name}.`)
+      )
+      .finally(() => {
+        // A newer change for the same event replaced this one; it stays.
+        if (savingRef.current.get(eventId)?.token !== token) return;
+        const next = new Map(savingRef.current);
+        next.delete(eventId);
+        updateSaving(next);
+      });
+    saveChain.current = done;
+    return done;
+  }
+
+  /** Sends the pending keyboard change. It moves from "pending" to
+   * "saving", so a later press on any event starts from a clean slate. */
+  function commitNudge() {
+    if (commitTimer.current) {
+      clearTimeout(commitTimer.current);
+      commitTimer.current = null;
+    }
+    const pending = nudgeRef.current;
+    if (!pending) return;
+    updateNudge(null);
+    const { preview, original } = pending;
+    const unchanged =
+      preview.startTime === original.startTime &&
+      preview.endTime === original.endTime &&
+      !preview.rank;
+    if (!onChangeRef.current || unchanged) return;
+    void enqueueSave(pending.eventId, preview, pending.name);
+  }
+
+  /** Opens an event, first waiting for any of its changes still being
+   * saved so the editor doesn't start from (and save back) stale times. */
+  async function openEvent(event: DecryptedEvent, origin: DOMRect, occurrenceStart: Date) {
+    commitNudge();
+    if (savingRef.current.has(event.id)) await saveChain.current;
+    onEditEvent(event.id, origin, occurrenceStart);
+  }
+
+  /**
+   * The keyboard equivalent of every drag (WCAG 2.5.7): arrows along the
+   * time axis move the focused event, Shift moves its end, Alt+Shift its
+   * start, and arrows across the axis re-rank it. Changes preview at once,
+   * are announced, and are saved together once the keys go quiet.
+   */
+  function handleEventKeyDown(e: React.KeyboardEvent, event: DecryptedEvent) {
+    if (!event.canEdit || !onChangeEvent) return;
+    const adjustment = keyboardAdjustment(e.key, e, orientation);
+    if (!adjustment) return;
+    e.preventDefault();
+
+    if (nudgeRef.current && nudgeRef.current.eventId !== event.id) commitNudge();
+    // Any other event's change has been sent, so this is either our own
+    // unsaved change or nothing.
+    const pending = nudgeRef.current;
+    const original = pending?.original ?? latestTimes(event);
+    const current: EventPreview = pending?.preview ?? { ...original };
+    const name = event.title?.trim() || "Untitled event";
+
+    const next = applyAdjustment(adjustment, event, name, current);
+    if (!next) return;
+
+    updateNudge({ eventId: event.id, original, preview: next, name });
+    if (commitTimer.current) clearTimeout(commitTimer.current);
+    commitTimer.current = setTimeout(commitNudge, KEYBOARD_COMMIT_DELAY_MS);
+  }
+
+  /** The preview after one key press, announcing the result. Null when
+   * there was nothing to do. */
+  function applyAdjustment(
+    adjustment: KeyboardAdjustment,
+    event: DecryptedEvent,
+    name: string,
+    current: EventPreview
+  ): EventPreview | null {
+    const stepMs = keyboardStepMs(spanSeconds * 1000);
+    const format = (iso: string) =>
+      new Date(iso).toLocaleString(undefined, {
+        // The date matters too: at week or month zoom a press moves days.
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        ...(stepMs < 60_000 ? { second: "2-digit" } : {}),
+      });
+
+    if (adjustment.kind === "rank") {
+      const step = rankStep(
+        event.id,
+        adjustment.direction,
+        placements.map((p) => p.item),
+        viewEnd.getTime(),
+        separation
+      );
+      const raising = adjustment.direction === 1;
+      if (!step) {
+        setAnnouncement(
+          `${name} is already ${raising ? "above" : "below"} every event it overlaps.`
+        );
+        return null;
+      }
+      const other = step.past.event.title?.trim() || "untitled event";
+      setAnnouncement(`${name} ${raising ? "raised above" : "lowered below"} ${other}.`);
+      return { ...current, rank: step.rank };
+    }
+
+    const delta = adjustment.direction * stepMs;
+    if (adjustment.kind === "move") {
+      const moved = moveEvent(current, delta);
+      setAnnouncement(
+        `${name} moved to ${format(moved.startTime)}${
+          moved.endTime ? ` until ${format(moved.endTime)}` : ""
+        }.`
+      );
+      return { ...current, startTime: moved.startTime, endTime: moved.endTime ?? undefined };
+    }
+
+    const resized = resizeEvent(current, adjustment.edge, delta);
+    setAnnouncement(
+      adjustment.edge === "start"
+        ? `${name} starts ${format(resized.startTime)}.`
+        : `${name} ends ${format(resized.endTime!)}.`
+    );
+    return { ...current, startTime: resized.startTime, endTime: resized.endTime ?? undefined };
+  }
+
+  const [earlierKey, laterKey] = timeAxisKeys(orientation).map((k) => KEY_NAMES[k]);
+  const [towardKey, awayKey] = stackAxisKeys(orientation).map((k) => KEY_NAMES[k]);
+  const keysHelp =
+    `Arrow keys: ${laterKey} or ${earlierKey} moves the event later or earlier; ` +
+    `with Shift, changes its end; with Alt and Shift, changes its start. ` +
+    `${awayKey} or ${towardKey} raises or lowers its priority.`;
 
   function handleZoom(factor: number) {
     setSpanSeconds((current) => zoomSpan(current, factor));
@@ -318,6 +550,17 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           {showLayoutOptions ? "Hide layout options" : "Layout options"}
         </button>
       </div>
+
+      <p id={keysHelpId} className="visually-hidden">
+        {keysHelp}
+      </p>
+      <p
+        className="visually-hidden"
+        aria-live="polite"
+        data-testid="timeline-announcer"
+      >
+        {announcement}
+      </p>
 
       {showLayoutOptions && (
         <div className="timeline-controls-panel">
@@ -417,7 +660,12 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             />
           )}
 
-          {placements.map(({ item, lane }) => {
+          {/* Rendered in the stable order of `events`, not rank order: if
+              re-ranking reordered the DOM, the focused label would be
+              moved and lose keyboard focus. */}
+          {[...placements]
+            .sort((a, b) => (eventOrder.get(a.item.id) ?? 0) - (eventOrder.get(b.item.id) ?? 0))
+            .map(({ item, lane }) => {
             const { event, occurrences } = item;
             const openEnded = item.endMs === null;
 
@@ -493,10 +741,15 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                         <button
                           type="button"
                           className="event-modal-label"
+                          aria-describedby={
+                            event.canEdit && onChangeEvent ? keysHelpId : undefined
+                          }
                           onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
+                          onKeyDown={(e) => handleEventKeyDown(e, event)}
+                          onBlur={commitNudge}
                           onClick={(e) =>
-                            onEditEvent(
-                              event.id,
+                            void openEvent(
+                              event,
                               (e.currentTarget as Element).getBoundingClientRect(),
                               occurrence.start
                             )

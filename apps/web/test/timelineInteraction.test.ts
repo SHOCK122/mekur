@@ -5,6 +5,9 @@ import {
   resizeEvent,
   moveEvent,
   rankForLane,
+  keyboardAdjustment,
+  keyboardStepMs,
+  rankStep,
 } from "../src/lib/timelineInteraction.js";
 import type { Orientation, Viewport, Placement, Placeable } from "../src/lib/timeline.js";
 
@@ -176,5 +179,123 @@ describe("rankForLane", () => {
     const rank = rankForLane("moving", 2, placements)!;
     const sorted = [...placements.map((p) => p.item.rank), rank].sort();
     expect(sorted.indexOf(rank)).toBe(2);
+  });
+});
+
+describe("keyboardAdjustment", () => {
+  const none = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false };
+  const shift = { ...none, shiftKey: true };
+  const altShift = { ...none, shiftKey: true, altKey: true };
+
+  it("moves along the time axis in the direction the event would visibly travel", () => {
+    expect(keyboardAdjustment("ArrowRight", none, horizForward)).toEqual({ kind: "move", direction: 1 });
+    expect(keyboardAdjustment("ArrowLeft", none, horizForward)).toEqual({ kind: "move", direction: -1 });
+    // Reversed axis: right is the past, the same sign flip as dragging.
+    expect(keyboardAdjustment("ArrowRight", none, horizReverse)).toEqual({ kind: "move", direction: -1 });
+    // Vertical forward: down is later; reversed, up is later.
+    expect(keyboardAdjustment("ArrowDown", none, vertForward)).toEqual({ kind: "move", direction: 1 });
+    expect(keyboardAdjustment("ArrowUp", none, vertReverse)).toEqual({ kind: "move", direction: 1 });
+  });
+
+  it("resizes the end with Shift and the start with Alt+Shift", () => {
+    expect(keyboardAdjustment("ArrowRight", shift, horizForward)).toEqual({
+      kind: "resize",
+      edge: "end",
+      direction: 1,
+    });
+    expect(keyboardAdjustment("ArrowLeft", altShift, horizForward)).toEqual({
+      kind: "resize",
+      edge: "start",
+      direction: -1,
+    });
+  });
+
+  it("re-ranks across the axis: away from the base raises priority", () => {
+    expect(keyboardAdjustment("ArrowUp", none, horizForward)).toEqual({ kind: "rank", direction: 1 });
+    expect(keyboardAdjustment("ArrowDown", none, horizForward)).toEqual({ kind: "rank", direction: -1 });
+    expect(keyboardAdjustment("ArrowDown", none, { ...horizForward, base: "top" })).toEqual({
+      kind: "rank",
+      direction: 1,
+    });
+    expect(keyboardAdjustment("ArrowRight", none, vertForward)).toEqual({ kind: "rank", direction: 1 });
+    expect(keyboardAdjustment("ArrowLeft", none, { ...vertForward, base: "right" })).toEqual({
+      kind: "rank",
+      direction: 1,
+    });
+  });
+
+  it("leaves other keys and browser shortcuts alone", () => {
+    expect(keyboardAdjustment("Enter", none, horizForward)).toBeNull();
+    expect(keyboardAdjustment("ArrowRight", { ...none, ctrlKey: true }, horizForward)).toBeNull();
+    expect(keyboardAdjustment("ArrowRight", { ...none, metaKey: true }, horizForward)).toBeNull();
+    // Alt+Left/Right is browser history navigation.
+    expect(keyboardAdjustment("ArrowLeft", { ...none, altKey: true }, horizForward)).toBeNull();
+    expect(keyboardAdjustment("ArrowUp", shift, horizForward)).toBeNull();
+  });
+});
+
+describe("keyboardStepMs", () => {
+  it("steps by a round amount scaled to the zoom level", () => {
+    expect(keyboardStepMs(DAY_MS)).toBe(15 * 60_000);
+    expect(keyboardStepMs(60 * 60_000)).toBe(30_000);
+    expect(keyboardStepMs(7 * DAY_MS)).toBe(60 * 60_000);
+  });
+
+  it("never steps by less than a second", () => {
+    expect(keyboardStepMs(60_000)).toBe(1000);
+    expect(keyboardStepMs(0)).toBe(1000);
+  });
+});
+
+describe("rankStep", () => {
+  function item(id: string, rank: string, startMs = 0, endMs: number | null = 1000): Placeable {
+    return { id, startMs, endMs, rank };
+  }
+
+  it("raises an event above the next-higher event it overlaps", () => {
+    const items = [item("me", "B"), item("other", "D"), item("top", "F")];
+    const result = rankStep("me", 1, items, 10_000)!;
+    expect(result.past.id).toBe("other");
+    expect(result.rank > "D").toBe(true);
+    expect(result.rank < "F").toBe(true);
+  });
+
+  it("lowers an event below the next-lower event it overlaps", () => {
+    const items = [item("bottom", "A"), item("other", "C"), item("me", "E")];
+    const result = rankStep("me", -1, items, 10_000)!;
+    expect(result.past.id).toBe("other");
+    expect(result.rank > "A").toBe(true);
+    expect(result.rank < "C").toBe(true);
+  });
+
+  it("skips events it doesn't overlap, since passing them changes nothing visible", () => {
+    const items = [item("me", "B"), item("elsewhere", "C", 5000, 6000), item("other", "D")];
+    const result = rankStep("me", 1, items, 10_000)!;
+    expect(result.past.id).toBe("other");
+    // Still unique: strictly between D and anything ranked above it.
+    expect(result.rank > "D").toBe(true);
+  });
+
+  it("does not collide with the rank of a non-overlapping event", () => {
+    const items = [item("me", "A"), item("other", "C"), item("elsewhere", "E", 5000, 6000)];
+    const result = rankStep("me", 1, items, 10_000)!;
+    expect(result.rank > "C" && result.rank < "E").toBe(true);
+  });
+
+  it("counts label separation as overlap, matching lane assignment", () => {
+    const items = [item("me", "A", 0, 1000), item("next", "B", 1500, 2000)];
+    expect(rankStep("me", 1, items, 10_000, 0)).toBeNull();
+    expect(rankStep("me", 1, items, 10_000, 1000)!.past.id).toBe("next");
+  });
+
+  it("treats open-ended events as running to the end of the view", () => {
+    const items = [item("me", "A", 0, null), item("later", "B", 8000, 9000)];
+    expect(rankStep("me", 1, items, 10_000)!.past.id).toBe("later");
+  });
+
+  it("returns null when there is nothing to pass", () => {
+    expect(rankStep("me", 1, [item("me", "Z"), item("below", "A")], 10_000)).toBeNull();
+    expect(rankStep("me", -1, [item("me", "A"), item("above", "Z")], 10_000)).toBeNull();
+    expect(rankStep("missing", 1, [item("a", "A")], 10_000)).toBeNull();
   });
 });
