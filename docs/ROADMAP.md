@@ -218,6 +218,19 @@ worth of dead code and fixes what the model switch broke.
         visible window unmounts its label, so keyboard focus is lost (the
         pending change is still saved). Auto-panning to keep the focused
         event in view is left open below.
+      - Found in PR review and fixed: after one event's save was sent,
+        pressing an arrow on a *different* event started from the first
+        event's times (and re-sent its save); saves for one event could
+        land out of order; raising an event reordered the DOM and dropped
+        focus; dragging or opening the editor mid-save started from stale
+        times; a failed save was never announced; announcements lacked the
+        date. Saves now run one at a time and stay on screen until they
+        land, series render in stable (not rank) order, and the editor
+        opens once pending changes are saved.
+      - Known limitation (shared with dragging): events stored before
+        ranks existed get placeholder ranks recomputed each render, so
+        passing one of them may not stick. Every event created since has
+        a real rank.
 - [ ] Keep a keyboard-moved event in view: pan the timeline when a nudge
       would carry the focused event off screen, instead of dropping focus.
 - [ ] Label collision: guarantee text never overlaps text, with overlapping

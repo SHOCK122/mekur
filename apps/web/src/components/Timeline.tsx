@@ -74,6 +74,14 @@ interface Nudge {
   eventId: string;
   original: { startTime: string; endTime?: string };
   preview: EventPreview;
+  name: string;
+}
+
+/** A change sent to the server but not yet confirmed. It stays on screen
+ * until the save lands so the event doesn't flick back. */
+interface Saving {
+  preview: EventPreview;
+  token: object;
 }
 
 const KEY_NAMES: Record<string, string> = {
@@ -100,6 +108,11 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   // The latest nudge and save callback, for the debounce timer, blur and
   // unmount, which would otherwise see a stale render's values.
   const nudgeRef = useRef<Nudge | null>(null);
+  const [saving, setSaving] = useState<ReadonlyMap<string, Saving>>(new Map());
+  const savingRef = useRef<ReadonlyMap<string, Saving>>(saving);
+  // Saves run one at a time, so an older write can never land after a
+  // newer one for the same event.
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve());
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onChangeRef = useRef(onChangeEvent);
   onChangeRef.current = onChangeEvent;
@@ -146,7 +159,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    */
   const separation = LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, viewportSize.width));
   const placements = useMemo(() => {
-    const withPreview = events.map((event) => {
+    const withPreview = events.map((saved) => {
+      const inFlight = saving.get(saved.id);
+      const event = inFlight ? { ...saved, ...inFlight.preview } : saved;
       if (drag?.preview && drag.eventId === event.id) return { ...event, ...drag.preview };
       if (nudge && nudge.eventId === event.id) return { ...event, ...nudge.preview };
       return event;
@@ -179,7 +194,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
     return assignLanes(series, viewEnd.getTime(), separation);
-  }, [events, drag, nudge, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+  }, [events, drag, nudge, saving, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+
+  const eventOrder = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
 
   const lanes = laneCount(placements);
   const stackExtent = lanes * LANE_SIZE;
@@ -212,12 +229,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     e.stopPropagation();
     commitNudge();
     (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Build on any change still being saved, not the stale stored copy.
+    const current = latestTimes(event);
     setDrag({
       eventId: event.id,
       mode,
       startX: e.clientX,
       startY: e.clientY,
-      original: { startTime: event.startTime, endTime: event.endTime },
+      original: current,
       preview: null,
     });
   }
@@ -300,7 +319,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     ) {
       return;
     }
-    await onChangeEvent(eventId, preview);
+    const event = events.find((e) => e.id === eventId);
+    await enqueueSave(eventId, preview, event?.title?.trim() || "Untitled event");
   }
 
   function updateNudge(next: Nudge | null) {
@@ -308,8 +328,50 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     setNudge(next);
   }
 
-  /** Saves the pending keyboard change, keeping it on screen until the
-   * save lands so the event doesn't flick back to where it was. */
+  function updateSaving(next: ReadonlyMap<string, Saving>) {
+    savingRef.current = next;
+    setSaving(next);
+  }
+
+  /** An event's times including any change still being saved. */
+  function latestTimes(event: DecryptedEvent): { startTime: string; endTime?: string } {
+    const inFlight = savingRef.current.get(event.id)?.preview;
+    return {
+      startTime: inFlight?.startTime ?? event.startTime,
+      endTime: inFlight ? inFlight.endTime : event.endTime,
+    };
+  }
+
+  /**
+   * Queues a save behind any earlier one and shows it until it lands. The
+   * change is merged with whatever is still in flight for the event, so a
+   * rank saved a moment ago isn't lost by a later move.
+   */
+  function enqueueSave(eventId: string, preview: EventPreview, name: string): Promise<unknown> {
+    const merged = { ...savingRef.current.get(eventId)?.preview, ...preview };
+    const token = {};
+    updateSaving(new Map(savingRef.current).set(eventId, { preview: merged, token }));
+    const done = saveChain.current
+      .then(() => onChangeRef.current?.(eventId, merged))
+      .then(
+        (result) => {
+          if (result === false) setAnnouncement(`Couldn't save the change to ${name}.`);
+        },
+        () => setAnnouncement(`Couldn't save the change to ${name}.`)
+      )
+      .finally(() => {
+        // A newer change for the same event replaced this one; it stays.
+        if (savingRef.current.get(eventId)?.token !== token) return;
+        const next = new Map(savingRef.current);
+        next.delete(eventId);
+        updateSaving(next);
+      });
+    saveChain.current = done;
+    return done;
+  }
+
+  /** Sends the pending keyboard change. It moves from "pending" to
+   * "saving", so a later press on any event starts from a clean slate. */
   function commitNudge() {
     if (commitTimer.current) {
       clearTimeout(commitTimer.current);
@@ -317,21 +379,22 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     }
     const pending = nudgeRef.current;
     if (!pending) return;
+    updateNudge(null);
     const { preview, original } = pending;
-    const save = onChangeRef.current;
     const unchanged =
       preview.startTime === original.startTime &&
       preview.endTime === original.endTime &&
       !preview.rank;
-    if (!save || unchanged) {
-      updateNudge(null);
-      return;
-    }
-    void Promise.resolve(save(pending.eventId, preview)).finally(() => {
-      // Further presses during the save replaced the nudge; those are
-      // still pending and must stay.
-      if (nudgeRef.current === pending) updateNudge(null);
-    });
+    if (!onChangeRef.current || unchanged) return;
+    void enqueueSave(pending.eventId, preview, pending.name);
+  }
+
+  /** Opens an event, first waiting for any of its changes still being
+   * saved so the editor doesn't start from (and save back) stale times. */
+  async function openEvent(event: DecryptedEvent, origin: DOMRect, occurrenceStart: Date) {
+    commitNudge();
+    if (savingRef.current.has(event.id)) await saveChain.current;
+    onEditEvent(event.id, origin, occurrenceStart);
   }
 
   /**
@@ -347,15 +410,17 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     e.preventDefault();
 
     if (nudgeRef.current && nudgeRef.current.eventId !== event.id) commitNudge();
+    // Any other event's change has been sent, so this is either our own
+    // unsaved change or nothing.
     const pending = nudgeRef.current;
-    const original = pending?.original ?? { startTime: event.startTime, endTime: event.endTime };
+    const original = pending?.original ?? latestTimes(event);
     const current: EventPreview = pending?.preview ?? { ...original };
     const name = event.title?.trim() || "Untitled event";
 
     const next = applyAdjustment(adjustment, event, name, current);
     if (!next) return;
 
-    updateNudge({ eventId: event.id, original, preview: next });
+    updateNudge({ eventId: event.id, original, preview: next, name });
     if (commitTimer.current) clearTimeout(commitTimer.current);
     commitTimer.current = setTimeout(commitNudge, KEYBOARD_COMMIT_DELAY_MS);
   }
@@ -371,7 +436,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const stepMs = keyboardStepMs(spanSeconds * 1000);
     const format = (iso: string) =>
       new Date(iso).toLocaleString(undefined, {
+        // The date matters too: at week or month zoom a press moves days.
         weekday: "short",
+        month: "short",
+        day: "numeric",
         hour: "numeric",
         minute: "2-digit",
         ...(stepMs < 60_000 ? { second: "2-digit" } : {}),
@@ -592,7 +660,12 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             />
           )}
 
-          {placements.map(({ item, lane }) => {
+          {/* Rendered in the stable order of `events`, not rank order: if
+              re-ranking reordered the DOM, the focused label would be
+              moved and lose keyboard focus. */}
+          {[...placements]
+            .sort((a, b) => (eventOrder.get(a.item.id) ?? 0) - (eventOrder.get(b.item.id) ?? 0))
+            .map(({ item, lane }) => {
             const { event, occurrences } = item;
             const openEnded = item.endMs === null;
 
@@ -675,8 +748,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                           onKeyDown={(e) => handleEventKeyDown(e, event)}
                           onBlur={commitNudge}
                           onClick={(e) =>
-                            onEditEvent(
-                              event.id,
+                            void openEvent(
+                              event,
                               (e.currentTarget as Element).getBoundingClientRect(),
                               occurrence.start
                             )

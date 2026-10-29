@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Timeline } from "../src/components/Timeline.js";
 import type { DecryptedEvent } from "../src/lib/events.js";
@@ -401,7 +401,100 @@ describe("Timeline", () => {
       button.focus();
       fireEvent.keyDown(button, { key: "ArrowRight" });
       fireEvent.blur(button);
+      // Long before the 500ms quiet period would have elapsed.
+      await act(async () => {});
       expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    /** A save the test resolves by hand, to hold it "in flight". */
+    function deferredSaves() {
+      const resolvers: Array<(ok: boolean) => void> = [];
+      const onChange = vi.fn(
+        () => new Promise<boolean>((resolve) => resolvers.push(resolve))
+      );
+      return { onChange, resolvers };
+    }
+
+    function overlapping() {
+      const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      return [
+        makeEvent({ id: "low", title: "Low", rank: "A", startTime: start }),
+        makeEvent({ id: "high", title: "High", rank: "Z", startTime: start }),
+      ];
+    }
+
+    it("starts a different event from its own times while another's save is in flight", async () => {
+      // Regression: the in-flight change to one event was reused as the
+      // starting point for the next event pressed, and sent again.
+      const [low, high] = overlapping();
+      const { onChange } = deferredSaves();
+      render(<Timeline events={[low!, high!]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      fireEvent.keyDown(label("Low"), { key: "ArrowRight" });
+      fireEvent.blur(label("Low"));
+      fireEvent.keyDown(label("High"), { key: "ArrowRight" });
+      fireEvent.blur(label("High"));
+      await act(async () => {});
+
+      // Low's save is still pending, so High's is queued behind it.
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange.mock.calls[0]![0]).toBe("low");
+    });
+
+    it("saves one change at a time, carrying an in-flight rank into the next save", async () => {
+      const [low, high] = overlapping();
+      const { onChange, resolvers } = deferredSaves();
+      render(<Timeline events={[low!, high!]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      fireEvent.keyDown(label("Low"), { key: "ArrowUp" });
+      fireEvent.blur(label("Low"));
+      fireEvent.keyDown(label("Low"), { key: "ArrowRight" });
+      fireEvent.blur(label("Low"));
+      await act(async () => {});
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const rank = (onChange.mock.calls[0] as unknown[])[1] as { rank: string };
+
+      await act(async () => resolvers[0]!(true));
+      expect(onChange).toHaveBeenCalledTimes(2);
+      const second = (onChange.mock.calls[1] as unknown[])[1] as { rank: string; startTime: string };
+      expect(second.rank).toBe(rank.rank);
+      expect(new Date(second.startTime).getTime()).toBe(new Date(low!.startTime).getTime() + STEP);
+    });
+
+    it("keeps keyboard focus on an event after raising it", () => {
+      // Regression: the series were rendered in rank order, so raising one
+      // moved its DOM node and the browser dropped focus.
+      render(<Timeline events={overlapping()} onEditEvent={() => {}} onChangeEvent={() => {}} />);
+      const button = label("Low");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowUp" });
+      expect(document.activeElement).toBe(label("Low"));
+      const series = screen.getByTestId("event-series-low");
+      expect(series.compareDocumentPosition(screen.getByTestId("event-series-high"))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    });
+
+    it("announces when a keyboard change couldn't be saved", async () => {
+      const onChange = vi.fn(async () => false);
+      render(<Timeline events={[makeEvent()]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      fireEvent.keyDown(label("Standup"), { key: "ArrowRight" });
+      fireEvent.blur(label("Standup"));
+      await waitFor(() =>
+        expect(screen.getByTestId("timeline-announcer").textContent).toMatch(/Couldn't save/)
+      );
+    });
+
+    it("opens the editor only once a pending keyboard change has been saved", async () => {
+      const { onChange, resolvers } = deferredSaves();
+      const onEdit = vi.fn();
+      render(<Timeline events={[makeEvent()]} onEditEvent={onEdit} onChangeEvent={onChange} />);
+      fireEvent.keyDown(label("Standup"), { key: "ArrowRight" });
+      fireEvent.click(label("Standup"));
+      await act(async () => {});
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onEdit).not.toHaveBeenCalled();
+
+      await act(async () => resolvers[0]!(true));
+      expect(onEdit).toHaveBeenCalledTimes(1);
     });
 
     it("raises priority past an overlapping event, away from the base", async () => {
