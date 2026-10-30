@@ -8,6 +8,7 @@ import {
   keyboardAdjustment,
   keyboardStepMs,
   rankStep,
+  panToKeepInView,
 } from "../src/lib/timelineInteraction.js";
 import type { Orientation, Viewport, Placement, Placeable } from "../src/lib/timeline.js";
 
@@ -297,5 +298,46 @@ describe("rankStep", () => {
     expect(rankStep("me", 1, [item("me", "Z"), item("below", "A")], 10_000)).toBeNull();
     expect(rankStep("me", -1, [item("me", "A"), item("above", "Z")], 10_000)).toBeNull();
     expect(rankStep("missing", 1, [item("a", "A")], 10_000)).toBeNull();
+  });
+});
+
+describe("panToKeepInView", () => {
+  const view = { startMs: 0, endMs: 10_000 };
+  const moved = (before: number, after: number) => ({ before, after });
+
+  it("leaves the view alone while the changed edge stays inside the margin", () => {
+    expect(panToKeepInView(view, moved(4000, 5000), null, 500)).toBe(0);
+  });
+
+  it("follows the start past the later margin", () => {
+    // 9600 is 100ms beyond the 9500 margin, so the view moves 100ms later.
+    expect(panToKeepInView(view, moved(9300, 9600), null, 500)).toBe(100);
+  });
+
+  it("follows the start past the earlier margin", () => {
+    expect(panToKeepInView(view, moved(600, 200), null, 500)).toBe(-300);
+  });
+
+  it("never pans against the direction the edge moved", () => {
+    // Inside the earlier margin but moving later: no jump backwards.
+    expect(panToKeepInView(view, moved(100, 300), null, 500)).toBe(0);
+    expect(panToKeepInView(view, moved(9900, 9700), null, 500)).toBe(0);
+  });
+
+  it("follows the end when the end is what changed", () => {
+    expect(panToKeepInView(view, moved(2000, 2000), moved(9400, 9700), 500)).toBe(200);
+    expect(panToKeepInView(view, moved(100, 100), moved(800, 300), 500)).toBe(-200);
+  });
+
+  it("never follows the end so far that the start (and its label) leaves the view", () => {
+    // Following the end would pan 3000ms, but the start would then sit
+    // left of the earlier margin; the pan stops with the start at 500.
+    expect(panToKeepInView(view, moved(2000, 2000), moved(12_000, 12_500), 500)).toBe(1500);
+    // Start already at the margin: the end is left to run off screen.
+    expect(panToKeepInView(view, moved(400, 400), moved(9800, 9900), 500)).toBe(0);
+  });
+
+  it("caps the margin at a quarter of the view, so a wide label can't overshoot", () => {
+    expect(panToKeepInView(view, moved(7000, 8000), null, 50_000)).toBe(500);
   });
 });

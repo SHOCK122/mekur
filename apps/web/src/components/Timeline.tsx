@@ -24,6 +24,8 @@ import {
   keyboardAdjustment,
   keyboardStepMs,
   rankStep,
+  panToKeepInView,
+  timeAxisSize,
   timeAxisKeys,
   stackAxisKeys,
   type ResizeEdge,
@@ -419,10 +421,50 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
     const next = applyAdjustment(adjustment, event, name, current);
     if (!next) return;
+    if (adjustment.kind !== "rank") keepInView(event.id, adjustment, current, next);
 
     updateNudge({ eventId: event.id, original, preview: next, name });
     if (commitTimer.current) clearTimeout(commitTimer.current);
     commitTimer.current = setTimeout(commitNudge, KEYBOARD_COMMIT_DELAY_MS);
+  }
+
+  /**
+   * Pans so a keyboard change can't carry the event off screen, which
+   * would unmount its label and drop keyboard focus. The label sits on the
+   * first visible occurrence, and a change shifts every occurrence of a
+   * series alike, so that occurrence is the one followed.
+   */
+  function keepInView(
+    eventId: string,
+    adjustment: Exclude<KeyboardAdjustment, { kind: "rank" }>,
+    current: EventPreview,
+    next: EventPreview
+  ) {
+    const labelled = placements.find((p) => p.item.id === eventId)?.item.occurrences[0];
+    if (!labelled) return;
+    const shift = (from?: string, to?: string) =>
+      from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
+    const startMs = labelled.start.getTime();
+    const start = { before: startMs, after: startMs + shift(current.startTime, next.startTime) };
+    // An open-ended event given an end by Shift+arrow had no end on screen
+    // to follow; its start is all there is to keep in view.
+    const followsEnd = adjustment.kind === "resize" && adjustment.edge === "end";
+    const end =
+      followsEnd && labelled.end
+        ? {
+            before: labelled.end.getTime(),
+            after: labelled.end.getTime() + shift(current.endTime, next.endTime),
+          }
+        : null;
+
+    const pan = panToKeepInView(
+      { startMs: viewStart.getTime(), endMs: viewEnd.getTime() },
+      start,
+      end,
+      // Room for the label, which sits just after the start.
+      LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, timeAxisSize(orientation, viewport)))
+    );
+    if (pan !== 0) setCentre((c) => c + pan);
   }
 
   /** The preview after one key press, announcing the result. Null when
