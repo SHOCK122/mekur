@@ -427,6 +427,20 @@ describe("Timeline", () => {
       expect(button).toHaveFocus();
     });
 
+    it("lets a long event's end run off screen rather than its start and label", () => {
+      // 120 presses stretch the event to 30 hours, longer than the day
+      // view: following the end all the way would push the start (where
+      // the label lives) off the earlier edge.
+      const event = makeEvent();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      for (let i = 0; i < 120; i++) fireEvent.keyDown(button, { key: "ArrowRight", shiftKey: true });
+      expect(button.isConnected).toBe(true);
+      expect(button).toHaveFocus();
+      expect(parseFloat(screen.getByTestId("event-modal-e1").style.left)).toBeGreaterThanOrEqual(0);
+    });
+
     it("moves the end with Shift and the start with Alt+Shift", async () => {
       const event = makeEvent();
       const onChange = vi.fn();

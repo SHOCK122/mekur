@@ -25,6 +25,7 @@ import {
   keyboardStepMs,
   rankStep,
   panToKeepInView,
+  timeAxisSize,
   timeAxisKeys,
   stackAxisKeys,
   type ResizeEdge,
@@ -430,9 +431,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   /**
    * Pans so a keyboard change can't carry the event off screen, which
    * would unmount its label and drop keyboard focus. The label sits on the
-   * first visible occurrence, so that is the one whose edge is followed;
-   * a change shifts every occurrence of a series alike, so the series as a
-   * whole only leaves the view once all its visible occurrences have.
+   * first visible occurrence, and a change shifts every occurrence of a
+   * series alike, so that occurrence is the one followed.
    */
   function keepInView(
     eventId: string,
@@ -440,31 +440,29 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     current: EventPreview,
     next: EventPreview
   ) {
-    const item = placements.find((p) => p.item.id === eventId)?.item;
-    const labelled = item?.occurrences[0];
-    if (!item || !labelled) return;
+    const labelled = placements.find((p) => p.item.id === eventId)?.item.occurrences[0];
+    if (!labelled) return;
     const shift = (from?: string, to?: string) =>
       from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
-    const startShift = shift(current.startTime, next.startTime);
-    // An open-ended event given an end by Shift+arrow has no end on screen
-    // to follow, and it can't leave the view by its end anyway.
-    const endShift = shift(current.endTime, next.endTime);
+    const startMs = labelled.start.getTime();
+    const start = { before: startMs, after: startMs + shift(current.startTime, next.startTime) };
+    // An open-ended event given an end by Shift+arrow had no end on screen
+    // to follow; its start is all there is to keep in view.
     const followsEnd = adjustment.kind === "resize" && adjustment.edge === "end";
-    const edgeMs = followsEnd ? (labelled.end?.getTime() ?? null) : labelled.start.getTime();
-    const edge =
-      edgeMs === null
-        ? null
-        : { before: edgeMs, after: edgeMs + (followsEnd ? endShift : startShift) };
+    const end =
+      followsEnd && labelled.end
+        ? {
+            before: labelled.end.getTime(),
+            after: labelled.end.getTime() + shift(current.endTime, next.endTime),
+          }
+        : null;
 
     const pan = panToKeepInView(
       { startMs: viewStart.getTime(), endMs: viewEnd.getTime() },
-      {
-        startMs: item.startMs + startShift,
-        endMs: item.endMs === null ? null : item.endMs + endShift,
-      },
-      edge,
+      start,
+      end,
       // Room for the label, which sits just after the start.
-      separation
+      LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, timeAxisSize(orientation, viewport)))
     );
     if (pan !== 0) setCentre((c) => c + pan);
   }

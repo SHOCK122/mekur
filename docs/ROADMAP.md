@@ -233,23 +233,36 @@ worth of dead code and fixes what the model switch broke.
 - [x] **Keep a keyboard-moved event in view.** A nudge that would carry
       the focused event off screen now pans the timeline with it, so its
       label stays mounted and keeps focus. (`panToKeepInView`, pure.)
-      - The view follows the edge being changed (the start for a move,
-        the end for Shift+arrow) once it comes within a label's width of
-        the view's edge, so the label is still readable, not just mounted.
-        The margin is capped at a quarter of the view.
+      - The view follows the edge being changed (the start for a move or
+        Alt+Shift, the end for Shift) once it comes within a label's width
+        of the view's edge, so the label is still readable, not just
+        mounted. The margin is measured along the time axis (height in the
+        vertical layouts) and capped at a quarter of the view.
       - It only ever pans in the direction the edge moved: nudging an
         event that already sits near one edge never makes the view jump
         the other way.
-      - If the edge wasn't on screen to begin with (a long event clipped
-        by the view), the view stays put until the event as a whole would
-        leave, then steps in just enough. For a series, "as a whole" means
-        every visible occurrence, since a change shifts them all alike;
-        the followed edge is that of the first visible occurrence, which
-        carries the label.
+      - Following the end never pans the start past the earlier margin:
+        an occurrence is only rendered while its start is in view (see
+        the bug below), so stretching an event longer than the view lets
+        its end run off screen rather than its label.
+      - For a series the followed occurrence is the first visible one,
+        which carries the label; a change shifts every occurrence alike.
       - Simplification: the pan is not announced. The live region already
-        announces the event's new time, which is what changed; the view
-        moving is a consequence of that, not news.
+        announces the event's new time; the view moving is a consequence.
       - Re-ranking never pans: it changes the lane, not the time.
+      - Found in PR review and fixed: the first version followed the end
+        unconditionally, so 120 Shift+arrow presses on a day view still
+        pushed the start off screen and dropped focus.
+      - Known limitation: moving a series with an `until` (or onto skipped
+        dates) doesn't shift its occurrences uniformly, so its only
+        visible occurrence can cease to exist; no pan can keep that in
+        view.
+- [ ] **Bug (found while building the above): events in progress at the
+      start of the view are not drawn.** `expandOccurrences` keeps an
+      occurrence only if its *start* is inside the view, so an event from
+      11:00 to 13:00 vanishes once the view is panned to start at 12:00.
+      Should be "overlaps the view"; the same check also caps which long
+      events can be keyboard-followed above.
 - [ ] Label collision: guarantee text never overlaps text, with overlapping
       modals separated by at least one text-height.
 - [ ] Clear affordance that the stack axis scrolls when lanes overflow.
