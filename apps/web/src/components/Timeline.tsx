@@ -24,6 +24,7 @@ import {
   keyboardAdjustment,
   keyboardStepMs,
   rankStep,
+  panToKeepInView,
   timeAxisKeys,
   stackAxisKeys,
   type ResizeEdge,
@@ -419,10 +420,53 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
     const next = applyAdjustment(adjustment, event, name, current);
     if (!next) return;
+    if (adjustment.kind !== "rank") keepInView(event.id, adjustment, current, next);
 
     updateNudge({ eventId: event.id, original, preview: next, name });
     if (commitTimer.current) clearTimeout(commitTimer.current);
     commitTimer.current = setTimeout(commitNudge, KEYBOARD_COMMIT_DELAY_MS);
+  }
+
+  /**
+   * Pans so a keyboard change can't carry the event off screen, which
+   * would unmount its label and drop keyboard focus. The label sits on the
+   * first visible occurrence, so that is the one whose edge is followed;
+   * a change shifts every occurrence of a series alike, so the series as a
+   * whole only leaves the view once all its visible occurrences have.
+   */
+  function keepInView(
+    eventId: string,
+    adjustment: Exclude<KeyboardAdjustment, { kind: "rank" }>,
+    current: EventPreview,
+    next: EventPreview
+  ) {
+    const item = placements.find((p) => p.item.id === eventId)?.item;
+    const labelled = item?.occurrences[0];
+    if (!item || !labelled) return;
+    const shift = (from?: string, to?: string) =>
+      from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
+    const startShift = shift(current.startTime, next.startTime);
+    // An open-ended event given an end by Shift+arrow has no end on screen
+    // to follow, and it can't leave the view by its end anyway.
+    const endShift = shift(current.endTime, next.endTime);
+    const followsEnd = adjustment.kind === "resize" && adjustment.edge === "end";
+    const edgeMs = followsEnd ? (labelled.end?.getTime() ?? null) : labelled.start.getTime();
+    const edge =
+      edgeMs === null
+        ? null
+        : { before: edgeMs, after: edgeMs + (followsEnd ? endShift : startShift) };
+
+    const pan = panToKeepInView(
+      { startMs: viewStart.getTime(), endMs: viewEnd.getTime() },
+      {
+        startMs: item.startMs + startShift,
+        endMs: item.endMs === null ? null : item.endMs + endShift,
+      },
+      edge,
+      // Room for the label, which sits just after the start.
+      separation
+    );
+    if (pan !== 0) setCentre((c) => c + pan);
   }
 
   /** The preview after one key press, announcing the result. Null when

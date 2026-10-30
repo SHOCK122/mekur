@@ -8,6 +8,7 @@ import {
   keyboardAdjustment,
   keyboardStepMs,
   rankStep,
+  panToKeepInView,
 } from "../src/lib/timelineInteraction.js";
 import type { Orientation, Viewport, Placement, Placeable } from "../src/lib/timeline.js";
 
@@ -297,5 +298,49 @@ describe("rankStep", () => {
     expect(rankStep("me", 1, [item("me", "Z"), item("below", "A")], 10_000)).toBeNull();
     expect(rankStep("me", -1, [item("me", "A"), item("above", "Z")], 10_000)).toBeNull();
     expect(rankStep("missing", 1, [item("a", "A")], 10_000)).toBeNull();
+  });
+});
+
+describe("panToKeepInView", () => {
+  const view = { startMs: 0, endMs: 10_000 };
+
+  it("leaves the view alone while the changed edge stays inside the margin", () => {
+    expect(panToKeepInView(view, { startMs: 5000, endMs: 6000 }, { before: 4000, after: 5000 }, 500)).toBe(0);
+  });
+
+  it("follows an edge moving past the later margin", () => {
+    // 9600 is 100ms beyond the 9500 margin, so the view moves 100ms later.
+    expect(panToKeepInView(view, { startMs: 9600, endMs: 9900 }, { before: 9300, after: 9600 }, 500)).toBe(100);
+  });
+
+  it("follows an edge moving past the earlier margin", () => {
+    expect(panToKeepInView(view, { startMs: 200, endMs: 900 }, { before: 600, after: 200 }, 500)).toBe(-300);
+  });
+
+  it("never pans against the direction the edge moved", () => {
+    // Inside the earlier margin but moving later: no jump backwards.
+    expect(panToKeepInView(view, { startMs: 300, endMs: 900 }, { before: 100, after: 300 }, 500)).toBe(0);
+    expect(panToKeepInView(view, { startMs: 9700, endMs: 9900 }, { before: 9900, after: 9700 }, 500)).toBe(0);
+  });
+
+  it("does not jump to an off-screen edge of an event that is still visible", () => {
+    // A long event that started before the view, moved later: its start is
+    // still off screen but the event still covers the view.
+    expect(panToKeepInView(view, { startMs: -4000, endMs: 20_000 }, { before: -5000, after: -4000 }, 500)).toBe(0);
+  });
+
+  it("steps in when an event whose edge was off screen would leave the view", () => {
+    // Moved earlier until its end is about to cross the view's start.
+    expect(panToKeepInView(view, { startMs: -9000, endMs: 100 }, { before: -8000, after: -9000 }, 500)).toBe(-400);
+    // An open-ended event never leaves by the earlier side.
+    expect(panToKeepInView(view, { startMs: -9000, endMs: null }, { before: -8000, after: -9000 }, 500)).toBe(0);
+  });
+
+  it("brings back an event that would leave with no edge to follow", () => {
+    expect(panToKeepInView(view, { startMs: 9800, endMs: null }, null, 500)).toBe(300);
+  });
+
+  it("caps the margin at a quarter of the view, so a wide label can't overshoot", () => {
+    expect(panToKeepInView(view, { startMs: 8000, endMs: 9000 }, { before: 7000, after: 8000 }, 50_000)).toBe(500);
   });
 });

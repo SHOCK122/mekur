@@ -379,6 +379,54 @@ describe("Timeline", () => {
       );
     });
 
+    it("pans to keep a keyboard-moved event on screen instead of dropping focus", async () => {
+      // Starts an hour from now on a day view centred on now, so 60 presses
+      // (15 hours) would carry it well past the view's end at +12h.
+      const event = makeEvent();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      for (let i = 0; i < 60; i++) fireEvent.keyDown(button, { key: "ArrowRight" });
+
+      expect(screen.getByTestId("event-modal-e1")).toBeInTheDocument();
+      expect(label("Standup")).toHaveFocus();
+      // The same element: it was never unmounted along the way.
+      expect(label("Standup")).toBe(button);
+
+      // Further presses still work, and the edits are one write.
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      expect(new Date(onChange.mock.calls[0]![1].startTime).getTime()).toBe(
+        new Date(event.startTime).getTime() + 61 * STEP
+      );
+    });
+
+    it("follows a keyboard-moved event back into the past as well", () => {
+      const event = makeEvent();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      // 80 presses earlier is 20 hours: the event ends ~19h ago, beyond -12h.
+      for (let i = 0; i < 80; i++) fireEvent.keyDown(button, { key: "ArrowLeft" });
+      expect(label("Standup")).toBe(button);
+      expect(button).toHaveFocus();
+    });
+
+    it("keeps an event's end in view while Shift+arrow extends it", () => {
+      const event = makeEvent();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      for (let i = 0; i < 60; i++) fireEvent.keyDown(button, { key: "ArrowRight", shiftKey: true });
+      // The event's right edge stays inside the 800px-wide viewport.
+      const left = parseFloat(modal.style.left);
+      const width = parseFloat(modal.style.width);
+      expect(left + width).toBeLessThan(800);
+      expect(button).toHaveFocus();
+    });
+
     it("moves the end with Shift and the start with Alt+Shift", async () => {
       const event = makeEvent();
       const onChange = vi.fn();

@@ -215,9 +215,8 @@ worth of dead code and fixes what the model switch broke.
         (that would be three tab stops per event); modifiers on the one
         focusable label cover all three drags.
       - Found while exercising it: moving an event entirely out of the
-        visible window unmounts its label, so keyboard focus is lost (the
-        pending change is still saved). Auto-panning to keep the focused
-        event in view is left open below.
+        visible window unmounted its label, so keyboard focus was lost.
+        Fixed by the auto-pan item below.
       - Found in PR review and fixed: after one event's save was sent,
         pressing an arrow on a *different* event started from the first
         event's times (and re-sent its save); saves for one event could
@@ -231,8 +230,26 @@ worth of dead code and fixes what the model switch broke.
         ranks existed get placeholder ranks recomputed each render, so
         passing one of them may not stick. Every event created since has
         a real rank.
-- [ ] Keep a keyboard-moved event in view: pan the timeline when a nudge
-      would carry the focused event off screen, instead of dropping focus.
+- [x] **Keep a keyboard-moved event in view.** A nudge that would carry
+      the focused event off screen now pans the timeline with it, so its
+      label stays mounted and keeps focus. (`panToKeepInView`, pure.)
+      - The view follows the edge being changed (the start for a move,
+        the end for Shift+arrow) once it comes within a label's width of
+        the view's edge, so the label is still readable, not just mounted.
+        The margin is capped at a quarter of the view.
+      - It only ever pans in the direction the edge moved: nudging an
+        event that already sits near one edge never makes the view jump
+        the other way.
+      - If the edge wasn't on screen to begin with (a long event clipped
+        by the view), the view stays put until the event as a whole would
+        leave, then steps in just enough. For a series, "as a whole" means
+        every visible occurrence, since a change shifts them all alike;
+        the followed edge is that of the first visible occurrence, which
+        carries the label.
+      - Simplification: the pan is not announced. The live region already
+        announces the event's new time, which is what changed; the view
+        moving is a consequence of that, not news.
+      - Re-ranking never pans: it changes the lane, not the time.
 - [ ] Label collision: guarantee text never overlaps text, with overlapping
       modals separated by at least one text-height.
 - [ ] Clear affordance that the stack axis scrolls when lanes overflow.

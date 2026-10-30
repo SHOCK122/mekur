@@ -301,3 +301,36 @@ export function rankStep<T extends Placeable>(
   const previous = [...others].reverse().find((i) => i.rank < past.rank);
   return { rank: rankBetween(previous?.rank ?? null, past.rank), past };
 }
+
+/**
+ * How far to pan the view (ms, positive = later) so a keyboard change
+ * doesn't carry an event off screen and unmount its focused label.
+ *
+ * `edge` is the edge being changed (the start for a move), before and
+ * after the press. If it was on screen, the view follows it so it stays at
+ * least `marginMs` inside -- but only in the direction it moved, so
+ * nudging an event that sits near one edge never pans the other way. If it
+ * wasn't on screen (a long event clipped by the view), the view only steps
+ * in when `extent` -- everything of the event that was on screen, after
+ * the change -- would otherwise leave it entirely.
+ */
+export function panToKeepInView(
+  view: { startMs: number; endMs: number },
+  extent: { startMs: number; endMs: number | null },
+  edge: { before: number; after: number } | null,
+  marginMs: number
+): number {
+  const margin = Math.min(marginMs, (view.endMs - view.startMs) / 4);
+  const low = view.startMs + margin;
+  const high = view.endMs - margin;
+
+  if (edge && edge.before >= view.startMs && edge.before <= view.endMs) {
+    if (edge.after > edge.before && edge.after > high) return edge.after - high;
+    if (edge.after < edge.before && edge.after < low) return edge.after - low;
+    return 0;
+  }
+
+  if (extent.startMs > high) return extent.startMs - high;
+  if (extent.endMs !== null && extent.endMs < low) return extent.endMs - low;
+  return 0;
+}
