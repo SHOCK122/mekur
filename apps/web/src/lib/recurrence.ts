@@ -36,12 +36,30 @@ export interface Occurrence {
  * cheap to render. */
 const MAX_OCCURRENCES_PER_EVENT = 500;
 
+/** How far back, in repetitions of a fixed-length series, to look for an
+ * occurrence still in progress at the start of the window. Only the latest
+ * such occurrence is needed (see expandOccurrences), so this only matters
+ * when the most recent ones were all skipped; it bounds the walk for a
+ * long event repeating far more often than it lasts (a day-long event
+ * every minute would otherwise walk 1,440 repeats per expansion). */
+const IN_PROGRESS_LOOKBACK_PERIODS = 100;
+
 /**
- * Expands a single event + its optional recurrence rule into concrete
- * occurrences within [rangeStart, rangeEnd]. All occurrences share the
+ * Expands a single event + its optional recurrence rule into the concrete
+ * occurrences that overlap [rangeStart, rangeEnd]: those starting inside
+ * it, plus one still in progress at rangeStart. All occurrences share the
  * same underlying event id: edits act on the whole series, and a single
  * occurrence can only be skipped (see skippedOccurrences). Per-occurrence
  * overrides are roadmap Phase 8.
+ *
+ * Of the occurrences in progress at rangeStart, only the latest is
+ * returned. Repeats of one series share a duration, so the latest-starting
+ * one also ends last, and every earlier one in progress is drawn entirely
+ * underneath it in the series' single row.
+ *
+ * Open-ended occurrences have no end to overlap with, so they are kept
+ * only while their start is in the window -- otherwise every open-ended
+ * repeat that ever began would count as "in progress" forever.
  */
 export function expandOccurrences(
   event: {
@@ -70,9 +88,20 @@ export function expandOccurrences(
     options.includeSkipped ? true : !occurrence.skipped;
 
   if (!event.recurrence) {
-    if (start < rangeStart || start > rangeEnd) return [];
+    const startsInside = start >= rangeStart && start <= rangeEnd;
+    const inProgress = start < rangeStart && end !== null && end > rangeStart;
+    if (!startsInside && !inProgress) return [];
     return [{ start, end, skipped: isSkipped(start) }].filter(keep);
   }
+
+  // How long before the window an occurrence may start and still be in
+  // progress at its start.
+  const lookbackMs = durationMs !== null && durationMs > 0 ? durationMs : 0;
+  const period = FIXED_PERIOD_MS[event.recurrence.freq];
+  const boundedLookbackMs =
+    period === undefined
+      ? lookbackMs
+      : Math.min(lookbackMs, IN_PROGRESS_LOOKBACK_PERIODS * period * Math.max(1, event.recurrence.interval));
 
   const rule = new RRule({
     freq: FREQ_MAP[event.recurrence.freq],
@@ -84,15 +113,28 @@ export function expandOccurrences(
     // beginning. Without this, viewing an hour of a minutely series that
     // began years ago walks every intervening occurrence -- measured at
     // over two minutes for a single expansion.
-    dtstart: advancedStart(start, event.recurrence, rangeStart),
+    dtstart: advancedStart(
+      start,
+      event.recurrence,
+      new Date(rangeStart.getTime() - boundedLookbackMs)
+    ),
   });
 
-  return collectBounded(rule, rangeStart, rangeEnd)
-    .map((occurrenceStart) => ({
-      start: occurrenceStart,
-      end: durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs),
-      skipped: isSkipped(occurrenceStart),
-    }))
+  const toOccurrence = (occurrenceStart: Date): Occurrence => ({
+    start: occurrenceStart,
+    end: durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs),
+    skipped: isSkipped(occurrenceStart),
+  });
+
+  const { inProgress, inside } = collectBounded(
+    rule,
+    rangeStart,
+    rangeEnd,
+    lookbackMs,
+    (date) => keep(toOccurrence(date))
+  );
+  return [...(inProgress ? [inProgress] : []), ...inside]
+    .map(toOccurrence)
     .filter(keep);
 }
 
@@ -160,15 +202,31 @@ function advancedStart(start: Date, recurrence: RecurrenceRule, rangeStart: Date
  * unlike RRule.between(), which always fully enumerates before returning,
  * this bounds the actual computation cost, not just the result size. That
  * matters on low-end devices, where enumerating hundreds of thousands of
- * dates synchronously can visibly freeze the UI. */
-function collectBounded(rule: RRule, rangeStart: Date, rangeEnd: Date): Date[] {
-  const results: Date[] = [];
+ * dates synchronously can visibly freeze the UI.
+ *
+ * Dates before the window are not collected: only the latest one that is
+ * still in progress at rangeStart (it started less than `durationMs`
+ * before it) and that `wanted` accepts is remembered, in constant space. */
+function collectBounded(
+  rule: RRule,
+  rangeStart: Date,
+  rangeEnd: Date,
+  durationMs: number,
+  wanted: (date: Date) => boolean
+): { inProgress: Date | null; inside: Date[] } {
+  const inside: Date[] = [];
+  let inProgress: Date | null = null;
+  const inProgressFrom = rangeStart.getTime() - durationMs;
   rule.all((date) => {
     if (date > rangeEnd) return false;
-    if (date >= rangeStart) results.push(date);
-    return results.length < MAX_OCCURRENCES_PER_EVENT;
+    if (date >= rangeStart) {
+      inside.push(date);
+    } else if (date.getTime() > inProgressFrom && wanted(date)) {
+      inProgress = date;
+    }
+    return inside.length + (inProgress ? 1 : 0) < MAX_OCCURRENCES_PER_EVENT;
   });
-  return results;
+  return { inProgress, inside };
 }
 
 /** Short human-readable summary of a recurrence rule, for display. */

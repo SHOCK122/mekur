@@ -29,6 +29,129 @@ describe("expandOccurrences", () => {
     expect(occurrences).toHaveLength(0);
   });
 
+  it("keeps a non-recurring event that is in progress at the start of the range", () => {
+    // Regression: only events *starting* inside the range were kept, so an
+    // 11:00-13:00 event vanished once the view was panned to start at 12:00.
+    const event = { startTime: "2026-08-01T11:00:00.000Z", endTime: "2026-08-01T13:00:00.000Z" };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-08-01T12:00:00.000Z"),
+      new Date("2026-08-01T18:00:00.000Z")
+    );
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].start.toISOString()).toBe("2026-08-01T11:00:00.000Z");
+  });
+
+  it("drops an event that ends exactly where the range begins", () => {
+    const event = { startTime: "2026-08-01T11:00:00.000Z", endTime: "2026-08-01T12:00:00.000Z" };
+    expect(
+      expandOccurrences(event, new Date("2026-08-01T12:00:00.000Z"), new Date("2026-08-01T18:00:00.000Z"))
+    ).toHaveLength(0);
+  });
+
+  it("keeps a zero-length event starting exactly at the range start", () => {
+    const event = { startTime: "2026-08-01T12:00:00.000Z", endTime: "2026-08-01T12:00:00.000Z" };
+    expect(
+      expandOccurrences(event, new Date("2026-08-01T12:00:00.000Z"), new Date("2026-08-01T18:00:00.000Z"))
+    ).toHaveLength(1);
+  });
+
+  it("does not treat an open-ended event that began earlier as in progress", () => {
+    // Without an end there is nothing to overlap with; counting it would
+    // keep every open-ended event that ever started on screen forever.
+    const event = { startTime: "2026-08-01T11:00:00.000Z" };
+    expect(
+      expandOccurrences(event, new Date("2026-08-01T12:00:00.000Z"), new Date("2026-08-01T18:00:00.000Z"))
+    ).toHaveLength(0);
+  });
+
+  it("keeps the occurrence of a series that is in progress at the start of the range", () => {
+    const event = {
+      startTime: "2026-08-01T11:00:00.000Z",
+      endTime: "2026-08-01T13:00:00.000Z",
+      recurrence: { freq: "DAILY" as const, interval: 1 },
+    };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-08-05T12:00:00.000Z"),
+      new Date("2026-08-07T00:00:00.000Z")
+    );
+    expect(occurrences.map((o) => o.start.toISOString())).toEqual([
+      "2026-08-05T11:00:00.000Z",
+      "2026-08-06T11:00:00.000Z",
+    ]);
+  });
+
+  it("returns only the latest in-progress repeat when several overlap the range start", () => {
+    // Two-hour event every 30 minutes: four repeats are in progress at
+    // 12:00, but each earlier one lies entirely under the latest in the
+    // series' single row.
+    const event = {
+      startTime: "2026-08-01T08:00:00.000Z",
+      endTime: "2026-08-01T10:00:00.000Z",
+      recurrence: { freq: "MINUTELY" as const, interval: 30 },
+    };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-08-01T12:00:00.000Z"),
+      new Date("2026-08-01T13:00:00.000Z")
+    );
+    expect(occurrences.map((o) => o.start.toISOString())).toEqual([
+      "2026-08-01T11:30:00.000Z",
+      "2026-08-01T12:00:00.000Z",
+      "2026-08-01T12:30:00.000Z",
+      "2026-08-01T13:00:00.000Z",
+    ]);
+  });
+
+  it("falls back to an earlier in-progress repeat when the latest was skipped", () => {
+    const event = {
+      startTime: "2026-08-01T08:00:00.000Z",
+      endTime: "2026-08-01T10:00:00.000Z",
+      recurrence: { freq: "MINUTELY" as const, interval: 30 },
+      skippedOccurrences: ["2026-08-01T11:30:00.000Z"],
+    };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-08-01T12:00:00.000Z"),
+      new Date("2026-08-01T12:00:00.000Z")
+    );
+    expect(occurrences.map((o) => o.start.toISOString())).toEqual([
+      "2026-08-01T11:00:00.000Z",
+      "2026-08-01T12:00:00.000Z",
+    ]);
+  });
+
+  it("finds an in-progress occurrence of a monthly series", () => {
+    // Months vary in length, so this path walks rather than jumping ahead.
+    const event = {
+      startTime: "2026-01-10T00:00:00.000Z",
+      endTime: "2026-01-20T00:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1 },
+    };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-05-15T00:00:00.000Z"),
+      new Date("2026-05-16T00:00:00.000Z")
+    );
+    expect(occurrences.map((o) => o.start.toISOString())).toEqual(["2026-05-10T00:00:00.000Z"]);
+  });
+
+  it("respects count when looking for an in-progress occurrence", () => {
+    const event = {
+      startTime: "2026-08-01T11:00:00.000Z",
+      endTime: "2026-08-01T13:00:00.000Z",
+      recurrence: { freq: "DAILY" as const, interval: 1, count: 2 },
+    };
+    // The series' last occurrence is on 2 Aug; nothing is in progress on the 3rd.
+    expect(
+      expandOccurrences(event, new Date("2026-08-03T12:00:00.000Z"), new Date("2026-08-04T00:00:00.000Z"))
+    ).toHaveLength(0);
+    expect(
+      expandOccurrences(event, new Date("2026-08-02T12:00:00.000Z"), new Date("2026-08-03T00:00:00.000Z"))
+    ).toHaveLength(1);
+  });
+
   it("expands an arbitrary custom interval (every 37 minutes)", () => {
     const event = {
       startTime: "2026-08-01T09:00:00.000Z",

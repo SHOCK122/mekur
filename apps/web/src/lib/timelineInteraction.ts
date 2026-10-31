@@ -312,10 +312,9 @@ export function rankStep<T extends Placeable>(
  * but only in the direction it moved, so nudging an event that sits near
  * one edge never pans the other way.
  *
- * An occurrence is rendered only while its *start* is in view, and the
- * label sits on the start, so following the end never pans the start out
- * past the earlier margin: a long event's end may run off screen, but its
- * label stays.
+ * Following the end may carry the start off the earlier edge: an
+ * occurrence stays rendered while any of it overlaps the view, and its
+ * label is pinned to the view's start while its own start is off screen.
  */
 export function panToKeepInView(
   view: { startMs: number; endMs: number },
@@ -331,6 +330,5 @@ export function panToKeepInView(
   let pan = 0;
   if (followed.after > followed.before && followed.after > high) pan = followed.after - high;
   if (followed.after < followed.before && followed.after < low) pan = followed.after - low;
-  if (pan > 0) pan = Math.min(pan, Math.max(0, start.after - low));
   return pan;
 }

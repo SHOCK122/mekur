@@ -48,6 +48,27 @@ describe("bounded expansion", () => {
     expect(elapsed).toBeLessThan(3000);
   });
 
+  it("bounds the look-back for a long event that repeats far more often than it lasts", () => {
+    // A year-long event every minute: half a million repeats overlap any
+    // window. Expansion must neither walk them nor return them.
+    const event = {
+      startTime: "2000-01-01T00:00:00.000Z",
+      endTime: "2001-01-01T00:00:00.000Z",
+      recurrence: { freq: "MINUTELY" as const, interval: 1 },
+    };
+    const began = performance.now();
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-06-01T00:00:00.000Z"),
+      new Date("2026-06-01T01:00:00.000Z")
+    );
+    const elapsed = performance.now() - began;
+    // One in progress at the window's start, then 61 starting inside it.
+    expect(occurrences).toHaveLength(62);
+    expect(occurrences[0]!.start.toISOString()).toBe("2026-05-31T23:59:00.000Z");
+    expect(elapsed).toBeLessThan(3000);
+  });
+
   it("respects an until date, stopping the series there", () => {
     const event = {
       startTime: "2026-06-01T09:00:00.000Z",
