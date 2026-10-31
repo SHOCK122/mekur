@@ -307,15 +307,20 @@ export function rankStep<T extends Placeable>(
  * doesn't carry an event off screen and unmount its focused label.
  *
  * `start` is the labelled occurrence's start before and after the press;
- * `end` is its end, given only when the end is the edge being changed. The
- * view follows the changed edge so it stays at least `marginMs` inside,
- * but only in the direction it moved, so nudging an event that sits near
- * one edge never pans the other way.
+ * `end` is its end, given when the end is the edge to follow -- the edge
+ * being resized, or for an occurrence already in progress at the view's
+ * start, the end of a move that carries it earlier. The view follows that
+ * edge so it stays at least `marginMs` inside, but only in the direction
+ * it moved, so nudging an event that sits near one edge never pans the
+ * other way.
  *
- * An occurrence is rendered only while its *start* is in view, and the
- * label sits on the start, so following the end never pans the start out
- * past the earlier margin: a long event's end may run off screen, but its
- * label stays.
+ * An edge that was already off screen before the press is not followed:
+ * there was nothing on screen to keep, and chasing it would jump the view
+ * by however far away it was, not by one step.
+ *
+ * Following the end may carry the start off the earlier edge: an
+ * occurrence stays rendered while any of it overlaps the view, and its
+ * label is pinned to the view's start while its own start is off screen.
  */
 export function panToKeepInView(
   view: { startMs: number; endMs: number },
@@ -328,9 +333,10 @@ export function panToKeepInView(
   const high = view.endMs - margin;
   const followed = end ?? start;
 
+  if (followed.before < view.startMs || followed.before > view.endMs) return 0;
+
   let pan = 0;
   if (followed.after > followed.before && followed.after > high) pan = followed.after - high;
   if (followed.after < followed.before && followed.after < low) pan = followed.after - low;
-  if (pan > 0) pan = Math.min(pan, Math.max(0, start.after - low));
   return pan;
 }

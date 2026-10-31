@@ -23,6 +23,32 @@ describe("Timeline", () => {
     expect(screen.getByText("Standup")).toBeInTheDocument();
   });
 
+  it("draws an event already in progress at the start of the view", () => {
+    // Regression: an event was drawn only while its *start* was in view.
+    // The default day view spans now-12h to now+12h; this one began 13h
+    // ago and ends 11h ago.
+    const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+    render(
+      <Timeline
+        events={[
+          makeEvent({
+            title: "Overnight",
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+          }),
+        ]}
+        onEditEvent={() => {}}
+      />
+    );
+    const modal = screen.getByTestId("event-modal-e1");
+    expect(screen.getByText("Overnight")).toBeInTheDocument();
+    // Clipped at the view's edge, with its label there too.
+    expect(parseFloat(modal.style.left)).toBe(0);
+    // Both edges stay draggable, as for an event running past the end.
+    expect(within(modal).getByLabelText("Adjust start of Overnight")).toBeInTheDocument();
+    expect(within(modal).getByLabelText("Adjust end of Overnight")).toBeInTheDocument();
+  });
+
   it("defaults to a one-day scale", () => {
     render(<Timeline events={[]} onEditEvent={() => {}} />);
     expect(screen.getByText("1 day")).toBeInTheDocument();
@@ -334,9 +360,10 @@ describe("Timeline", () => {
     const viewport = screen.getByLabelText("Timeline events");
     const canvas = viewport.querySelector(".timeline-canvas")!;
     // Drag leftwards to travel forward in time, the way dragging a map
-    // moves the surface rather than the viewpoint.
+    // moves the surface rather than the viewpoint. The viewport is 800px
+    // wide on a one-day view, so ten 800px steps travel ten days.
     fireEvent.pointerDown(canvas, { clientX: 500, clientY: 100 });
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 10; i++) {
       fireEvent.pointerMove(viewport, { clientX: 500 - (i + 1) * 800, clientY: 100 });
     }
     fireEvent.pointerUp(viewport);
@@ -427,10 +454,10 @@ describe("Timeline", () => {
       expect(button).toHaveFocus();
     });
 
-    it("lets a long event's end run off screen rather than its start and label", () => {
+    it("keeps following the end of an event stretched longer than the view", () => {
       // 120 presses stretch the event to 30 hours, longer than the day
-      // view: following the end all the way would push the start (where
-      // the label lives) off the earlier edge.
+      // view: following the end carries the start off the earlier edge,
+      // where the event is still drawn with its label pinned to the edge.
       const event = makeEvent();
       render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
       const button = label("Standup");
@@ -438,7 +465,72 @@ describe("Timeline", () => {
       for (let i = 0; i < 120; i++) fireEvent.keyDown(button, { key: "ArrowRight", shiftKey: true });
       expect(button.isConnected).toBe(true);
       expect(button).toHaveFocus();
-      expect(parseFloat(screen.getByTestId("event-modal-e1").style.left)).toBeGreaterThanOrEqual(0);
+      const modal = screen.getByTestId("event-modal-e1");
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.left) + parseFloat(modal.style.width)).toBeLessThan(800);
+    });
+
+    it("follows the end of an in-progress event moved into the past", () => {
+      // Started 13h ago and lasting 12h: already in progress at the day
+      // view's start (-12h). 60 presses (15h) earlier would carry its end
+      // past that edge, so the view must follow the end, not the
+      // off-screen start.
+      const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+      const event = makeEvent({
+        startTime: start.toISOString(),
+        endTime: new Date(start.getTime() + 12 * 60 * 60 * 1000).toISOString(),
+      });
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      // One press leaves the view alone: following the off-screen start
+      // would yank it back over an hour.
+      fireEvent.keyDown(button, { key: "ArrowLeft" });
+      expect(parseFloat(modal.style.left)).toBe(0);
+
+      for (let i = 0; i < 59; i++) fireEvent.keyDown(button, { key: "ArrowLeft" });
+      expect(button.isConnected).toBe(true);
+      expect(button).toHaveFocus();
+      // Still drawn from the view's edge, its end still on screen.
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.width)).toBeGreaterThan(0);
+    });
+
+    it("does not pan for an in-progress event moved later, which can't leave the view", () => {
+      // From 13h ago to just inside the day view's later margin: following
+      // its end on a move later would pan the view for no reason.
+      const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+      const event = makeEvent({
+        startTime: start.toISOString(),
+        endTime: new Date(Date.now() + 11 * 60 * 60 * 1000).toISOString(),
+      });
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      const widthBefore = parseFloat(modal.style.width);
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      // Still clipped at the earlier edge, and visibly unmoved there.
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.width)).toBeGreaterThan(widthBefore);
+      expect(button).toHaveFocus();
+    });
+
+    it("does not yank the view to an off-screen start changed with Alt+Shift", () => {
+      const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+      const event = makeEvent({
+        startTime: start.toISOString(),
+        endTime: new Date(start.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+      });
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      const widthBefore = parseFloat(modal.style.width);
+      fireEvent.keyDown(button, { key: "ArrowLeft", shiftKey: true, altKey: true });
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.width)).toBe(widthBefore);
     });
 
     it("moves the end with Shift and the start with Alt+Shift", async () => {

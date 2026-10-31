@@ -329,12 +329,19 @@ describe("panToKeepInView", () => {
     expect(panToKeepInView(view, moved(100, 100), moved(800, 300), 500)).toBe(-200);
   });
 
-  it("never follows the end so far that the start (and its label) leaves the view", () => {
-    // Following the end would pan 3000ms, but the start would then sit
-    // left of the earlier margin; the pan stops with the start at 500.
-    expect(panToKeepInView(view, moved(2000, 2000), moved(12_000, 12_500), 500)).toBe(1500);
-    // Start already at the margin: the end is left to run off screen.
-    expect(panToKeepInView(view, moved(400, 400), moved(9800, 9900), 500)).toBe(0);
+  it("follows the end even when that carries the start off the earlier edge", () => {
+    // An in-progress event stays drawn, its label pinned to the view's
+    // start, so the end no longer has to be abandoned to keep the label.
+    expect(panToKeepInView(view, moved(2000, 2000), moved(9000, 12_500), 500)).toBe(3000);
+    expect(panToKeepInView(view, moved(-5000, -5000), moved(9800, 9900), 500)).toBe(400);
+  });
+
+  it("does not chase an edge that was already off screen", () => {
+    // An end three days out, extended by one step, would otherwise jump
+    // the view three days in a single press.
+    expect(panToKeepInView(view, moved(2000, 2000), moved(250_000, 250_100), 500)).toBe(0);
+    // Likewise a start already before the view, moved earlier.
+    expect(panToKeepInView(view, moved(-3000, -3100), null, 500)).toBe(0);
   });
 
   it("caps the margin at a quarter of the view, so a wide label can't overshoot", () => {

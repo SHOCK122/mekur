@@ -184,8 +184,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
         // The series occupies its lane from its first visible occurrence
         // to its last, so nothing else can be laid into the gaps between
-        // repeats and break the single-row rule.
-        const startMs = Math.min(...occurrences.map((o) => o.start.getTime()));
+        // repeats and break the single-row rule. An occurrence already in
+        // progress is drawn (and labelled) from the view's start, so that
+        // is where it begins competing for room.
+        const startMs = Math.max(
+          viewStart.getTime(),
+          Math.min(...occurrences.map((o) => o.start.getTime()))
+        );
         const openEnded = occurrences.some((o) => o.end === null);
         const endMs = openEnded
           ? null
@@ -431,8 +436,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   /**
    * Pans so a keyboard change can't carry the event off screen, which
    * would unmount its label and drop keyboard focus. The label sits on the
-   * first visible occurrence, and a change shifts every occurrence of a
-   * series alike, so that occurrence is the one followed.
+   * first visible occurrence (pinned to the view's start while that one is
+   * already in progress), and a change shifts every occurrence of a series
+   * alike, so that occurrence is the one followed.
    */
   function keepInView(
     eventId: string,
@@ -446,9 +452,16 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
     const startMs = labelled.start.getTime();
     const start = { before: startMs, after: startMs + shift(current.startTime, next.startTime) };
+    // An occurrence already in progress has its start off screen and its
+    // label pinned to the view's start; what can carry it out of view is
+    // its end, moving earlier. (Moving later, nothing can.)
+    const clipped = startMs < viewStart.getTime();
+    const movingEarlier = shift(current.startTime, next.startTime) < 0;
+    const followsEnd =
+      (adjustment.kind === "resize" && adjustment.edge === "end") ||
+      (adjustment.kind === "move" && clipped && movingEarlier);
     // An open-ended event given an end by Shift+arrow had no end on screen
     // to follow; its start is all there is to keep in view.
-    const followsEnd = adjustment.kind === "resize" && adjustment.edge === "end";
     const end =
       followsEnd && labelled.end
         ? {
