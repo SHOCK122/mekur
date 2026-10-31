@@ -265,11 +265,15 @@ worth of dead code and fixes what the model switch broke.
       It now keeps every occurrence that *overlaps* the view.
       - The in-progress occurrence is drawn from the view's edge with its
         label pinned there, and competes for a lane from that edge (where
-        its label actually is), not from its off-screen start. Its start
-        handle is hidden: there is no start on screen to grab.
+        its label actually is), not from its off-screen start. Both resize
+        handles stay, as they already did for an event running past the
+        view's end; drags are relative, so the start handle at the edge
+        still moves the real start.
       - Of a series' occurrences in progress at the view's start, only the
         latest is returned: repeats share a duration, so it ends last and
         every earlier one lies entirely underneath it in the series' row.
+        Skipped repeats don't count (with `includeSkipped`, a later
+        skipped one is returned alongside the real one, not instead).
         That keeps a long event repeating more often than it lasts (a
         year-long event every minute) to one extra occurrence, found by
         walking at most 100 repeats back -- so if the latest 100 were all
@@ -280,8 +284,14 @@ worth of dead code and fixes what the model switch broke.
         on screen forever.
       - Lifts the cap on keyboard-following noted above: Shift+arrow now
         follows the end of an event stretched longer than the view, and
-        moving an in-progress event follows its end rather than yanking
-        the view back to its off-screen start.
+        moving an in-progress event earlier follows its end rather than
+        yanking the view back to its off-screen start. Moving it later
+        never pans: nothing can carry it out of view that way.
+      - Found in PR review and fixed: without the old cap, following an
+        edge that was *already* off screen jumped the view by however far
+        away it was (Shift+arrow on an end three days out panned three
+        days), and Alt+Shift on an in-progress event's start yanked the
+        view back to it. An edge already off screen is no longer followed.
       - Found while fixing it: jsdom has no `PointerEvent`, so every
         `fireEvent.pointer*(el, { clientX })` in the web tests silently
         dropped its coordinates. The pan test computed a `NaN` view and

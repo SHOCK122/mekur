@@ -453,12 +453,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const startMs = labelled.start.getTime();
     const start = { before: startMs, after: startMs + shift(current.startTime, next.startTime) };
     // An occurrence already in progress has its start off screen and its
-    // label pinned to the view's start; what can still carry it out of
-    // view when it moves is its end.
+    // label pinned to the view's start; what can carry it out of view is
+    // its end, moving earlier. (Moving later, nothing can.)
     const clipped = startMs < viewStart.getTime();
+    const movingEarlier = shift(current.startTime, next.startTime) < 0;
     const followsEnd =
       (adjustment.kind === "resize" && adjustment.edge === "end") ||
-      (adjustment.kind === "move" && clipped);
+      (adjustment.kind === "move" && clipped && movingEarlier);
     // An open-ended event given an end by Shift+arrow had no end on screen
     // to follow; its start is all there is to keep in view.
     const end =
@@ -747,9 +748,6 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                   // The name belongs to the series, not to each repeat, so
                   // only the first visible occurrence carries it.
                   const isFirst = index === 0;
-                  // Already in progress at the view's start: the start edge
-                  // is off screen, so there is no start to grab here.
-                  const startClipped = startFraction < 0;
 
                   return (
                     <div
@@ -775,16 +773,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
                       {event.canEdit && (
                         <>
-                          {!startClipped && (
-                            <span
-                              className="resize-handle resize-start"
-                              role="separator"
-                              aria-label={`Adjust start of ${event.title || "untitled event"}`}
-                              onPointerDown={(e) =>
-                                beginDrag(e, event, { kind: "resize", edge: "start" })
-                              }
-                            />
-                          )}
+                          <span
+                            className="resize-handle resize-start"
+                            role="separator"
+                            aria-label={`Adjust start of ${event.title || "untitled event"}`}
+                            onPointerDown={(e) =>
+                              beginDrag(e, event, { kind: "resize", edge: "start" })
+                            }
+                          />
                           <span
                             className="resize-handle resize-end"
                             role="separator"

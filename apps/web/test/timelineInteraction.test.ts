@@ -332,8 +332,16 @@ describe("panToKeepInView", () => {
   it("follows the end even when that carries the start off the earlier edge", () => {
     // An in-progress event stays drawn, its label pinned to the view's
     // start, so the end no longer has to be abandoned to keep the label.
-    expect(panToKeepInView(view, moved(2000, 2000), moved(12_000, 12_500), 500)).toBe(3000);
+    expect(panToKeepInView(view, moved(2000, 2000), moved(9000, 12_500), 500)).toBe(3000);
     expect(panToKeepInView(view, moved(-5000, -5000), moved(9800, 9900), 500)).toBe(400);
+  });
+
+  it("does not chase an edge that was already off screen", () => {
+    // An end three days out, extended by one step, would otherwise jump
+    // the view three days in a single press.
+    expect(panToKeepInView(view, moved(2000, 2000), moved(250_000, 250_100), 500)).toBe(0);
+    // Likewise a start already before the view, moved earlier.
+    expect(panToKeepInView(view, moved(-3000, -3100), null, 500)).toBe(0);
   });
 
   it("caps the margin at a quarter of the view, so a wide label can't overshoot", () => {

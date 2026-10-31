@@ -44,8 +44,8 @@ describe("Timeline", () => {
     expect(screen.getByText("Overnight")).toBeInTheDocument();
     // Clipped at the view's edge, with its label there too.
     expect(parseFloat(modal.style.left)).toBe(0);
-    // Its start is off screen, so there is no start handle to grab.
-    expect(within(modal).queryByLabelText("Adjust start of Overnight")).not.toBeInTheDocument();
+    // Both edges stay draggable, as for an event running past the end.
+    expect(within(modal).getByLabelText("Adjust start of Overnight")).toBeInTheDocument();
     expect(within(modal).getByLabelText("Adjust end of Overnight")).toBeInTheDocument();
   });
 
@@ -495,6 +495,42 @@ describe("Timeline", () => {
       // Still drawn from the view's edge, its end still on screen.
       expect(parseFloat(modal.style.left)).toBe(0);
       expect(parseFloat(modal.style.width)).toBeGreaterThan(0);
+    });
+
+    it("does not pan for an in-progress event moved later, which can't leave the view", () => {
+      // From 13h ago to just inside the day view's later margin: following
+      // its end on a move later would pan the view for no reason.
+      const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+      const event = makeEvent({
+        startTime: start.toISOString(),
+        endTime: new Date(Date.now() + 11 * 60 * 60 * 1000).toISOString(),
+      });
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      const widthBefore = parseFloat(modal.style.width);
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      // Still clipped at the earlier edge, and visibly unmoved there.
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.width)).toBeGreaterThan(widthBefore);
+      expect(button).toHaveFocus();
+    });
+
+    it("does not yank the view to an off-screen start changed with Alt+Shift", () => {
+      const start = new Date(Date.now() - 13 * 60 * 60 * 1000);
+      const event = makeEvent({
+        startTime: start.toISOString(),
+        endTime: new Date(start.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+      });
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={vi.fn()} />);
+      const button = label("Standup");
+      button.focus();
+      const modal = screen.getByTestId("event-modal-e1");
+      const widthBefore = parseFloat(modal.style.width);
+      fireEvent.keyDown(button, { key: "ArrowLeft", shiftKey: true, altKey: true });
+      expect(parseFloat(modal.style.left)).toBe(0);
+      expect(parseFloat(modal.style.width)).toBe(widthBefore);
     });
 
     it("moves the end with Shift and the start with Alt+Shift", async () => {

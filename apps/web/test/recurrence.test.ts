@@ -122,6 +122,26 @@ describe("expandOccurrences", () => {
     ]);
   });
 
+  it("with includeSkipped, shows a skipped in-progress repeat alongside, not instead of, the real one", () => {
+    const event = {
+      startTime: "2026-08-01T08:00:00.000Z",
+      endTime: "2026-08-01T10:00:00.000Z",
+      recurrence: { freq: "MINUTELY" as const, interval: 30 },
+      skippedOccurrences: ["2026-08-01T11:30:00.000Z"],
+    };
+    const occurrences = expandOccurrences(
+      event,
+      new Date("2026-08-01T12:00:00.000Z"),
+      new Date("2026-08-01T12:00:00.000Z"),
+      { includeSkipped: true }
+    );
+    expect(occurrences.map((o) => [o.start.toISOString(), o.skipped])).toEqual([
+      ["2026-08-01T11:00:00.000Z", false],
+      ["2026-08-01T11:30:00.000Z", true],
+      ["2026-08-01T12:00:00.000Z", false],
+    ]);
+  });
+
   it("finds an in-progress occurrence of a monthly series", () => {
     // Months vary in length, so this path walks rather than jumping ahead.
     const event = {
