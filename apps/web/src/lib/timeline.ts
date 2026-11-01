@@ -144,7 +144,8 @@ export function timeFraction(at: Date, viewStart: Date, viewEnd: Date): number {
 }
 
 /**
- * Converts a time span and a lane index into a rectangle.
+ * Converts a time span and a lane index into a rectangle: the lane's own
+ * slice of the stacking axis.
  *
  * `lane` 0 sits against the base; higher lanes are further from it. Under
  * fractional ordering, higher-ranked (more important) events get higher
@@ -156,11 +157,7 @@ export function rectFor(
   endFraction: number,
   lane: number,
   orientation: Orientation,
-  viewport: Viewport,
-  /** When true the rectangle runs from its lane all the way to the base,
-   * rather than occupying one lane's thickness. The fade then has the full
-   * distance to reach zero exactly at the base. */
-  extendToBase = false
+  viewport: Viewport
 ): Rect {
   const { width, height, laneSize } = viewport;
 
@@ -172,38 +169,35 @@ export function rectFor(
       : [1 - endFraction, 1 - startFraction];
 
   const laneOffset = lane * laneSize;
-  // Thickness across the stacking axis: one lane, or everything from this
-  // lane down to the base.
-  const thickness = extendToBase ? laneOffset + laneSize : laneSize;
 
   if (orientation.axis === "horizontal") {
     const left = from * width;
     const rectWidth = Math.max(0, (to - from) * width);
-    // Base at the bottom means measuring up from the bottom edge. Either
-    // way, a rectangle extended to the base starts *at* the base when the
-    // base is the top edge, rather than at its lane.
+    // Base at the bottom means measuring up from the bottom edge.
     const top =
-      orientation.base === "bottom"
-        ? height - laneOffset - laneSize
-        : extendToBase
-          ? 0
-          : laneOffset;
-    return { left, top, width: rectWidth, height: thickness };
+      orientation.base === "bottom" ? height - laneOffset - laneSize : laneOffset;
+    return { left, top, width: rectWidth, height: laneSize };
   }
 
   const top = from * height;
   const rectHeight = Math.max(0, (to - from) * height);
-  const left =
-    orientation.base === "left"
-      ? 0
-      : width - thickness;
-  const laneLeft = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
-  return {
-    left: extendToBase ? left : laneLeft,
-    top,
-    width: thickness,
-    height: rectHeight,
-  };
+  const left = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
+  return { left, top, width: laneSize, height: rectHeight };
+}
+
+/**
+ * How far an event's fill reaches past its own lane to the base, and on
+ * which side. The fill fades from the lane all the way to the base, but
+ * the event itself -- its label, resize handles and hit area -- stays in
+ * its lane (`rectFor`), so it never covers the events in lower lanes.
+ * Applied as a negative inset on that side of the fill.
+ */
+export function fillToBase(
+  lane: number,
+  orientation: Orientation,
+  laneSize: number
+): { side: BaseEdge; px: number } {
+  return { side: orientation.base, px: lane * laneSize };
 }
 
 // ---------------------------------------------------------------------------
@@ -323,14 +317,14 @@ export function estimateLabelSize(
   // 0.62em is wider than the average glyph of common UI fonts; bold is
   // wider still. An untitled event shows a 1em square instead.
   const textEm = text ? [...text].length * (important ? 0.68 : 0.62) : 1;
-  const starEm = important ? 1 + 0.25 : 0;
-  const paddingAlong = 0.7 * rootFontPx;
-  // Vertical layouts set the text sideways, swapping which padding lies
-  // across the lane; take the larger.
-  const paddingAcross = 0.7 * rootFontPx;
+  const starEm = important ? 1 + 0.25 : 0; // the star and its margin
+  // The label's padding is 0.15rem one way and 0.35rem the other, and
+  // vertical layouts set the text sideways, swapping them. Both directions
+  // allow for the larger.
+  const padding = 0.7 * rootFontPx;
   return {
-    along: Math.ceil((textEm + starEm) * em + paddingAlong),
-    across: Math.ceil(1.3 * em + paddingAcross),
+    along: Math.ceil((textEm + starEm) * em + padding),
+    across: Math.ceil(1.3 * em + padding),
   };
 }
 
@@ -346,24 +340,4 @@ export function laneSizeFor(labelThicknesses: Iterable<number>, minimum: number)
     if (Number.isFinite(thickness)) size = Math.max(size, Math.ceil(thickness));
   }
   return size;
-}
-
-/**
- * Where a lane begins inside the rectangle `rectFor(..., true)` draws for
- * it, along the stacking axis, in px. The label is placed there so it
- * sits in its own lane: the extended rectangle reaches the base, so its
- * near edge is the lane only when the base is the bottom or right edge.
- * Returned as the CSS property to set (`top` in horizontal layouts, `left`
- * in vertical ones) and its value.
- */
-export function laneInset(
-  lane: number,
-  orientation: Orientation,
-  viewport: Viewport
-): { property: "top" | "left"; px: number } {
-  const own = rectFor(0, 1, lane, orientation, viewport);
-  const extended = rectFor(0, 1, lane, orientation, viewport, true);
-  return orientation.axis === "horizontal"
-    ? { property: "top", px: own.top - extended.top }
-    : { property: "left", px: own.left - extended.left };
 }

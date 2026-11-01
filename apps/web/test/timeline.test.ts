@@ -11,7 +11,7 @@ import {
   occupiedUntil,
   estimateLabelSize,
   laneSizeFor,
-  laneInset,
+  fillToBase,
   validBases,
   isValidOrientation,
   DEFAULT_ORIENTATION,
@@ -135,38 +135,6 @@ describe("rectFor: the other orientations", () => {
     const orientation: Orientation = { axis: "vertical", direction: "forward", base: "right" };
     expect(rectFor(0, 1, 0, orientation, viewport).left).toBe(1000 - 24);
     expect(rectFor(0, 1, 1, orientation, viewport).left).toBe(1000 - 48);
-  });
-
-  it("an extended rectangle runs from its lane to the base, whichever edge that is", () => {
-    // Regression: with the base at the top, the extended rectangle started
-    // at its lane and ran *away* from the base.
-    const bases: Orientation[] = [
-      { axis: "horizontal", direction: "forward", base: "bottom" },
-      { axis: "horizontal", direction: "forward", base: "top" },
-      { axis: "vertical", direction: "forward", base: "left" },
-      { axis: "vertical", direction: "forward", base: "right" },
-    ];
-    for (const orientation of bases) {
-      const lane = rectFor(0.2, 0.8, 2, orientation, viewport);
-      const extended = rectFor(0.2, 0.8, 2, orientation, viewport, true);
-      if (orientation.axis === "horizontal") {
-        expect(extended.height).toBe(72);
-        // Covers its own lane...
-        expect(extended.top).toBeLessThanOrEqual(lane.top);
-        expect(extended.top + extended.height).toBeGreaterThanOrEqual(lane.top + lane.height);
-        // ...and touches the base.
-        expect(orientation.base === "top" ? extended.top : extended.top + extended.height).toBe(
-          orientation.base === "top" ? 0 : viewport.height
-        );
-      } else {
-        expect(extended.width).toBe(72);
-        expect(extended.left).toBeLessThanOrEqual(lane.left);
-        expect(extended.left + extended.width).toBeGreaterThanOrEqual(lane.left + lane.width);
-        expect(orientation.base === "left" ? extended.left : extended.left + extended.width).toBe(
-          orientation.base === "left" ? 0 : viewport.width
-        );
-      }
-    }
   });
 
   it("never produces a negative extent, in any orientation", () => {
@@ -386,19 +354,32 @@ describe("laneSizeFor", () => {
   });
 });
 
-describe("laneInset", () => {
-  it("puts the label in its own lane, not at the base", () => {
-    // Regression: with the base on the left, every label sat at the base
-    // (x = 0) whatever its lane, so overlapping events' names overlapped.
+describe("fillToBase", () => {
+  it("extends the fill from its lane to the base, on the base's side", () => {
+    expect(fillToBase(0, DEFAULT_ORIENTATION, 24)).toEqual({ side: "bottom", px: 0 });
+    expect(fillToBase(3, DEFAULT_ORIENTATION, 24)).toEqual({ side: "bottom", px: 72 });
     const left: Orientation = { axis: "vertical", direction: "forward", base: "left" };
-    expect(laneInset(0, left, viewport)).toEqual({ property: "left", px: 0 });
-    expect(laneInset(3, left, viewport)).toEqual({ property: "left", px: 72 });
-    const top: Orientation = { axis: "horizontal", direction: "reverse", base: "top" };
-    expect(laneInset(3, top, viewport)).toEqual({ property: "top", px: 72 });
-    // With the base at the bottom or right, the extended rectangle's near
-    // edge already is the lane.
-    expect(laneInset(3, DEFAULT_ORIENTATION, viewport)).toEqual({ property: "top", px: 0 });
-    const right: Orientation = { axis: "vertical", direction: "forward", base: "right" };
-    expect(laneInset(3, right, viewport)).toEqual({ property: "left", px: 0 });
+    expect(fillToBase(3, left, 24)).toEqual({ side: "left", px: 72 });
+  });
+
+  it("together with the lane's rectangle, reaches exactly to the base in every orientation", () => {
+    const orientations: Orientation[] = [
+      { axis: "horizontal", direction: "forward", base: "bottom" },
+      { axis: "horizontal", direction: "reverse", base: "top" },
+      { axis: "vertical", direction: "forward", base: "left" },
+      { axis: "vertical", direction: "reverse", base: "right" },
+    ];
+    for (const orientation of orientations) {
+      const rect = rectFor(0.2, 0.8, 3, orientation, viewport);
+      const { side, px } = fillToBase(3, orientation, viewport.laneSize);
+      const edge = {
+        top: rect.top - px,
+        bottom: rect.top + rect.height + px,
+        left: rect.left - px,
+        right: rect.left + rect.width + px,
+      }[side];
+      const base = { top: 0, bottom: viewport.height, left: 0, right: viewport.width }[side];
+      expect(edge).toBe(base);
+    }
   });
 });

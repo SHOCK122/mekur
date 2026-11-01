@@ -234,20 +234,42 @@ describe("Timeline", () => {
             onEditEvent={() => {}}
           />
         );
-        // Lane 0's modal runs from its lane to the base: one lane thick.
-        const lower = lane("a") < lane("b") ? "a" : "b";
         await waitFor(() =>
-          expect(parseFloat(screen.getByTestId(`event-modal-${lower}`).style.height)).toBe(44)
+          expect(parseFloat(screen.getByTestId("event-modal-a").style.height)).toBe(44)
         );
+        const tops = ["a", "b"].map((id) => parseFloat(screen.getByTestId(`event-modal-${id}`).style.top));
+        expect(Math.abs(tops[0]! - tops[1]!)).toBe(44);
       } finally {
         spy.mockRestore();
       }
     });
 
+    it("keeps each event in its own lane, with only the fill reaching the base", () => {
+      // Regression: the whole event was drawn from its lane to the base,
+      // so its resize handles and body lay over the events in the lanes
+      // below -- and a name overhanging into a later event's box was
+      // painted under it.
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "a", title: "A", rank: "A", startTime: at(1).toISOString() }),
+            makeEvent({ id: "b", title: "B", rank: "B", startTime: at(1).toISOString() }),
+          ]}
+          onEditEvent={() => {}}
+        />
+      );
+      const upper = lane("a") > lane("b") ? "a" : "b";
+      const modal = screen.getByTestId(`event-modal-${upper}`);
+      expect(parseFloat(modal.style.height)).toBe(28);
+      const fill = modal.querySelector<HTMLElement>(".event-modal-fill")!;
+      // Base at the bottom: the fill reaches one lane further down.
+      expect(parseFloat(fill.style.bottom)).toBe(-28);
+    });
+
     it("places each label in its own lane when the base is on the left", async () => {
-      // Regression: the label sat at the modal's corner, and with the base
-      // on the left that corner is the base, so every overlapping event's
-      // name was drawn at the same place.
+      // Regression: the label sat at the corner of a modal that reached
+      // the base, and with the base on the left that corner *is* the base,
+      // so every overlapping event's name was drawn at the same place.
       const user = userEvent.setup();
       render(
         <Timeline
@@ -261,11 +283,32 @@ describe("Timeline", () => {
       await user.click(screen.getByRole("button", { name: /layout options/i }));
       await user.selectOptions(screen.getByLabelText(/^layout$/i), "vertical:forward");
       await user.selectOptions(screen.getByLabelText(/^base$/i), "left");
-      const insets = ["a", "b"].map((id) =>
-        parseFloat(within(screen.getByTestId(`event-modal-${id}`)).getByRole("button").style.left)
-      );
-      expect(new Set(insets).size).toBe(2);
-      expect(Math.min(...insets)).toBe(0);
+      const lefts = ["a", "b"].map((id) => parseFloat(screen.getByTestId(`event-modal-${id}`).style.left));
+      expect(lefts.sort((x, y) => x - y)).toEqual([0, 28]);
+      for (const id of ["a", "b"]) {
+        // The label is anchored inside its own modal, not offset from it.
+        expect(within(screen.getByTestId(`event-modal-${id}`)).getByRole("button").style.left).toBe("");
+      }
+    });
+
+    it("keys measured sizes by the text actually shown", async () => {
+      // " Review" renders a leading space that "Review" doesn't, so the two
+      // must not share a measurement.
+      const spy = measureLabels((key) => ({ width: key.startsWith("! ") ? 900 : 10, height: 20 }));
+      try {
+        render(
+          <Timeline
+            events={[
+              makeEvent({ id: "a", title: " Review", important: true, rank: "A", startTime: at(-8).toISOString(), endTime: at(-7).toISOString() }),
+              makeEvent({ id: "b", title: "Review", important: true, rank: "B", startTime: at(-3).toISOString(), endTime: at(-2).toISOString() }),
+            ]}
+            onEditEvent={() => {}}
+          />
+        );
+        await waitFor(() => expect(lane("b")).not.toBe(lane("a")));
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 
