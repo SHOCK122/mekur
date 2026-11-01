@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   TIME_SCALES,
   DEFAULT_SCALE_INDEX,
@@ -8,8 +8,12 @@ import {
   rectFor,
   assignLanes,
   laneCount,
+  estimateLabelSize,
+  laneSizeFor,
+  laneInset,
   zoomSpan,
   snapToScale,
+  type LabelSize,
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
@@ -25,7 +29,6 @@ import {
   keyboardStepMs,
   rankStep,
   panToKeepInView,
-  timeAxisSize,
   timeAxisKeys,
   stackAxisKeys,
   type ResizeEdge,
@@ -34,10 +37,13 @@ import {
 import type { EventContent } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 
-const LANE_SIZE = 28;
-/** Roughly the width a short label needs, used to stop two events that
- * merely look adjacent from putting their text in the same lane. */
-const LABEL_WIDTH_PX = 90;
+/** The smallest lane size. Lanes grow past it when the text is larger
+ * (see `laneSizeFor`). */
+const MIN_LANE_SIZE = 28;
+/** Space kept between the end of one label and the next label in the
+ * same lane, so two names never run together even when they'd only
+ * touch. */
+const LABEL_GAP_PX = 8;
 /** Keyboard nudges are saved once the keys go quiet for this long, so
  * holding an arrow down is one encrypted write rather than dozens. */
 const KEYBOARD_COMMIT_DELAY_MS = 500;
@@ -86,6 +92,18 @@ interface Saving {
   token: object;
 }
 
+/** Labels of the same text measure the same, so sizes are keyed by what
+ * the label shows rather than by event. */
+function labelKey(event: { title?: string; important?: boolean }): string {
+  return `${event.important ? "!" : "-"}${event.title?.trim() ?? ""}`;
+}
+
+function rootFontPx(): number {
+  if (typeof document === "undefined") return 16;
+  const px = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return Number.isFinite(px) && px > 0 ? px : 16;
+}
+
 const KEY_NAMES: Record<string, string> = {
   ArrowLeft: "Left",
   ArrowRight: "Right",
@@ -120,6 +138,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   onChangeRef.current = onChangeEvent;
   const [announcement, setAnnouncement] = useState("");
   const keysHelpId = useId();
+  /** Rendered labels' measured sizes, by `labelKey`. Labels not measured
+   * yet (not rendered, or no layout, as in jsdom) use an estimate. */
+  const [measuredLabels, setMeasuredLabels] = useState<ReadonlyMap<string, LabelSize>>(new Map());
+  const [fontPx] = useState(rootFontPx);
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -159,7 +181,16 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * its own. A daily standup is one row, not thirty. Non-repeating events
    * are simply series of one, which keeps a single rendering path.
    */
-  const separation = LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, viewportSize.width));
+  // Label sizes are in px; lane assignment works in time. The time axis is
+  // the viewport's width or height depending on the layout.
+  const msPerPx =
+    (spanSeconds * 1000) /
+    Math.max(1, orientation.axis === "horizontal" ? viewportSize.width : viewportSize.height);
+  const labelGapMs = LABEL_GAP_PX * msPerPx;
+  const labelSize = (event: { title?: string; important?: boolean }): LabelSize =>
+    measuredLabels.get(labelKey(event)) ??
+    estimateLabelSize(event.title, Boolean(event.important), fontPx);
+
   const placements = useMemo(() => {
     const withPreview = events.map((saved) => {
       const inFlight = saving.get(saved.id);
@@ -196,28 +227,74 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           ? null
           : Math.max(...occurrences.map((o) => o.end!.getTime()));
 
-        return { id: event.id, event, occurrences, startMs, endMs, rank: rank! };
+        // The name sits on the first visible occurrence, at `startMs`.
+        const label = labelSize(event);
+        const labelMs = label.along * msPerPx;
+        return { id: event.id, event, occurrences, startMs, endMs, rank: rank!, labelMs, label };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-    return assignLanes(series, viewEnd.getTime(), separation);
-  }, [events, drag, nudge, saving, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+    return assignLanes(series, viewEnd.getTime(), labelGapMs);
+    // labelSize derives from measuredLabels and fontPx; labelGapMs from
+    // msPerPx.
+  }, [events, drag, nudge, saving, viewStart, viewEnd, msPerPx, measuredLabels, fontPx]);
+
+  /**
+   * Measures every rendered label after layout, so lane assignment uses
+   * real sizes rather than estimates. Sizes depend only on the text, never
+   * on the layout, so this settles after one extra render. Only labels on
+   * screen are kept, which bounds the map by what is visible.
+   */
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const measured = new Map<string, LabelSize>();
+    for (const label of Array.from(container.querySelectorAll<HTMLElement>("[data-label-key]"))) {
+      const box = label.getBoundingClientRect();
+      // No layout (jsdom), or not displayed: keep the estimate.
+      if (box.width <= 0 || box.height <= 0) continue;
+      // Vertical layouts set the text sideways, running along time.
+      const [along, across] =
+        orientation.axis === "horizontal" ? [box.width, box.height] : [box.height, box.width];
+      measured.set(label.dataset.labelKey!, { along: Math.ceil(along), across: Math.ceil(across) });
+    }
+    setMeasuredLabels((previous) => {
+      if (previous.size === measured.size) {
+        let same = true;
+        for (const [key, size] of measured) {
+          const old = previous.get(key);
+          if (!old || old.along !== size.along || old.across !== size.across) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return previous;
+      }
+      return measured;
+    });
+  });
 
   const eventOrder = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
 
   const lanes = laneCount(placements);
-  const stackExtent = lanes * LANE_SIZE;
+  // Every lane is at least as thick as the thickest label on screen, so
+  // names in neighbouring lanes can't overlap.
+  const laneSize = laneSizeFor(
+    placements.map((p) => p.item.label.across),
+    MIN_LANE_SIZE
+  );
+  const stackExtent = lanes * laneSize;
   const stackAxisSize =
     orientation.axis === "horizontal" ? viewportSize.height : viewportSize.width;
   const overflowing = stackExtent > stackAxisSize;
   const hiddenCount = overflowing
-    ? placements.filter((p) => (p.lane + 1) * LANE_SIZE > stackAxisSize).length
+    ? placements.filter((p) => (p.lane + 1) * laneSize > stackAxisSize).length
     : 0;
 
   const viewport: Viewport = {
     width: viewportSize.width,
     height: Math.max(viewportSize.height, orientation.axis === "horizontal" ? stackExtent : 0),
-    laneSize: LANE_SIZE,
+    laneSize,
   };
   if (orientation.axis === "vertical") {
     viewport.width = Math.max(viewportSize.width, stackExtent);
@@ -446,8 +523,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     current: EventPreview,
     next: EventPreview
   ) {
-    const labelled = placements.find((p) => p.item.id === eventId)?.item.occurrences[0];
-    if (!labelled) return;
+    const placed = placements.find((p) => p.item.id === eventId)?.item;
+    const labelled = placed?.occurrences[0];
+    if (!placed || !labelled) return;
     const shift = (from?: string, to?: string) =>
       from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
     const startMs = labelled.start.getTime();
@@ -475,7 +553,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       start,
       end,
       // Room for the label, which sits just after the start.
-      LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, timeAxisSize(orientation, viewport)))
+      placed.labelMs
     );
     if (pan !== 0) setCentre((c) => c + pan);
   }
@@ -506,7 +584,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         adjustment.direction,
         placements.map((p) => p.item),
         viewEnd.getTime(),
-        separation
+        labelGapMs
       );
       const raising = adjustment.direction === 1;
       if (!step) {
@@ -723,6 +801,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             .map(({ item, lane }) => {
             const { event, occurrences } = item;
             const openEnded = item.endMs === null;
+            const inset = laneInset(lane, orientation, viewport);
 
             return (
               <div
@@ -796,6 +875,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                         <button
                           type="button"
                           className="event-modal-label"
+                          data-label-key={labelKey(event)}
+                          // In its own lane: the modal it sits in reaches
+                          // the base, which isn't always its near edge.
+                          style={{ [inset.property]: inset.px }}
                           aria-describedby={
                             event.canEdit && onChangeEvent ? keysHelpId : undefined
                           }

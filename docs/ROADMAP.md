@@ -299,8 +299,42 @@ worth of dead code and fixes what the model switch broke.
         `NaN`; with real coordinates its drag overshot the event by two
         days. The test setup now polyfills `PointerEvent` and the test's
         arithmetic is corrected.
-- [ ] Label collision: guarantee text never overlaps text, with overlapping
-      modals separated by at least one text-height.
+- [x] **Label collision: text never overlaps text**, with overlapping
+      modals separated by at least one text-height. Exercised in Chromium
+      with seven overlapping events and long names, checking every pair of
+      label boxes: `main` had 19 overlaps across the six layouts and
+      enlarged text; now none.
+      - Every label was assumed to be 90px wide, so a long name on a short
+        event ran over the next name in its lane. Each event's lane now
+        stays taken until the later of its end and its *label's* end, plus
+        an 8px gap (`occupiedUntil`, shared by lane assignment and keyboard
+        re-ranking). An event that outlasts its name no longer reserves
+        90px past its end, so lanes pack tighter too.
+      - Label sizes are **measured** after render and fed back into the
+        layout (one extra render; sizes depend only on the text, so it
+        settles). Until then -- and always in jsdom -- a deliberately
+        generous estimate is used. Only labels on screen are kept.
+      - Lanes are at least as thick as the thickest label on screen (min
+        28px), so names in neighbouring lanes can't overlap even with the
+        browser's text size doubled. Neighbouring modals are therefore
+        offset by at least one full label: a text-height plus padding.
+      - Vertical layouts: names are now set sideways (`writing-mode:
+        vertical-rl`), running along time like the horizontal ones.
+        Written across, any name wider than a 28px lane covered the names
+        in neighbouring lanes, and no lane width short of the longest name
+        would fix that. Simplification: sideways text is less pleasant to
+        read; the alternative was lanes as wide as the longest name.
+      - Found while doing it: with the base on the **left**, every label
+        sat at the base whatever its lane (the modal reaches the base, and
+        the label was pinned to its corner), so all overlapping names were
+        drawn in one place. With the base at the **top**, the modal ran
+        from its lane *away* from the base. Labels are now positioned in
+        their lane (`laneInset`), and the extended modal starts at the base.
+      - Found while doing it: the label reservation converted px to time
+        using the viewport's *width* even in vertical layouts, where the
+        time axis is the height.
+      - Known limitation: font size changes made after load (rather than
+        before it) are picked up on the next re-render, not instantly.
 - [ ] Clear affordance that the stack axis scrolls when lanes overflow.
 - [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
       Monday of every month"). Schema + UI work; `rrule` already supports

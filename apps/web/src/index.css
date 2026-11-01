@@ -791,6 +791,14 @@ button:disabled {
   bottom: 0;
 }
 
+/* In vertical layouts the name runs along the time axis, as it does in
+   horizontal ones, so it is one line thick and stays inside its lane.
+   Written across, a name wider than a lane covered the names in the
+   neighbouring lanes. */
+.timeline-vertical .event-modal-label {
+  writing-mode: vertical-rl;
+}
+
 /* Labels sit above the fills of neighbouring events so an extended name
    stays readable where it overhangs. */
 .event-modal-label {
