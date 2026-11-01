@@ -549,7 +549,10 @@ button:disabled {
      truncated into uselessness. Lane assignment already reserves label
      width, so extended names don't collide with other text. */
   overflow: visible;
-  z-index: 2;
+  /* No z-index: a modal must not form its own stacking context, or a name
+     overhanging its event could be painted under (and its clicks taken
+     by) a later neighbour. Instead every part of every event shares one
+     set of layers: fills (2), resize handles (3), names (4). */
 }
 
 /* Only the background fades. Text sits above it at full opacity. */
@@ -560,6 +563,10 @@ button:disabled {
   /* Clips itself so the gradient still ends at the event's real bounds
      even though the modal no longer clips its children. */
   overflow: hidden;
+  z-index: 2;
+  /* The fill reaches past the event's lane to the base, over the lanes
+     below; clicks there belong to those lanes' events. */
+  pointer-events: none;
 }
 
 .fade-bottom {
@@ -593,7 +600,7 @@ button:disabled {
   left: 0;
   min-width: 1em;
   min-height: 1em;
-  z-index: 1;
+  z-index: 4;
   background: none;
   color: var(--text);
   font-weight: 500;
@@ -615,7 +622,9 @@ button:disabled {
 }
 
 .important-star {
-  margin-right: 0.2rem;
+  /* Logical, so the gap stays between star and name when vertical layouts
+     set the name sideways. */
+  margin-inline-end: 0.2rem;
 }
 
 /* An em-square hit target for events with no readable label. */
@@ -791,6 +800,14 @@ button:disabled {
   bottom: 0;
 }
 
+/* In vertical layouts the name runs along the time axis, as it does in
+   horizontal ones, so it is one line thick and stays inside its lane.
+   Written across, a name wider than a lane covered the names in the
+   neighbouring lanes. */
+.timeline-vertical .event-modal-label {
+  writing-mode: vertical-rl;
+}
+
 /* Labels sit above the fills of neighbouring events so an extended name
    stays readable where it overhangs. */
 .event-modal-label {
@@ -814,7 +831,9 @@ button:disabled {
   display: contents;
 }
 
-.event-modal-skipped {
+/* Only the fill dims: opacity on the whole modal would give it its own
+   stacking context (see .event-modal), and dimmed text fails contrast. */
+.event-modal-skipped .event-modal-fill {
   opacity: 0.5;
 }
 
@@ -941,33 +960,33 @@ button:disabled {
 }
 
 /* A solid start border anchoring the event to the base. */
-.event-modal::before {
+.event-modal-fill::before {
   content: "";
   position: absolute;
   background: var(--event-modal);
   pointer-events: none;
 }
 
-.timeline-horizontal .event-modal::before {
+.timeline-horizontal .event-modal-fill::before {
   left: 0;
   top: 0;
   bottom: 0;
   width: 2px;
 }
 
-.timeline-horizontal.direction-reverse .event-modal::before {
+.timeline-horizontal.direction-reverse .event-modal-fill::before {
   left: auto;
   right: 0;
 }
 
-.timeline-vertical .event-modal::before {
+.timeline-vertical .event-modal-fill::before {
   top: 0;
   left: 0;
   right: 0;
   height: 2px;
 }
 
-.timeline-vertical.direction-reverse .event-modal::before {
+.timeline-vertical.direction-reverse .event-modal-fill::before {
   top: auto;
   bottom: 0;
 }

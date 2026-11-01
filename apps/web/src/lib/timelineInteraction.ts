@@ -1,4 +1,5 @@
 import { rankBetween } from "./fractionalRank.js";
+import { occupiedUntil } from "./timeline.js";
 import type { Orientation, Viewport, Placement, Placeable } from "./timeline.js";
 
 /**
@@ -266,7 +267,7 @@ export function keyboardStepMs(spanMs: number): number {
  * and the event it passes.
  *
  * Only events it competes with for lanes count -- those overlapping it,
- * label separation included, exactly as `assignLanes` decides -- because
+ * label extents and gap included, exactly as `assignLanes` decides -- because
  * passing an event elsewhere on the timeline changes nothing visible. The
  * new rank is placed against the passed event's *global* neighbour, so it
  * can never tie with a non-overlapping event's rank.
@@ -276,12 +277,12 @@ export function rankStep<T extends Placeable>(
   direction: 1 | -1,
   items: T[],
   viewEndMs: number,
-  minSeparationMs = 0
+  gapMs = 0
 ): { rank: string; past: T } | null {
   const moving = items.find((i) => i.id === movingId);
   if (!moving) return null;
 
-  const effectiveEnd = (i: Placeable) => (i.endMs ?? viewEndMs) + minSeparationMs;
+  const effectiveEnd = (i: Placeable) => occupiedUntil(i, viewEndMs, gapMs);
   const overlaps = (i: Placeable) =>
     i.startMs < effectiveEnd(moving) && moving.startMs < effectiveEnd(i);
 

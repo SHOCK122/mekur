@@ -142,6 +142,176 @@ describe("Timeline", () => {
     expect(new Set(lanes).size).toBe(3);
   });
 
+  describe("labels never overlap", () => {
+    const hour = 60 * 60 * 1000;
+    // Near the middle of the default one-day view (800px wide in jsdom,
+    // so about 108 seconds per pixel).
+    const at = (offsetHours: number) => new Date(Date.now() + offsetHours * hour);
+    const lane = (id: string) => Number(screen.getByTestId(`event-modal-${id}`).getAttribute("data-lane"));
+
+    function measureLabels(size: (key: string) => { width: number; height: number }) {
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      return vi
+        .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+        .mockImplementation(function (this: HTMLElement) {
+          const key = this.dataset.labelKey;
+          if (!key) return original.call(this);
+          const { width, height } = size(key);
+          return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height, toJSON() {} } as DOMRect;
+        });
+    }
+
+    it("keeps an event out of the lane of a long name it would run into", () => {
+      // Regression: every label was assumed to be 90px wide, so a long
+      // name on a short event ran over the next event's name in its lane.
+      render(
+        <Timeline
+          events={[
+            makeEvent({
+              id: "long",
+              title: "Quarterly planning with the whole team",
+              rank: "A",
+              startTime: at(-6).toISOString(),
+              endTime: new Date(at(-6).getTime() + 10 * 60_000).toISOString(),
+            }),
+            makeEvent({
+              id: "next",
+              title: "Lunch",
+              rank: "B",
+              startTime: at(-2).toISOString(),
+              endTime: at(-1).toISOString(),
+            }),
+          ]}
+          onEditEvent={() => {}}
+        />
+      );
+      expect(lane("next")).not.toBe(lane("long"));
+    });
+
+    it("lets a short name share the lane once the event before it is over", () => {
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "a", title: "A", rank: "A", startTime: at(-6).toISOString(), endTime: at(-5).toISOString() }),
+            makeEvent({ id: "b", title: "B", rank: "B", startTime: at(-4).toISOString(), endTime: at(-3).toISOString() }),
+          ]}
+          onEditEvent={() => {}}
+        />
+      );
+      expect(lane("b")).toBe(lane("a"));
+    });
+
+    it("lays out by the labels' measured size once they are rendered", async () => {
+      // Names render wider than estimated (a wide font, say): 600px, about
+      // 18 hours of this view. Four hours apart, the estimate alone would
+      // let them share a lane.
+      const spy = measureLabels(() => ({ width: 600, height: 20 }));
+      try {
+        render(
+          <Timeline
+            events={[
+              makeEvent({ id: "a", title: "A", rank: "A", startTime: at(-8).toISOString(), endTime: at(-7).toISOString() }),
+              makeEvent({ id: "b", title: "B", rank: "B", startTime: at(-3).toISOString(), endTime: at(-2).toISOString() }),
+            ]}
+            onEditEvent={() => {}}
+          />
+        );
+        await waitFor(() => expect(lane("b")).not.toBe(lane("a")));
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("makes lanes at least as thick as the labels, e.g. with enlarged text", async () => {
+      const spy = measureLabels(() => ({ width: 60, height: 44 }));
+      try {
+        render(
+          <Timeline
+            events={[
+              makeEvent({ id: "a", title: "A", rank: "A", startTime: at(1).toISOString() }),
+              makeEvent({ id: "b", title: "B", rank: "B", startTime: at(1).toISOString() }),
+            ]}
+            onEditEvent={() => {}}
+          />
+        );
+        await waitFor(() =>
+          expect(parseFloat(screen.getByTestId("event-modal-a").style.height)).toBe(44)
+        );
+        const tops = ["a", "b"].map((id) => parseFloat(screen.getByTestId(`event-modal-${id}`).style.top));
+        expect(Math.abs(tops[0]! - tops[1]!)).toBe(44);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("keeps each event in its own lane, with only the fill reaching the base", () => {
+      // Regression: the whole event was drawn from its lane to the base,
+      // so its resize handles and body lay over the events in the lanes
+      // below -- and a name overhanging into a later event's box was
+      // painted under it.
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "a", title: "A", rank: "A", startTime: at(1).toISOString() }),
+            makeEvent({ id: "b", title: "B", rank: "B", startTime: at(1).toISOString() }),
+          ]}
+          onEditEvent={() => {}}
+        />
+      );
+      const upper = lane("a") > lane("b") ? "a" : "b";
+      const modal = screen.getByTestId(`event-modal-${upper}`);
+      expect(parseFloat(modal.style.height)).toBe(28);
+      const fill = modal.querySelector<HTMLElement>(".event-modal-fill")!;
+      // Base at the bottom: the fill reaches one lane further down.
+      expect(parseFloat(fill.style.bottom)).toBe(-28);
+    });
+
+    it("places each label in its own lane when the base is on the left", async () => {
+      // Regression: the label sat at the corner of a modal that reached
+      // the base, and with the base on the left that corner *is* the base,
+      // so every overlapping event's name was drawn at the same place.
+      const user = userEvent.setup();
+      render(
+        <Timeline
+          events={[
+            makeEvent({ id: "a", title: "A", rank: "A", startTime: at(1).toISOString() }),
+            makeEvent({ id: "b", title: "B", rank: "B", startTime: at(1).toISOString() }),
+          ]}
+          onEditEvent={() => {}}
+        />
+      );
+      await user.click(screen.getByRole("button", { name: /layout options/i }));
+      await user.selectOptions(screen.getByLabelText(/^layout$/i), "vertical:forward");
+      await user.selectOptions(screen.getByLabelText(/^base$/i), "left");
+      const lefts = ["a", "b"].map((id) => parseFloat(screen.getByTestId(`event-modal-${id}`).style.left));
+      expect(lefts.sort((x, y) => x - y)).toEqual([0, 28]);
+      for (const id of ["a", "b"]) {
+        // The label is anchored inside its own modal, not offset from it.
+        expect(within(screen.getByTestId(`event-modal-${id}`)).getByRole("button").style.left).toBe("");
+      }
+    });
+
+    it("keys measured sizes by the text actually shown", async () => {
+      // " Review" renders a leading space that "Review" doesn't, so the two
+      // must not share a measurement.
+      const spy = measureLabels((key) => ({ width: key.startsWith("! ") ? 900 : 10, height: 20 }));
+      try {
+        render(
+          <Timeline
+            events={[
+              makeEvent({ id: "a", title: " Review", important: true, rank: "A", startTime: at(-8).toISOString(), endTime: at(-7).toISOString() }),
+              makeEvent({ id: "b", title: "Review", important: true, rank: "B", startTime: at(-3).toISOString(), endTime: at(-2).toISOString() }),
+            ]}
+            onEditEvent={() => {}}
+          />
+        );
+        await waitFor(() => expect(lane("b")).not.toBe(lane("a")));
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   it("puts the higher-ranked event further from the base", () => {
     const start = new Date(Date.now() + 60 * 60 * 1000);
     render(

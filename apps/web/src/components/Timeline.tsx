@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   TIME_SCALES,
   DEFAULT_SCALE_INDEX,
@@ -8,8 +8,12 @@ import {
   rectFor,
   assignLanes,
   laneCount,
+  estimateLabelSize,
+  laneSizeFor,
+  fillToBase,
   zoomSpan,
   snapToScale,
+  type LabelSize,
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
@@ -34,10 +38,13 @@ import {
 import type { EventContent } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 
-const LANE_SIZE = 28;
-/** Roughly the width a short label needs, used to stop two events that
- * merely look adjacent from putting their text in the same lane. */
-const LABEL_WIDTH_PX = 90;
+/** The smallest lane size. Lanes grow past it when the text is larger
+ * (see `laneSizeFor`). */
+const MIN_LANE_SIZE = 28;
+/** Space kept between the end of one label and the next label in the
+ * same lane, so two names never run together even when they'd only
+ * touch. */
+const LABEL_GAP_PX = 8;
 /** Keyboard nudges are saved once the keys go quiet for this long, so
  * holding an arrow down is one encrypted write rather than dozens. */
 const KEYBOARD_COMMIT_DELAY_MS = 500;
@@ -86,6 +93,24 @@ interface Saving {
   token: object;
 }
 
+/** Labels showing the same thing measure the same, so sizes are keyed by
+ * what the label renders (the title as stored, or the untitled square)
+ * rather than by event. */
+function labelKey(event: { title?: string; important?: boolean }): string {
+  return `${event.important ? "!" : "-"}${event.title?.trim() ? event.title : ""}`;
+}
+
+/** Measured label sizes kept across pans and zooms, so a label coming
+ * back into view is laid out at its real size straight away. Bounded:
+ * the oldest entries go first. */
+const MAX_MEASURED_LABELS = 500;
+
+function rootFontPx(): number {
+  if (typeof document === "undefined") return 16;
+  const px = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return Number.isFinite(px) && px > 0 ? px : 16;
+}
+
 const KEY_NAMES: Record<string, string> = {
   ArrowLeft: "Left",
   ArrowRight: "Right",
@@ -120,6 +145,12 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   onChangeRef.current = onChangeEvent;
   const [announcement, setAnnouncement] = useState("");
   const keysHelpId = useId();
+  /** Labels' measured sizes, by `labelKey`. Labels not measured yet (not
+   * rendered yet, or no layout, as in jsdom) use an estimate. */
+  const [measuredLabels, setMeasuredLabels] = useState<ReadonlyMap<string, LabelSize>>(new Map());
+  /** The root font size, for estimates. Re-read whenever labels are
+   * measured, so it follows the user's text size. */
+  const [fontPx, setFontPx] = useState(rootFontPx);
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -159,7 +190,16 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * its own. A daily standup is one row, not thirty. Non-repeating events
    * are simply series of one, which keeps a single rendering path.
    */
-  const separation = LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, viewportSize.width));
+  // Label sizes are in px; lane assignment works in time. The time axis is
+  // the viewport's width or height depending on the layout.
+  const msPerPx =
+    (spanSeconds * 1000) /
+    Math.max(1, timeAxisSize(orientation, { ...viewportSize, laneSize: MIN_LANE_SIZE }));
+  const labelGapMs = LABEL_GAP_PX * msPerPx;
+  const labelSize = (event: { title?: string; important?: boolean }): LabelSize =>
+    measuredLabels.get(labelKey(event)) ??
+    estimateLabelSize(event.title, Boolean(event.important), fontPx);
+
   const placements = useMemo(() => {
     const withPreview = events.map((saved) => {
       const inFlight = saving.get(saved.id);
@@ -196,28 +236,99 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           ? null
           : Math.max(...occurrences.map((o) => o.end!.getTime()));
 
-        return { id: event.id, event, occurrences, startMs, endMs, rank: rank! };
+        // The name sits on the first visible occurrence, at `startMs`.
+        const label = labelSize(event);
+        const labelMs = label.along * msPerPx;
+        return { id: event.id, event, occurrences, startMs, endMs, rank: rank!, labelMs, label };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-    return assignLanes(series, viewEnd.getTime(), separation);
-  }, [events, drag, nudge, saving, viewStart, viewEnd, spanSeconds, viewportSize.width]);
+    return assignLanes(series, viewEnd.getTime(), labelGapMs);
+    // labelSize derives from measuredLabels and fontPx; labelGapMs from
+    // msPerPx.
+  }, [events, drag, nudge, saving, viewStart, viewEnd, msPerPx, measuredLabels, fontPx]);
+
+  /**
+   * Measures the rendered labels after layout, so lane assignment uses
+   * real sizes rather than estimates. Sizes depend only on what a label
+   * shows, never on where it is laid out, so this settles after one extra
+   * render. Reading sizes forces the browser to lay out, so it runs when
+   * the set of labels on screen or the layout axis changes -- not on every
+   * drag frame or clock tick -- and otherwise only when a label actually
+   * changes size (the user enlarging the text, a font loading).
+   */
+  const renderedLabels = placements.map((p) => labelKey(p.item.event)).sort().join("\n");
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const labels = Array.from(container.querySelectorAll<HTMLElement>("[data-label-key]"));
+
+    const measure = () => {
+      setFontPx((previous) => {
+        const current = rootFontPx();
+        return current === previous ? previous : current;
+      });
+      const measured = new Map<string, LabelSize>();
+      for (const label of labels) {
+        const box = label.getBoundingClientRect();
+        // No layout (jsdom), or not displayed: keep the estimate.
+        if (box.width <= 0 || box.height <= 0) continue;
+        // Vertical layouts set the text sideways, running along time.
+        const [along, across] =
+          orientation.axis === "horizontal" ? [box.width, box.height] : [box.height, box.width];
+        measured.set(label.dataset.labelKey!, { along: Math.ceil(along), across: Math.ceil(across) });
+      }
+      setMeasuredLabels((previous) => {
+        const changed = [...measured].some(([key, size]) => {
+          const old = previous.get(key);
+          return !old || old.along !== size.along || old.across !== size.across;
+        });
+        if (!changed) return previous;
+        const next = new Map(previous);
+        for (const [key, size] of measured) {
+          // Re-inserting moves the key to the newest end.
+          next.delete(key);
+          next.set(key, size);
+        }
+        for (const key of next.keys()) {
+          if (next.size <= MAX_MEASURED_LABELS) break;
+          next.delete(key);
+        }
+        return next;
+      });
+    };
+
+    measure();
+    // ResizeObserver is absent in jsdom; the measurement above still runs.
+    if (typeof ResizeObserver === "undefined") return;
+    // It also reports each label once on observing; harmless, since an
+    // unchanged measurement changes no state.
+    const observer = new ResizeObserver(measure);
+    for (const label of labels) observer.observe(label);
+    return () => observer.disconnect();
+  }, [renderedLabels, orientation.axis]);
 
   const eventOrder = useMemo(() => new Map(events.map((e, i) => [e.id, i])), [events]);
 
   const lanes = laneCount(placements);
-  const stackExtent = lanes * LANE_SIZE;
+  // Every lane is at least as thick as the thickest label on screen, so
+  // names in neighbouring lanes can't overlap.
+  const laneSize = laneSizeFor(
+    placements.map((p) => p.item.label.across),
+    MIN_LANE_SIZE
+  );
+  const stackExtent = lanes * laneSize;
   const stackAxisSize =
     orientation.axis === "horizontal" ? viewportSize.height : viewportSize.width;
   const overflowing = stackExtent > stackAxisSize;
   const hiddenCount = overflowing
-    ? placements.filter((p) => (p.lane + 1) * LANE_SIZE > stackAxisSize).length
+    ? placements.filter((p) => (p.lane + 1) * laneSize > stackAxisSize).length
     : 0;
 
   const viewport: Viewport = {
     width: viewportSize.width,
     height: Math.max(viewportSize.height, orientation.axis === "horizontal" ? stackExtent : 0),
-    laneSize: LANE_SIZE,
+    laneSize,
   };
   if (orientation.axis === "vertical") {
     viewport.width = Math.max(viewportSize.width, stackExtent);
@@ -446,8 +557,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     current: EventPreview,
     next: EventPreview
   ) {
-    const labelled = placements.find((p) => p.item.id === eventId)?.item.occurrences[0];
-    if (!labelled) return;
+    const placed = placements.find((p) => p.item.id === eventId)?.item;
+    const labelled = placed?.occurrences[0];
+    if (!placed || !labelled) return;
     const shift = (from?: string, to?: string) =>
       from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
     const startMs = labelled.start.getTime();
@@ -475,7 +587,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       start,
       end,
       // Room for the label, which sits just after the start.
-      LABEL_WIDTH_PX * ((spanSeconds * 1000) / Math.max(1, timeAxisSize(orientation, viewport)))
+      placed.labelMs
     );
     if (pan !== 0) setCentre((c) => c + pan);
   }
@@ -506,7 +618,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         adjustment.direction,
         placements.map((p) => p.item),
         viewEnd.getTime(),
-        separation
+        labelGapMs
       );
       const raising = adjustment.direction === 1;
       if (!step) {
@@ -723,6 +835,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             .map(({ item, lane }) => {
             const { event, occurrences } = item;
             const openEnded = item.endMs === null;
+            const toBase = fillToBase(lane, orientation, viewport.laneSize);
 
             return (
               <div
@@ -742,8 +855,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                     Math.max(0, Math.min(1, endFraction)),
                     lane,
                     orientation,
-                    viewport,
-                    true
+                    viewport
                   );
                   // The name belongs to the series, not to each repeat, so
                   // only the first visible occurrence carries it.
@@ -764,10 +876,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                       data-testid={isFirst ? `event-modal-${event.id}` : undefined}
                       data-lane={lane}
                     >
+                      {/* The event stays in its lane; only its fill
+                          reaches down to the base, and lets clicks
+                          through to whatever is in the lanes below. */}
                       <div
                         className={`event-modal-fill fade-${orientation.base}${
                           openEnded ? " fade-open-ended" : ""
                         }`}
+                        style={{ [toBase.side]: -toBase.px }}
                         aria-hidden="true"
                       />
 
@@ -796,6 +912,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                         <button
                           type="button"
                           className="event-modal-label"
+                          data-label-key={labelKey(event)}
                           aria-describedby={
                             event.canEdit && onChangeEvent ? keysHelpId : undefined
                           }

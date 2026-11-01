@@ -144,7 +144,8 @@ export function timeFraction(at: Date, viewStart: Date, viewEnd: Date): number {
 }
 
 /**
- * Converts a time span and a lane index into a rectangle.
+ * Converts a time span and a lane index into a rectangle: the lane's own
+ * slice of the stacking axis.
  *
  * `lane` 0 sits against the base; higher lanes are further from it. Under
  * fractional ordering, higher-ranked (more important) events get higher
@@ -156,11 +157,7 @@ export function rectFor(
   endFraction: number,
   lane: number,
   orientation: Orientation,
-  viewport: Viewport,
-  /** When true the rectangle runs from its lane all the way to the base,
-   * rather than occupying one lane's thickness. The fade then has the full
-   * distance to reach zero exactly at the base. */
-  extendToBase = false
+  viewport: Viewport
 ): Rect {
   const { width, height, laneSize } = viewport;
 
@@ -172,9 +169,6 @@ export function rectFor(
       : [1 - endFraction, 1 - startFraction];
 
   const laneOffset = lane * laneSize;
-  // Thickness across the stacking axis: one lane, or everything from this
-  // lane down to the base.
-  const thickness = extendToBase ? laneOffset + laneSize : laneSize;
 
   if (orientation.axis === "horizontal") {
     const left = from * width;
@@ -182,22 +176,28 @@ export function rectFor(
     // Base at the bottom means measuring up from the bottom edge.
     const top =
       orientation.base === "bottom" ? height - laneOffset - laneSize : laneOffset;
-    return { left, top, width: rectWidth, height: thickness };
+    return { left, top, width: rectWidth, height: laneSize };
   }
 
   const top = from * height;
   const rectHeight = Math.max(0, (to - from) * height);
-  const left =
-    orientation.base === "left"
-      ? 0
-      : width - thickness;
-  const laneLeft = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
-  return {
-    left: extendToBase ? left : laneLeft,
-    top,
-    width: thickness,
-    height: rectHeight,
-  };
+  const left = orientation.base === "left" ? laneOffset : width - laneOffset - laneSize;
+  return { left, top, width: laneSize, height: rectHeight };
+}
+
+/**
+ * How far an event's fill reaches past its own lane to the base, and on
+ * which side. The fill fades from the lane all the way to the base, but
+ * the event itself -- its label, resize handles and hit area -- stays in
+ * its lane (`rectFor`), so it never covers the events in lower lanes.
+ * Applied as a negative inset on that side of the fill.
+ */
+export function fillToBase(
+  lane: number,
+  orientation: Orientation,
+  laneSize: number
+): { side: BaseEdge; px: number } {
+  return { side: orientation.base, px: lane * laneSize };
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +212,19 @@ export interface Placeable {
   endMs: number | null;
   /** Fractional rank. Higher sorts later and stacks further from the base. */
   rank: string;
+  /** How far the item's label reaches along the time axis from `startMs`,
+   * in ms. A name longer than its event overhangs the end, and the lane
+   * stays taken until the name is done. */
+  labelMs?: number;
+}
+
+/**
+ * When an item's lane is free again: the later of its end and the end of
+ * its label, plus `gapMs`. Shared by lane assignment and keyboard
+ * re-ranking so both agree on what overlaps what.
+ */
+export function occupiedUntil(item: Placeable, viewEndMs: number, gapMs = 0): number {
+  return Math.max(item.endMs ?? viewEndMs, item.startMs + (item.labelMs ?? 0)) + gapMs;
 }
 
 export interface Placement<T extends Placeable> {
@@ -230,14 +243,16 @@ export interface Placement<T extends Placeable> {
  * Items are processed in ascending rank, so lower-ranked items claim the
  * lanes nearest the base and higher-ranked ones are pushed away from it.
  *
- * `minSeparationMs` reserves horizontal room for an event's label, so two
- * events that merely *look* adjacent still get separate lanes -- the rule
- * that text must never overlap other text.
+ * Each item's lane stays taken until its label ends (`labelMs`), so a long
+ * name never runs into the next name in its lane, plus `gapMs` so two
+ * labels that would merely touch are kept apart -- the rule that text
+ * must never overlap other text. Across lanes, text is kept apart by the
+ * lane size (see `laneSizeFor`).
  */
 export function assignLanes<T extends Placeable>(
   items: T[],
   viewEndMs: number,
-  minSeparationMs = 0
+  gapMs = 0
 ): Placement<T>[] {
   const sorted = [...items].sort((a, b) => {
     if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
@@ -251,7 +266,7 @@ export function assignLanes<T extends Placeable>(
   const placements: Placement<T>[] = [];
 
   for (const item of sorted) {
-    const effectiveEnd = (item.endMs ?? viewEndMs) + minSeparationMs;
+    const effectiveEnd = occupiedUntil(item, viewEndMs, gapMs);
 
     let lane = laneEnds.findIndex((freeAt) => freeAt <= item.startMs);
     if (lane === -1) {
@@ -271,4 +286,58 @@ export function assignLanes<T extends Placeable>(
  * scroll through when it exceeds the viewport. */
 export function laneCount<T extends Placeable>(placements: Placement<T>[]): number {
   return placements.reduce((max, p) => Math.max(max, p.lane + 1), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Labels
+// ---------------------------------------------------------------------------
+
+/** A label's box in px: `along` the time axis (where it competes with the
+ * next label in its lane) and `across` it (where it competes with the
+ * labels in neighbouring lanes). */
+export interface LabelSize {
+  along: number;
+  across: number;
+}
+
+/**
+ * A deliberately generous guess at a label's size, used until the real
+ * label has been rendered and measured (and always in jsdom, which has no
+ * layout). Mirrors `.event-modal-label`: 0.8rem text, 0.15rem/0.35rem
+ * padding, an optional star. Generous so the first frame errs towards
+ * spare room rather than overlap.
+ */
+export function estimateLabelSize(
+  title: string | undefined,
+  important: boolean,
+  rootFontPx: number
+): LabelSize {
+  const em = 0.8 * rootFontPx;
+  const text = title?.trim() ?? "";
+  // 0.62em is wider than the average glyph of common UI fonts; bold is
+  // wider still. An untitled event shows a 1em square instead.
+  const textEm = text ? [...text].length * (important ? 0.68 : 0.62) : 1;
+  const starEm = important ? 1 + 0.25 : 0; // the star and its margin
+  // The label's padding is 0.15rem one way and 0.35rem the other, and
+  // vertical layouts set the text sideways, swapping them. Both directions
+  // allow for the larger.
+  const padding = 0.7 * rootFontPx;
+  return {
+    along: Math.ceil((textEm + starEm) * em + padding),
+    across: Math.ceil(1.3 * em + padding),
+  };
+}
+
+/**
+ * The lane size: at least `minimum`, and never less than the thickest
+ * label, so labels in neighbouring lanes are always at least one full
+ * label (a text-height plus padding) apart and can't overlap -- including
+ * when the user has enlarged the text.
+ */
+export function laneSizeFor(labelThicknesses: Iterable<number>, minimum: number): number {
+  let size = minimum;
+  for (const thickness of labelThicknesses) {
+    if (Number.isFinite(thickness)) size = Math.max(size, Math.ceil(thickness));
+  }
+  return size;
 }

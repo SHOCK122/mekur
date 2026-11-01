@@ -299,8 +299,57 @@ worth of dead code and fixes what the model switch broke.
         `NaN`; with real coordinates its drag overshot the event by two
         days. The test setup now polyfills `PointerEvent` and the test's
         arithmetic is corrected.
-- [ ] Label collision: guarantee text never overlaps text, with overlapping
-      modals separated by at least one text-height.
+- [x] **Label collision: text never overlaps text**, with overlapping
+      modals separated by at least one text-height. Exercised in Chromium
+      with seven overlapping events and long names, checking every pair of
+      label boxes: `main` had 19 overlaps across the six layouts and
+      enlarged text; now none.
+      - Every label was assumed to be 90px wide, so a long name on a short
+        event ran over the next name in its lane. Each event's lane now
+        stays taken until the later of its end and its *label's* end, plus
+        an 8px gap (`occupiedUntil`, shared by lane assignment and keyboard
+        re-ranking). An event that outlasts its name no longer reserves
+        90px past its end, so lanes pack tighter too.
+      - Label sizes are **measured** after render and fed back into the
+        layout (one extra render; sizes depend only on the text, so it
+        settles). Until then -- and always in jsdom -- a deliberately
+        generous estimate is used. Measuring forces layout, so it runs
+        only when the set of labels on screen or the axis changes, plus a
+        `ResizeObserver` on the labels for text-size changes and late
+        fonts. Measurements persist across pans, capped at 500.
+      - Lanes are at least as thick as the thickest label on screen (min
+        28px), so names in neighbouring lanes can't overlap even with the
+        browser's text size doubled. Neighbouring modals are therefore
+        offset by at least one full label: a text-height plus padding.
+      - Vertical layouts: names are now set sideways (`writing-mode:
+        vertical-rl`), running along time like the horizontal ones.
+        Written across, any name wider than a 28px lane covered the names
+        in neighbouring lanes, and no lane width short of the longest name
+        would fix that. Simplification: sideways text is less pleasant to
+        read; the alternative was lanes as wide as the longest name.
+      - Found while doing it: with the base on the **left**, every label
+        sat at the base whatever its lane (the modal reached the base, and
+        the label was pinned to its corner), so all overlapping names were
+        drawn in one place. With the base at the **top**, the modal ran
+        from its lane *away* from the base.
+      - Found in PR review and fixed: because the whole event box reached
+        the base, its resize handles and body lay over every lower lane's
+        event, and since each box was its own stacking context, a name
+        overhanging its event could be painted under (and have its clicks
+        taken by) a later neighbour. Now the event -- label, handles, hit
+        area -- stays in its own lane, and only its fill reaches the base
+        (`fillToBase`), ignoring pointer events. Fills, handles and names
+        each share one layer across all events, names on top. This also
+        fixes both base-left and base-top above.
+      - Consequence: a skipped occurrence now dims only its fill, not its
+        name (dimming the whole box made it a stacking context again, and
+        dimmed text fails contrast anyway).
+      - Found while doing it: the label reservation converted px to time
+        using the viewport's *width* even in vertical layouts, where the
+        time axis is the height.
+      - Also from review: the important star's margin is logical, so it
+        stays between star and name when set sideways; measurements are
+        keyed by the title as rendered, not trimmed.
 - [ ] Clear affordance that the stack axis scrolls when lanes overflow.
 - [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
       Monday of every month"). Schema + UI work; `rrule` already supports

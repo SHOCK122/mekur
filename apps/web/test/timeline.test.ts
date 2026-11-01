@@ -8,6 +8,10 @@ import {
   rectFor,
   assignLanes,
   laneCount,
+  occupiedUntil,
+  estimateLabelSize,
+  laneSizeFor,
+  fillToBase,
   validBases,
   isValidOrientation,
   DEFAULT_ORIENTATION,
@@ -228,6 +232,58 @@ describe("assignLanes", () => {
     expect(laneCount(assignLanes(touching, VIEW_END, 50))).toBe(2);
   });
 
+  it("keeps a lane taken until a name longer than its event has finished", () => {
+    const items = [
+      // A 100ms event whose name needs 400ms of screen.
+      { id: "a", startMs: 0, endMs: 100, rank: "A", labelMs: 400 },
+      { id: "b", startMs: 200, endMs: 300, rank: "B", labelMs: 50 },
+    ];
+    expect(laneCount(assignLanes(items, VIEW_END))).toBe(2);
+    // Once b starts after the name, it can share the lane again.
+    const later = [items[0]!, { ...items[1]!, startMs: 450, endMs: 500 }];
+    expect(laneCount(assignLanes(later, VIEW_END))).toBe(1);
+  });
+
+  it("doesn't reserve room beyond the gap when the event outlasts its name", () => {
+    const items = [
+      { id: "a", startMs: 0, endMs: 1000, rank: "A", labelMs: 50 },
+      { id: "b", startMs: 1010, endMs: 2000, rank: "B", labelMs: 50 },
+    ];
+    expect(laneCount(assignLanes(items, VIEW_END, 10))).toBe(1);
+    expect(laneCount(assignLanes(items, VIEW_END, 11))).toBe(2);
+  });
+
+  it("never lets two labels in one lane overlap, however the names and times fall", () => {
+    // Pseudo-random but deterministic: a mix of short events with long
+    // names, long events with short names, and open-ended ones.
+    let seed = 7;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const items = Array.from({ length: 300 }, (_, i) => {
+      const startMs = Math.floor(random() * 50_000);
+      return {
+        id: `e${i}`,
+        startMs,
+        endMs: random() < 0.1 ? null : startMs + Math.floor(random() * 3000),
+        rank: `r${String(Math.floor(random() * 1e6)).padStart(7, "0")}${i}`,
+        labelMs: Math.floor(random() * 4000),
+      };
+    });
+    const gap = 25;
+    const placements = assignLanes(items, 60_000, gap);
+    const byLane = new Map<number, typeof items>();
+    for (const { item, lane } of placements) {
+      byLane.set(lane, [...(byLane.get(lane) ?? []), item]);
+    }
+    for (const inLane of byLane.values()) {
+      const sorted = [...inLane].sort((a, b) => a.startMs - b.startMs);
+      for (let i = 1; i < sorted.length; i++) {
+        // The earlier item -- its fill and its name -- is over, plus the
+        // gap, before the next one starts.
+        expect(sorted[i]!.startMs).toBeGreaterThanOrEqual(occupiedUntil(sorted[i - 1]!, 60_000, gap));
+      }
+    }
+  });
+
   it("is deterministic: the same input always lays out identically", () => {
     const items = Array.from({ length: 50 }, (_, i) => ({
       id: `e${i}`,
@@ -254,5 +310,76 @@ describe("assignLanes", () => {
     // density that forces the stack axis to scroll.
     expect(laneCount(placements)).toBe(200);
     expect(new Set(placements.map((p) => p.lane)).size).toBe(200);
+  });
+});
+
+describe("occupiedUntil", () => {
+  it("is the later of the event's end and its label's end, plus the gap", () => {
+    expect(occupiedUntil({ id: "a", startMs: 0, endMs: 100, rank: "A", labelMs: 300 }, 1000, 5)).toBe(305);
+    expect(occupiedUntil({ id: "a", startMs: 0, endMs: 500, rank: "A", labelMs: 300 }, 1000, 5)).toBe(505);
+    expect(occupiedUntil({ id: "a", startMs: 0, endMs: null, rank: "A", labelMs: 300 }, 1000)).toBe(1000);
+    expect(occupiedUntil({ id: "a", startMs: 0, endMs: 100, rank: "A" }, 1000)).toBe(100);
+  });
+});
+
+describe("estimateLabelSize", () => {
+  it("grows with the name, and with the text size", () => {
+    const short = estimateLabelSize("Lunch", false, 16);
+    const long = estimateLabelSize("Quarterly planning with the whole team", false, 16);
+    expect(long.along).toBeGreaterThan(short.along * 4);
+    expect(long.across).toBe(short.across);
+    const enlarged = estimateLabelSize("Lunch", false, 32);
+    expect(enlarged.along).toBeGreaterThanOrEqual(short.along * 2 - 1);
+    expect(enlarged.across).toBeGreaterThanOrEqual(short.across * 2 - 1);
+  });
+
+  it("allows for the bolder text and star of an important event", () => {
+    expect(estimateLabelSize("Lunch", true, 16).along).toBeGreaterThan(
+      estimateLabelSize("Lunch", false, 16).along
+    );
+  });
+
+  it("gives an untitled event room for its square", () => {
+    expect(estimateLabelSize(undefined, false, 16).along).toBeGreaterThan(0);
+    expect(estimateLabelSize("   ", false, 16)).toEqual(estimateLabelSize(undefined, false, 16));
+  });
+});
+
+describe("laneSizeFor", () => {
+  it("is the minimum unless a label is thicker", () => {
+    expect(laneSizeFor([20, 21], 28)).toBe(28);
+    expect(laneSizeFor([20, 40.2], 28)).toBe(41);
+    expect(laneSizeFor([], 28)).toBe(28);
+    expect(laneSizeFor([NaN], 28)).toBe(28);
+  });
+});
+
+describe("fillToBase", () => {
+  it("extends the fill from its lane to the base, on the base's side", () => {
+    expect(fillToBase(0, DEFAULT_ORIENTATION, 24)).toEqual({ side: "bottom", px: 0 });
+    expect(fillToBase(3, DEFAULT_ORIENTATION, 24)).toEqual({ side: "bottom", px: 72 });
+    const left: Orientation = { axis: "vertical", direction: "forward", base: "left" };
+    expect(fillToBase(3, left, 24)).toEqual({ side: "left", px: 72 });
+  });
+
+  it("together with the lane's rectangle, reaches exactly to the base in every orientation", () => {
+    const orientations: Orientation[] = [
+      { axis: "horizontal", direction: "forward", base: "bottom" },
+      { axis: "horizontal", direction: "reverse", base: "top" },
+      { axis: "vertical", direction: "forward", base: "left" },
+      { axis: "vertical", direction: "reverse", base: "right" },
+    ];
+    for (const orientation of orientations) {
+      const rect = rectFor(0.2, 0.8, 3, orientation, viewport);
+      const { side, px } = fillToBase(3, orientation, viewport.laneSize);
+      const edge = {
+        top: rect.top - px,
+        bottom: rect.top + rect.height + px,
+        left: rect.left - px,
+        right: rect.left + rect.width + px,
+      }[side];
+      const base = { top: 0, bottom: viewport.height, left: 0, right: viewport.width }[side];
+      expect(edge).toBe(base);
+    }
   });
 });
