@@ -386,6 +386,28 @@ worth of dead code and fixes what the model switch broke.
         a swipe has to start on the background.
       - Simplification: the scroll state only re-renders the timeline
         when it changes which events are hidden, not every scroll frame.
+      - Found in PR review and fixed: dragging an event re-ranked it by
+        the pointer's position in the *viewport*, ignoring the scroll
+        offset -- harmless while the view opened at scroll 0, but opening
+        at the base made every drag of a base-lane event jump it ~28
+        lanes. Lanes are now measured against the canvas. Also: the wheel
+        both zoomed and scrolled the stack (React's wheel listener is
+        passive, so `preventDefault` did nothing; now a native listener);
+        a scroll button that ran out of events unmounted and dropped
+        focus (both stay while overflowing, `aria-disabled` when empty);
+        the per-side counts were a live region that re-announced at every
+        lane while scrolling (the live region now says only how many
+        don't fit, which scrolling doesn't change); the cues covered names
+        in the outermost visible lane, focus ring included (now layered
+        under names, over fills), and the scrollbar (now inset by its
+        measured width); a second press during a smooth scroll went a page
+        from wherever the animation was (now from where the first was
+        headed); and a swipe reaching the end of the stack chained on to
+        scroll the page (`overscroll-behavior: contain`).
+      - Known trade-off: when the stack *doesn't* overflow, a vertical
+        swipe over the timeline now scrolls the page (it previously did
+        nothing). That is the expected behaviour for a page on a phone,
+        and a horizontal swipe still pans time.
 - [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
       Monday of every month"). Schema + UI work; `rrule` already supports
       all three.

@@ -492,12 +492,24 @@ button:disabled {
    easy to miss and hidden on touch, so each edge with events past it also
    gets a cue (a fade and a chevron), and the note above the timeline says
    how many and where, with a button to scroll there. */
+.timeline-scrollable {
+  /* A touch swipe that reaches the end of the stack stops there instead
+     of carrying on to scroll the page. */
+  overscroll-behavior: contain;
+}
+
 .timeline-scrollable.timeline-horizontal {
   overflow-y: auto;
 }
 
 .timeline-scrollable.timeline-vertical {
   overflow-x: auto;
+}
+
+.stack-overflow-note .header-link[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+  text-decoration: none;
 }
 
 /* Positions the cues over the viewport's edges without being inside the
@@ -508,7 +520,9 @@ button:disabled {
 
 .stack-cue {
   position: absolute;
-  z-index: 5;
+  /* Over event fills (2), under names (4): a name in the outermost
+     visible lane -- or one that has keyboard focus -- is never covered. */
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;

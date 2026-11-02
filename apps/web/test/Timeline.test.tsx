@@ -369,15 +369,32 @@ describe("Timeline", () => {
       return scrollTo;
     }
 
+    const summary = () => screen.getByTestId("stack-overflow-summary");
+    const scrollButton = (name: RegExp) => screen.getByRole("button", { name });
+
     it("says how many are hidden and on which side", () => {
       // A bare scrollbar is easy to miss and unreliable on touch, so the
       // overflow is stated in text as well. The default base is the
       // bottom, so the overflowing lanes are above.
       render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
-      expect(screen.getByRole("status")).toHaveTextContent("29 more events above");
-      expect(screen.getByRole("status")).not.toHaveTextContent(/below/);
-      expect(screen.getByRole("button", { name: /scroll up/i })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /scroll down/i })).toBeNull();
+      expect(summary()).toHaveTextContent("29 more events above.");
+      expect(summary()).not.toHaveTextContent(/below/);
+      expect(scrollButton(/scroll up/i)).toHaveAttribute("aria-disabled", "false");
+      // Nothing below: present (so focus isn't lost) but disabled.
+      expect(scrollButton(/scroll down/i)).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("announces only the total, which scrolling doesn't change", () => {
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "29 events don't fit in the timeline; scroll it to see them."
+      );
+      const viewport = screen.getByLabelText("Timeline events");
+      stubScrollBox(viewport, { scrollHeight: 1120, clientHeight: 320 });
+      viewport.scrollTop = 400;
+      fireEvent.scroll(viewport);
+      expect(summary()).toHaveTextContent(/above, \d+ below/);
+      expect(screen.getByRole("status")).toHaveTextContent(/^29 events don't fit/);
     });
 
     it("cues the edge the hidden events are beyond", () => {
@@ -388,7 +405,9 @@ describe("Timeline", () => {
 
     it("says nothing when every lane fits", () => {
       const { container } = render(<Timeline events={manyEvents(5)} onEditEvent={() => {}} />);
-      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+      expect(screen.queryByTestId("stack-overflow-summary")).toBeNull();
+      expect(screen.queryByRole("button", { name: /scroll (up|down)/i })).toBeNull();
       expect(container.querySelector(".stack-cue-top, .stack-cue-bottom")).toBeNull();
     });
 
@@ -426,10 +445,34 @@ describe("Timeline", () => {
       // hidden is below, and nothing above.
       viewport.scrollTop = 0;
       fireEvent.scroll(viewport);
-      expect(screen.getByRole("status")).toHaveTextContent("29 more events below");
-      expect(screen.getByRole("status")).not.toHaveTextContent(/above/);
-      expect(screen.getByRole("button", { name: /scroll down/i })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /scroll up/i })).toBeNull();
+      expect(summary()).toHaveTextContent("29 more events below.");
+      expect(summary()).not.toHaveTextContent(/above/);
+      expect(scrollButton(/scroll down/i)).toHaveAttribute("aria-disabled", "false");
+      expect(scrollButton(/scroll up/i)).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("keeps focus on a scroll button that runs out of events", async () => {
+      const user = userEvent.setup();
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      const viewport = screen.getByLabelText("Timeline events");
+      const scrollTo = stubScrollBox(viewport, { scrollHeight: 1120, clientHeight: 320 });
+      viewport.scrollTop = 800;
+      fireEvent.scroll(viewport);
+      scrollTo.mockImplementation((options: ScrollToOptions) => {
+        viewport.scrollTop = options.top!;
+        fireEvent.scroll(viewport);
+      });
+      const up = scrollButton(/scroll up/i);
+      up.focus();
+      for (let i = 0; i < 4; i++) await user.keyboard("{Enter}");
+      // At the far end: the button is still there, focused and disabled.
+      expect(summary()).toHaveTextContent("29 more events below.");
+      expect(up).toHaveFocus();
+      expect(up).toHaveAttribute("aria-disabled", "true");
+      // Pressing it again does nothing.
+      const calls = scrollTo.mock.calls.length;
+      await user.keyboard("{Enter}");
+      expect(scrollTo.mock.calls.length).toBe(calls);
     });
 
     it("scrolls a page toward the hidden events from the button", async () => {
@@ -445,13 +488,64 @@ describe("Timeline", () => {
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 508 }));
     });
 
+    it("goes a page further on a second press during a smooth scroll", async () => {
+      const user = userEvent.setup();
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      const viewport = screen.getByLabelText("Timeline events");
+      const scrollTo = stubScrollBox(viewport, { scrollHeight: 1120, clientHeight: 320 });
+      viewport.scrollTop = 800;
+      fireEvent.scroll(viewport);
+      // The stub jumps straight there; put the view back part way, as a
+      // smooth scroll still under way would be.
+      scrollTo.mockImplementation(() => {});
+      await user.click(scrollButton(/scroll up/i));
+      viewport.scrollTop = 780;
+      fireEvent.scroll(viewport);
+      await user.click(scrollButton(/scroll up/i));
+      // 800 - 292 - 292, not 780 - 292.
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ top: 216 }));
+    });
+
+    it("re-ranks a dragged event by its lane in the scrolled stack", async () => {
+      // Regression: the target lane was measured against the viewport, not
+      // the canvas, ignoring the scroll offset. Opening at the base (the
+      // bottom, scrolled 800px down) made every drag of a base-lane event
+      // re-rank it 28 lanes up.
+      const onChange = vi.fn();
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      const rect = (top: number, height: number) =>
+        ({ x: 0, y: top, top, left: 0, right: 800, bottom: top + height, width: 800, height, toJSON() {} }) as DOMRect;
+      const spy = vi
+        .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+        .mockImplementation(function (this: HTMLElement) {
+          if (this.classList.contains("timeline-canvas")) return rect(-800, 1120);
+          if (this.classList.contains("timeline-viewport")) return rect(0, 320);
+          return original.call(this);
+        });
+      try {
+        render(<Timeline events={manyEvents()} onEditEvent={() => {}} onChangeEvent={onChange} />);
+        const label = within(screen.getByTestId("event-modal-e0")).getByRole("button");
+        // Lane 0 is the bottom 28px of the 1,120px canvas: on screen,
+        // y 292-320. Drag it along time, staying in its lane.
+        fireEvent.pointerDown(label, { clientX: 400, clientY: 310 });
+        fireEvent.pointerMove(screen.getByLabelText("Timeline events"), { clientX: 450, clientY: 310 });
+        fireEvent.pointerUp(screen.getByLabelText("Timeline events"));
+        await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+        const changes = onChange.mock.calls[0]![1] as { rank?: string };
+        // Still below every other event's rank: it stayed in lane 0.
+        expect(changes.rank! < "r001").toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it("names the sides in a vertical layout", async () => {
       const user = userEvent.setup();
       render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
       await user.click(screen.getByRole("button", { name: /layout options/i }));
       await user.selectOptions(screen.getByLabelText(/^layout$/i), "vertical:forward");
       await user.selectOptions(screen.getByLabelText(/^base$/i), "left");
-      expect(screen.getByRole("status")).toHaveTextContent(/more events to the right/);
+      expect(summary()).toHaveTextContent(/more events to the right/);
       expect(screen.getByRole("button", { name: /scroll right/i })).toBeInTheDocument();
     });
   });

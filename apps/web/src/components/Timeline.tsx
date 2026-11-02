@@ -19,6 +19,7 @@ import {
   snapToScale,
   type BaseEdge,
   type LabelSize,
+  type ScrollBox,
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
@@ -53,6 +54,9 @@ const LABEL_GAP_PX = 8;
 /** Keyboard nudges are saved once the keys go quiet for this long, so
  * holding an arrow down is one encrypted write rather than dozens. */
 const KEYBOARD_COMMIT_DELAY_MS = 500;
+/** How long a scroll button's destination is trusted over the view's
+ * current position (see `scrollStack`). */
+const SCROLL_TARGET_TTL_MS = 1000;
 
 /** Where events hidden past an edge of the stack are, in words, and the
  * name of the button that scrolls to them. */
@@ -171,6 +175,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * events are hidden, so scrolling doesn't re-render every frame. */
   const stackOffsetRef = useRef(0);
   const [stackOffset, setStackOffset] = useState(0);
+  /** Where a scroll button last sent the view, while it is still getting
+   * there, so a second press during a smooth scroll goes a page further
+   * rather than a page from wherever the animation had reached. */
+  const scrollTargetRef = useRef<{ offset: number; at: number } | null>(null);
+  /** The native scrollbar's thickness, so the edge cues don't cover it. */
+  const [scrollbarGutter, setScrollbarGutter] = useState(0);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -346,6 +357,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     ? stackOverflow(placedLanes, laneSize, stackAxisSize, stackOffset)
     : { towardBase: 0, beyond: 0 };
   const sides = stackSides(orientation.base);
+  // How many events don't fit, independent of the scroll position: what
+  // is hidden when the view is at the base.
+  const notFitting = overflowing ? stackOverflow(placedLanes, laneSize, stackAxisSize, 0).beyond : 0;
 
   const viewport: Viewport = {
     width: viewportSize.width,
@@ -377,6 +391,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const actual = stackOffsetFromScroll(orientation.base, element);
     stackOffsetRef.current = actual;
     setStackOffset(actual);
+    // The scrollbar runs along the time axis's far side; clientLeft and
+    // clientTop are the border widths.
+    const gutter =
+      orientation.axis === "horizontal"
+        ? element.offsetWidth - element.clientWidth - 2 * element.clientLeft
+        : element.offsetHeight - element.clientHeight - 2 * element.clientTop;
+    setScrollbarGutter(Math.max(0, gutter));
   }, [overflowing, stackExtent, stackAxisSize, orientation.axis, orientation.base]);
 
   function handleScroll() {
@@ -384,9 +405,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     if (!element || !overflowing) return;
     const offset = stackOffsetFromScroll(orientation.base, element);
     stackOffsetRef.current = offset;
-    const before = stackOverflow(placedLanes, laneSize, stackAxisSize, stackOffset);
+    const target = scrollTargetRef.current;
+    if (target && Math.abs(target.offset - offset) < 1) scrollTargetRef.current = null;
     const after = stackOverflow(placedLanes, laneSize, stackAxisSize, offset);
-    if (before.towardBase !== after.towardBase || before.beyond !== after.beyond) {
+    if (after.towardBase !== hidden.towardBase || after.beyond !== hidden.beyond) {
       setStackOffset(offset);
     }
   }
@@ -397,8 +419,28 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const element = containerRef.current;
     if (!element) return;
     const page = Math.max(laneSize, stackAxisSize - laneSize);
-    const target = stackOffsetRef.current + (toward === "beyond" ? page : -page);
-    const position = scrollForStackOffset(orientation.base, target, element);
+    // A smooth scroll still under way counts as having arrived; one that
+    // was interrupted (by the user scrolling) stops counting after a
+    // second.
+    const pending = scrollTargetRef.current;
+    const from =
+      pending && Date.now() - pending.at < SCROLL_TARGET_TTL_MS
+        ? pending.offset
+        : stackOffsetRef.current;
+    const position = scrollForStackOffset(
+      orientation.base,
+      from + (toward === "beyond" ? page : -page),
+      element
+    );
+    // Clamped, so it is a place the view can actually reach.
+    scrollTargetRef.current = {
+      offset: stackOffsetFromScroll(orientation.base, {
+        ...scrollBoxOf(element),
+        scrollTop: "top" in position ? position.top : 0,
+        scrollLeft: "left" in position ? position.left : 0,
+      }),
+      at: Date.now(),
+    };
     const reduceMotion =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -480,7 +522,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const moved = moveEvent(drag.original, deltaMs);
     // Moving also re-ranks if the pointer crossed into another lane:
     // dragging away from the base means higher priority.
-    const bounds = containerRef.current?.getBoundingClientRect();
+    // Measured against the canvas, not the viewport: when the stack is
+    // scrolled, the canvas's rect carries the scroll offset.
+    const bounds = canvasRef.current?.getBoundingClientRect();
     let rank: string | undefined;
     if (bounds) {
       const targetLane = laneFromPointer(
@@ -747,12 +791,21 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * keeps zooming perceptually even across nine orders of magnitude --
    * a fixed additive step would crawl at one end and leap at the other.
    */
-  function handleWheel(e: React.WheelEvent) {
-    if (e.deltaY === 0) return;
-    e.preventDefault();
-    const factor = Math.exp(e.deltaY * 0.002);
-    setSpanSeconds((current) => zoomSpan(current, factor));
-  }
+  // Attached natively because React's wheel listener is passive, where
+  // `preventDefault` does nothing: the wheel would zoom *and* scroll the
+  // stack, jerking the view away from the base mid-zoom.
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      const factor = Math.exp(e.deltaY * 0.002);
+      setSpanSeconds((current) => zoomSpan(current, factor));
+    };
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, []);
 
   function handlePan(fractionOfSpan: number) {
     setCentre((current) => current + spanSeconds * 1000 * fractionOfSpan);
@@ -855,21 +908,37 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         </div>
       )}
 
-      {overflowing && (hidden.beyond > 0 || hidden.towardBase > 0) && (
+      {/* Announces only how many don't fit, which scrolling doesn't
+          change: the per-side counts below change at every lane boundary,
+          and as a live region they'd be read out over and over while
+          scrolling. */}
+      <p className="visually-hidden" role="status">
+        {notFitting > 0
+          ? `${notFitting} ${
+              notFitting === 1 ? "event doesn't" : "events don't"
+            } fit in the timeline; scroll it to see them.`
+          : ""}
+      </p>
+      {overflowing && (
         <div className="stack-overflow-note">
-          <span role="status">{overflowSummary(hidden, sides)}</span>
-          {(["beyond", "towardBase"] as const).map((side) =>
-            hidden[side] > 0 ? (
-              <button
-                key={side}
-                type="button"
-                className="header-link"
-                onClick={() => scrollStack(side === "beyond" ? "beyond" : "base")}
-              >
-                {SIDE_WORDS[sides[side]].scroll}
-              </button>
-            ) : null
-          )}
+          <span data-testid="stack-overflow-summary">{overflowSummary(hidden, sides)}</span>
+          {/* Both buttons stay while the stack overflows, disabled rather
+              than removed when their side has nothing left, so pressing one
+              to the end doesn't drop keyboard focus. aria-disabled, since a
+              natively disabled button loses focus too. */}
+          {(["beyond", "towardBase"] as const).map((side) => (
+            <button
+              key={side}
+              type="button"
+              className="header-link"
+              aria-disabled={hidden[side] === 0}
+              onClick={() => {
+                if (hidden[side] > 0) scrollStack(side === "beyond" ? "beyond" : "base");
+              }}
+            >
+              {SIDE_WORDS[sides[side]].scroll}
+            </button>
+          ))}
         </div>
       )}
 
@@ -881,6 +950,11 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             <div
               key={side}
               className={`stack-cue stack-cue-${sides[side]}`}
+              style={
+                orientation.axis === "horizontal"
+                  ? { right: 1 + scrollbarGutter }
+                  : { bottom: 1 + scrollbarGutter }
+              }
               aria-hidden="true"
             >
               <span className="stack-cue-chevron" />
@@ -895,7 +969,6 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
           tabIndex={0}
           aria-label="Timeline events"
           onScroll={handleScroll}
-          onWheel={handleWheel}
           onPointerDown={beginPan}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -903,6 +976,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         >
           <div
             className="timeline-canvas"
+            ref={canvasRef}
             style={{
               width: orientation.axis === "vertical" ? viewport.width : undefined,
               height: orientation.axis === "horizontal" ? viewport.height : undefined,
@@ -1059,7 +1133,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 }
 
 /** The overflow note's text: "3 more events above." or, scrolled part
- * way, "3 more events above, 2 below." Only called with something hidden. */
+ * way, "3 more events above, 2 below." */
 function overflowSummary(
   hidden: { towardBase: number; beyond: number },
   sides: { towardBase: BaseEdge; beyond: BaseEdge }
@@ -1067,6 +1141,17 @@ function overflowSummary(
   const [first, second] = (["beyond", "towardBase"] as const)
     .filter((side) => hidden[side] > 0)
     .map((side) => ({ count: hidden[side], where: SIDE_WORDS[sides[side]].where }));
+  // Overflowing by less than a lane: every event is (just) in view.
+  if (!first) return "Scroll the timeline to see the rest of the stack.";
   const lead = `${first!.count} more ${first!.count === 1 ? "event" : "events"} ${first!.where}`;
   return second ? `${lead}, ${second.count} ${second.where}.` : `${lead}.`;
+}
+
+function scrollBoxOf(element: HTMLElement): Omit<ScrollBox, "scrollTop" | "scrollLeft"> {
+  return {
+    scrollHeight: element.scrollHeight,
+    scrollWidth: element.scrollWidth,
+    clientHeight: element.clientHeight,
+    clientWidth: element.clientWidth,
+  };
 }
