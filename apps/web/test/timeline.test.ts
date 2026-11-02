@@ -12,6 +12,10 @@ import {
   estimateLabelSize,
   laneSizeFor,
   fillToBase,
+  stackOffsetFromScroll,
+  scrollForStackOffset,
+  stackOverflow,
+  stackSides,
   validBases,
   isValidOrientation,
   DEFAULT_ORIENTATION,
@@ -381,5 +385,58 @@ describe("fillToBase", () => {
       const base = { top: 0, bottom: viewport.height, left: 0, right: viewport.width }[side];
       expect(edge).toBe(base);
     }
+  });
+});
+
+describe("stack-axis overflow", () => {
+  const box = { scrollHeight: 1000, clientHeight: 400, scrollWidth: 900, clientWidth: 300 };
+
+  it("measures the scroll offset from the base, whichever edge it is", () => {
+    expect(stackOffsetFromScroll("top", { ...box, scrollTop: 50, scrollLeft: 0 })).toBe(50);
+    // Base at the bottom: scrolled fully down is the base.
+    expect(stackOffsetFromScroll("bottom", { ...box, scrollTop: 600, scrollLeft: 0 })).toBe(0);
+    expect(stackOffsetFromScroll("bottom", { ...box, scrollTop: 0, scrollLeft: 0 })).toBe(600);
+    expect(stackOffsetFromScroll("left", { ...box, scrollTop: 0, scrollLeft: 70 })).toBe(70);
+    expect(stackOffsetFromScroll("right", { ...box, scrollTop: 0, scrollLeft: 600 })).toBe(0);
+    expect(stackOffsetFromScroll("right", { ...box, scrollTop: 0, scrollLeft: 100 })).toBe(500);
+  });
+
+  it("converts an offset from the base back to a scroll position, clamped", () => {
+    expect(scrollForStackOffset("top", 50, box)).toEqual({ top: 50 });
+    expect(scrollForStackOffset("bottom", 0, box)).toEqual({ top: 600 });
+    expect(scrollForStackOffset("bottom", 100, box)).toEqual({ top: 500 });
+    expect(scrollForStackOffset("bottom", 5000, box)).toEqual({ top: 0 });
+    expect(scrollForStackOffset("left", -10, box)).toEqual({ left: 0 });
+    expect(scrollForStackOffset("right", 0, box)).toEqual({ left: 600 });
+    // Round trip.
+    for (const base of ["top", "bottom", "left", "right"] as const) {
+      const pos = scrollForStackOffset(base, 123, box);
+      expect(
+        stackOffsetFromScroll(base, {
+          ...box,
+          scrollTop: "top" in pos ? pos.top : 0,
+          scrollLeft: "left" in pos ? pos.left : 0,
+        })
+      ).toBe(123);
+    }
+  });
+
+  it("counts the events hidden on each side of the visible stack", () => {
+    // Lanes of 30px, 100px visible: at the base, lanes 0-2 are whole.
+    const lanes = [0, 0, 1, 2, 3, 4, 5];
+    expect(stackOverflow(lanes, 30, 100, 0)).toEqual({ towardBase: 0, beyond: 3 });
+    // Scrolled 60px away: lanes 0 and 1 are behind, 2-4 visible, 5 beyond.
+    expect(stackOverflow(lanes, 30, 100, 60)).toEqual({ towardBase: 3, beyond: 1 });
+    // A partly hidden lane counts as hidden.
+    expect(stackOverflow(lanes, 30, 100, 10)).toEqual({ towardBase: 2, beyond: 3 });
+    // Sub-pixel scroll positions don't make a whole lane count as hidden.
+    expect(stackOverflow([0, 1, 2], 30, 90, 0.4)).toEqual({ towardBase: 0, beyond: 0 });
+  });
+
+  it("names the physical side events are hidden on", () => {
+    expect(stackSides("bottom")).toEqual({ towardBase: "bottom", beyond: "top" });
+    expect(stackSides("top")).toEqual({ towardBase: "top", beyond: "bottom" });
+    expect(stackSides("left")).toEqual({ towardBase: "left", beyond: "right" });
+    expect(stackSides("right")).toEqual({ towardBase: "right", beyond: "left" });
   });
 });

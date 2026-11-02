@@ -11,9 +11,15 @@ import {
   estimateLabelSize,
   laneSizeFor,
   fillToBase,
+  stackOffsetFromScroll,
+  scrollForStackOffset,
+  stackOverflow,
+  stackSides,
   zoomSpan,
   snapToScale,
+  type BaseEdge,
   type LabelSize,
+  type ScrollBox,
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
@@ -48,6 +54,18 @@ const LABEL_GAP_PX = 8;
 /** Keyboard nudges are saved once the keys go quiet for this long, so
  * holding an arrow down is one encrypted write rather than dozens. */
 const KEYBOARD_COMMIT_DELAY_MS = 500;
+/** How long a scroll button's destination is trusted over the view's
+ * current position (see `scrollStack`). */
+const SCROLL_TARGET_TTL_MS = 1000;
+
+/** Where events hidden past an edge of the stack are, in words, and the
+ * name of the button that scrolls to them. */
+const SIDE_WORDS: Record<BaseEdge, { where: string; scroll: string }> = {
+  top: { where: "above", scroll: "Scroll up" },
+  bottom: { where: "below", scroll: "Scroll down" },
+  left: { where: "to the left", scroll: "Scroll left" },
+  right: { where: "to the right", scroll: "Scroll right" },
+};
 
 interface TimelineProps {
   events: DecryptedEvent[];
@@ -151,6 +169,19 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   /** The root font size, for estimates. Re-read whenever labels are
    * measured, so it follows the user's text size. */
   const [fontPx, setFontPx] = useState(rootFontPx);
+  /** How far the stack axis is scrolled away from the base, in px (see
+   * `stackOffsetFromScroll`). The ref is always exact and is what the view
+   * is re-anchored to; the state only changes when that changes which
+   * events are hidden, so scrolling doesn't re-render every frame. */
+  const stackOffsetRef = useRef(0);
+  const [stackOffset, setStackOffset] = useState(0);
+  /** Where a scroll button last sent the view, while it is still getting
+   * there, so a second press during a smooth scroll goes a page further
+   * rather than a page from wherever the animation had reached. */
+  const scrollTargetRef = useRef<{ offset: number; at: number } | null>(null);
+  /** The native scrollbar's thickness, so the edge cues don't cover it. */
+  const [scrollbarGutter, setScrollbarGutter] = useState(0);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // The present indicator has to actually move, so tick it. One second is
   // enough for a day view and cheap; finer zooms would want faster.
@@ -321,9 +352,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   const stackAxisSize =
     orientation.axis === "horizontal" ? viewportSize.height : viewportSize.width;
   const overflowing = stackExtent > stackAxisSize;
-  const hiddenCount = overflowing
-    ? placements.filter((p) => (p.lane + 1) * laneSize > stackAxisSize).length
-    : 0;
+  const placedLanes = placements.map((p) => p.lane);
+  const hidden = overflowing
+    ? stackOverflow(placedLanes, laneSize, stackAxisSize, stackOffset)
+    : { towardBase: 0, beyond: 0 };
+  const sides = stackSides(orientation.base);
+  // How many events don't fit, independent of the scroll position: what
+  // is hidden when the view is at the base.
+  const notFitting = overflowing ? stackOverflow(placedLanes, laneSize, stackAxisSize, 0).beyond : 0;
 
   const viewport: Viewport = {
     width: viewportSize.width,
@@ -332,6 +368,89 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   };
   if (orientation.axis === "vertical") {
     viewport.width = Math.max(viewportSize.width, stackExtent);
+  }
+
+  /**
+   * Keeps the view the same distance from the base whenever the stack's
+   * size or the layout changes -- which also opens it *at* the base.
+   * Without this, a base at the bottom (the default) or the right opened
+   * at scroll position 0: the lanes furthest from the base, with the base
+   * itself out of view.
+   */
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    if (!overflowing) {
+      stackOffsetRef.current = 0;
+      setStackOffset(0);
+      return;
+    }
+    const position = scrollForStackOffset(orientation.base, stackOffsetRef.current, element);
+    if ("top" in position) element.scrollTop = position.top;
+    else element.scrollLeft = position.left;
+    const actual = stackOffsetFromScroll(orientation.base, element);
+    stackOffsetRef.current = actual;
+    setStackOffset(actual);
+    // The scrollbar runs along the time axis's far side; clientLeft and
+    // clientTop are the border widths.
+    const gutter =
+      orientation.axis === "horizontal"
+        ? element.offsetWidth - element.clientWidth - 2 * element.clientLeft
+        : element.offsetHeight - element.clientHeight - 2 * element.clientTop;
+    setScrollbarGutter(Math.max(0, gutter));
+  }, [overflowing, stackExtent, stackAxisSize, orientation.axis, orientation.base]);
+
+  function handleScroll() {
+    const element = containerRef.current;
+    if (!element || !overflowing) return;
+    const offset = stackOffsetFromScroll(orientation.base, element);
+    stackOffsetRef.current = offset;
+    const target = scrollTargetRef.current;
+    if (target && Math.abs(target.offset - offset) < 1) scrollTargetRef.current = null;
+    const after = stackOverflow(placedLanes, laneSize, stackAxisSize, offset);
+    if (after.towardBase !== hidden.towardBase || after.beyond !== hidden.beyond) {
+      setStackOffset(offset);
+    }
+  }
+
+  /** Scrolls one view's worth toward the hidden events, less a lane, so
+   * the last lane seen stays in view for context. */
+  function scrollStack(toward: "base" | "beyond") {
+    const element = containerRef.current;
+    if (!element) return;
+    const page = Math.max(laneSize, stackAxisSize - laneSize);
+    // A smooth scroll still under way counts as having arrived; one that
+    // was interrupted (by the user scrolling) stops counting after a
+    // second.
+    const pending = scrollTargetRef.current;
+    const from =
+      pending && Date.now() - pending.at < SCROLL_TARGET_TTL_MS
+        ? pending.offset
+        : stackOffsetRef.current;
+    const position = scrollForStackOffset(
+      orientation.base,
+      from + (toward === "beyond" ? page : -page),
+      element
+    );
+    // Clamped, so it is a place the view can actually reach.
+    scrollTargetRef.current = {
+      offset: stackOffsetFromScroll(orientation.base, {
+        ...scrollBoxOf(element),
+        scrollTop: "top" in position ? position.top : 0,
+        scrollLeft: "left" in position ? position.left : 0,
+      }),
+      at: Date.now(),
+    };
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (typeof element.scrollTo === "function") {
+      element.scrollTo({ ...position, behavior: reduceMotion ? "auto" : "smooth" });
+    } else if ("top" in position) {
+      element.scrollTop = position.top;
+    } else {
+      element.scrollLeft = position.left;
+    }
   }
 
   const nowFraction = timeFraction(new Date(now), viewStart, viewEnd);
@@ -403,7 +522,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const moved = moveEvent(drag.original, deltaMs);
     // Moving also re-ranks if the pointer crossed into another lane:
     // dragging away from the base means higher priority.
-    const bounds = containerRef.current?.getBoundingClientRect();
+    // Measured against the canvas, not the viewport: when the stack is
+    // scrolled, the canvas's rect carries the scroll offset.
+    const bounds = canvasRef.current?.getBoundingClientRect();
     let rank: string | undefined;
     if (bounds) {
       const targetLane = laneFromPointer(
@@ -670,12 +791,21 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * keeps zooming perceptually even across nine orders of magnitude --
    * a fixed additive step would crawl at one end and leap at the other.
    */
-  function handleWheel(e: React.WheelEvent) {
-    if (e.deltaY === 0) return;
-    e.preventDefault();
-    const factor = Math.exp(e.deltaY * 0.002);
-    setSpanSeconds((current) => zoomSpan(current, factor));
-  }
+  // Attached natively because React's wheel listener is passive, where
+  // `preventDefault` does nothing: the wheel would zoom *and* scroll the
+  // stack, jerking the view away from the base mid-zoom.
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      const factor = Math.exp(e.deltaY * 0.002);
+      setSpanSeconds((current) => zoomSpan(current, factor));
+    };
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, []);
 
   function handlePan(fractionOfSpan: number) {
     setCentre((current) => current + spanSeconds * 1000 * fractionOfSpan);
@@ -778,178 +908,250 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
         </div>
       )}
 
+      {/* Announces only how many don't fit, which scrolling doesn't
+          change: the per-side counts below change at every lane boundary,
+          and as a live region they'd be read out over and over while
+          scrolling. */}
+      <p className="visually-hidden" role="status">
+        {notFitting > 0
+          ? `${notFitting} ${
+              notFitting === 1 ? "event doesn't" : "events don't"
+            } fit in the timeline; scroll it to see them.`
+          : ""}
+      </p>
       {overflowing && (
-        <p className="stack-overflow-note" role="status">
-          {hiddenCount} more {hiddenCount === 1 ? "event" : "events"} stacked beyond the
-          edge &mdash; scroll to see {hiddenCount === 1 ? "it" : "them"}.
-        </p>
+        <div className="stack-overflow-note">
+          <span data-testid="stack-overflow-summary">{overflowSummary(hidden, sides)}</span>
+          {/* Both buttons stay while the stack overflows, disabled rather
+              than removed when their side has nothing left, so pressing one
+              to the end doesn't drop keyboard focus. aria-disabled, since a
+              natively disabled button loses focus too. */}
+          {(["beyond", "towardBase"] as const).map((side) => (
+            <button
+              key={side}
+              type="button"
+              className="header-link"
+              aria-disabled={hidden[side] === 0}
+              onClick={() => {
+                if (hidden[side] > 0) scrollStack(side === "beyond" ? "beyond" : "base");
+              }}
+            >
+              {SIDE_WORDS[sides[side]].scroll}
+            </button>
+          ))}
+        </div>
       )}
 
-      <div
-        className={`timeline-viewport timeline-${orientation.axis} direction-${orientation.direction} base-${orientation.base}${
-          overflowing ? " timeline-scrollable" : ""
-        }`}
-        ref={containerRef}
-        tabIndex={0}
-        aria-label="Timeline events"
-        onWheel={handleWheel}
-        onPointerDown={beginPan}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <div
-          className="timeline-canvas"
-          style={{
-            width: orientation.axis === "vertical" ? viewport.width : undefined,
-            height: orientation.axis === "horizontal" ? viewport.height : undefined,
-          }}
-        >
-          {/* Present indicator */}
-          {nowFraction >= 0 && nowFraction <= 1 && (
+      <div className="timeline-frame">
+        {/* Edge cues: a fade and a chevron on each edge with events hidden
+            past it. Decorative; the note above says the same in words. */}
+        {(["beyond", "towardBase"] as const).map((side) =>
+          overflowing && hidden[side] > 0 ? (
             <div
-              className={`present-indicator present-${orientation.axis}`}
-              data-testid="present-indicator"
+              key={side}
+              className={`stack-cue stack-cue-${sides[side]}`}
               style={
                 orientation.axis === "horizontal"
-                  ? {
-                      left: `${
-                        (orientation.direction === "forward" ? nowFraction : 1 - nowFraction) * 100
-                      }%`,
-                    }
-                  : {
-                      top: `${
-                        (orientation.direction === "forward" ? nowFraction : 1 - nowFraction) * 100
-                      }%`,
-                    }
+                  ? { right: 1 + scrollbarGutter }
+                  : { bottom: 1 + scrollbarGutter }
               }
               aria-hidden="true"
-            />
-          )}
-
-          {/* Rendered in the stable order of `events`, not rank order: if
-              re-ranking reordered the DOM, the focused label would be
-              moved and lose keyboard focus. */}
-          {[...placements]
-            .sort((a, b) => (eventOrder.get(a.item.id) ?? 0) - (eventOrder.get(b.item.id) ?? 0))
-            .map(({ item, lane }) => {
-            const { event, occurrences } = item;
-            const openEnded = item.endMs === null;
-            const toBase = fillToBase(lane, orientation, viewport.laneSize);
-
-            return (
+            >
+              <span className="stack-cue-chevron" />
+            </div>
+          ) : null
+        )}
+        <div
+          className={`timeline-viewport timeline-${orientation.axis} direction-${orientation.direction} base-${orientation.base}${
+            overflowing ? " timeline-scrollable" : ""
+          }`}
+          ref={containerRef}
+          tabIndex={0}
+          aria-label="Timeline events"
+          onScroll={handleScroll}
+          onPointerDown={beginPan}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          <div
+            className="timeline-canvas"
+            ref={canvasRef}
+            style={{
+              width: orientation.axis === "vertical" ? viewport.width : undefined,
+              height: orientation.axis === "horizontal" ? viewport.height : undefined,
+            }}
+          >
+            {/* Present indicator */}
+            {nowFraction >= 0 && nowFraction <= 1 && (
               <div
-                key={event.id}
-                className={`event-series${event.important ? " event-series-important" : ""}`}
-                data-testid={`event-series-${event.id}`}
-                data-lane={lane}
-                data-occurrences={occurrences.length}
-              >
-                {occurrences.map((occurrence, index) => {
-                  const startFraction = timeFraction(occurrence.start, viewStart, viewEnd);
-                  const endFraction = occurrence.end
-                    ? timeFraction(occurrence.end, viewStart, viewEnd)
-                    : 1;
-                  const rect = rectFor(
-                    Math.max(0, Math.min(1, startFraction)),
-                    Math.max(0, Math.min(1, endFraction)),
-                    lane,
-                    orientation,
-                    viewport
-                  );
-                  // The name belongs to the series, not to each repeat, so
-                  // only the first visible occurrence carries it.
-                  const isFirst = index === 0;
+                className={`present-indicator present-${orientation.axis}`}
+                data-testid="present-indicator"
+                style={
+                  orientation.axis === "horizontal"
+                    ? {
+                        left: `${
+                          (orientation.direction === "forward" ? nowFraction : 1 - nowFraction) * 100
+                        }%`,
+                      }
+                    : {
+                        top: `${
+                          (orientation.direction === "forward" ? nowFraction : 1 - nowFraction) * 100
+                        }%`,
+                      }
+                }
+                aria-hidden="true"
+              />
+            )}
 
-                  return (
-                    <div
-                      key={`${event.id}-${index}`}
-                      className={`event-modal${openEnded ? " event-modal-open-ended" : ""}${
-                        event.important ? " event-modal-important" : ""
-                      }${occurrence.skipped ? " event-modal-skipped" : ""}`}
-                      style={{
-                        left: rect.left,
-                        top: rect.top,
-                        width: Math.max(rect.width, 2),
-                        height: Math.max(rect.height, 2),
-                      }}
-                      data-testid={isFirst ? `event-modal-${event.id}` : undefined}
-                      data-lane={lane}
-                    >
-                      {/* The event stays in its lane; only its fill
-                          reaches down to the base, and lets clicks
-                          through to whatever is in the lanes below. */}
+            {/* Rendered in the stable order of `events`, not rank order: if
+                re-ranking reordered the DOM, the focused label would be
+                moved and lose keyboard focus. */}
+            {[...placements]
+              .sort((a, b) => (eventOrder.get(a.item.id) ?? 0) - (eventOrder.get(b.item.id) ?? 0))
+              .map(({ item, lane }) => {
+              const { event, occurrences } = item;
+              const openEnded = item.endMs === null;
+              const toBase = fillToBase(lane, orientation, viewport.laneSize);
+
+              return (
+                <div
+                  key={event.id}
+                  className={`event-series${event.important ? " event-series-important" : ""}`}
+                  data-testid={`event-series-${event.id}`}
+                  data-lane={lane}
+                  data-occurrences={occurrences.length}
+                >
+                  {occurrences.map((occurrence, index) => {
+                    const startFraction = timeFraction(occurrence.start, viewStart, viewEnd);
+                    const endFraction = occurrence.end
+                      ? timeFraction(occurrence.end, viewStart, viewEnd)
+                      : 1;
+                    const rect = rectFor(
+                      Math.max(0, Math.min(1, startFraction)),
+                      Math.max(0, Math.min(1, endFraction)),
+                      lane,
+                      orientation,
+                      viewport
+                    );
+                    // The name belongs to the series, not to each repeat, so
+                    // only the first visible occurrence carries it.
+                    const isFirst = index === 0;
+
+                    return (
                       <div
-                        className={`event-modal-fill fade-${orientation.base}${
-                          openEnded ? " fade-open-ended" : ""
-                        }`}
-                        style={{ [toBase.side]: -toBase.px }}
-                        aria-hidden="true"
-                      />
+                        key={`${event.id}-${index}`}
+                        className={`event-modal${openEnded ? " event-modal-open-ended" : ""}${
+                          event.important ? " event-modal-important" : ""
+                        }${occurrence.skipped ? " event-modal-skipped" : ""}`}
+                        style={{
+                          left: rect.left,
+                          top: rect.top,
+                          width: Math.max(rect.width, 2),
+                          height: Math.max(rect.height, 2),
+                        }}
+                        data-testid={isFirst ? `event-modal-${event.id}` : undefined}
+                        data-lane={lane}
+                      >
+                        {/* The event stays in its lane; only its fill
+                            reaches down to the base, and lets clicks
+                            through to whatever is in the lanes below. */}
+                        <div
+                          className={`event-modal-fill fade-${orientation.base}${
+                            openEnded ? " fade-open-ended" : ""
+                          }`}
+                          style={{ [toBase.side]: -toBase.px }}
+                          aria-hidden="true"
+                        />
 
-                      {event.canEdit && (
-                        <>
-                          <span
-                            className="resize-handle resize-start"
-                            role="separator"
-                            aria-label={`Adjust start of ${event.title || "untitled event"}`}
-                            onPointerDown={(e) =>
-                              beginDrag(e, event, { kind: "resize", edge: "start" })
-                            }
-                          />
-                          <span
-                            className="resize-handle resize-end"
-                            role="separator"
-                            aria-label={`Adjust end of ${event.title || "untitled event"}`}
-                            onPointerDown={(e) =>
-                              beginDrag(e, event, { kind: "resize", edge: "end" })
-                            }
-                          />
-                        </>
-                      )}
+                        {event.canEdit && (
+                          <>
+                            <span
+                              className="resize-handle resize-start"
+                              role="separator"
+                              aria-label={`Adjust start of ${event.title || "untitled event"}`}
+                              onPointerDown={(e) =>
+                                beginDrag(e, event, { kind: "resize", edge: "start" })
+                              }
+                            />
+                            <span
+                              className="resize-handle resize-end"
+                              role="separator"
+                              aria-label={`Adjust end of ${event.title || "untitled event"}`}
+                              onPointerDown={(e) =>
+                                beginDrag(e, event, { kind: "resize", edge: "end" })
+                              }
+                            />
+                          </>
+                        )}
 
-                      {isFirst && (
-                        <button
-                          type="button"
-                          className="event-modal-label"
-                          data-label-key={labelKey(event)}
-                          aria-describedby={
-                            event.canEdit && onChangeEvent ? keysHelpId : undefined
-                          }
-                          onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
-                          onKeyDown={(e) => handleEventKeyDown(e, event)}
-                          onBlur={commitNudge}
-                          onClick={(e) =>
-                            void openEvent(
-                              event,
-                              (e.currentTarget as Element).getBoundingClientRect(),
-                              occurrence.start
-                            )
-                          }
-                        >
-                          {event.important && (
-                            <>
-                              <span className="visually-hidden">Important: </span>
-                              <span aria-hidden="true" className="important-star">
-                                &#9733;
-                              </span>
-                            </>
-                          )}
-                          {event.title?.trim() ? (
-                            <span className="event-modal-title">{event.title}</span>
-                          ) : (
-                            <span className="event-modal-square" aria-label="Untitled event" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                        {isFirst && (
+                          <button
+                            type="button"
+                            className="event-modal-label"
+                            data-label-key={labelKey(event)}
+                            aria-describedby={
+                              event.canEdit && onChangeEvent ? keysHelpId : undefined
+                            }
+                            onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
+                            onKeyDown={(e) => handleEventKeyDown(e, event)}
+                            onBlur={commitNudge}
+                            onClick={(e) =>
+                              void openEvent(
+                                event,
+                                (e.currentTarget as Element).getBoundingClientRect(),
+                                occurrence.start
+                              )
+                            }
+                          >
+                            {event.important && (
+                              <>
+                                <span className="visually-hidden">Important: </span>
+                                <span aria-hidden="true" className="important-star">
+                                  &#9733;
+                                </span>
+                              </>
+                            )}
+                            {event.title?.trim() ? (
+                              <span className="event-modal-title">{event.title}</span>
+                            ) : (
+                              <span className="event-modal-square" aria-label="Untitled event" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
   );
+}
+
+/** The overflow note's text: "3 more events above." or, scrolled part
+ * way, "3 more events above, 2 below." */
+function overflowSummary(
+  hidden: { towardBase: number; beyond: number },
+  sides: { towardBase: BaseEdge; beyond: BaseEdge }
+): string {
+  const [first, second] = (["beyond", "towardBase"] as const)
+    .filter((side) => hidden[side] > 0)
+    .map((side) => ({ count: hidden[side], where: SIDE_WORDS[sides[side]].where }));
+  // Overflowing by less than a lane: every event is (just) in view.
+  if (!first) return "Scroll the timeline to see the rest of the stack.";
+  const lead = `${first!.count} more ${first!.count === 1 ? "event" : "events"} ${first!.where}`;
+  return second ? `${lead}, ${second.count} ${second.where}.` : `${lead}.`;
+}
+
+function scrollBoxOf(element: HTMLElement): Omit<ScrollBox, "scrollTop" | "scrollLeft"> {
+  return {
+    scrollHeight: element.scrollHeight,
+    scrollWidth: element.scrollWidth,
+    clientHeight: element.clientHeight,
+    clientWidth: element.clientWidth,
+  };
 }

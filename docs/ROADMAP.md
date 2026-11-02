@@ -350,7 +350,64 @@ worth of dead code and fixes what the model switch broke.
       - Also from review: the important star's margin is logical, so it
         stays between star and name when set sideways; measurements are
         keyed by the title as rendered, not trimmed.
-- [ ] Clear affordance that the stack axis scrolls when lanes overflow.
+- [x] **Clear affordance that the stack axis scrolls when lanes
+      overflow.** A count ("N more events stacked beyond the edge") and a
+      fade already existed; exercising them in Chromium showed they
+      mostly pointed the wrong way.
+      - Found while doing it: with the base at the **bottom** (the
+        default) or the **right**, an overflowing timeline opened at
+        scroll position 0 -- the lanes *furthest* from the base -- with
+        the base itself scrolled out of view, and the fade on the edge
+        that had nothing past it. The view is now kept a fixed distance
+        from the base (`stackOffsetFromScroll` / `scrollForStackOffset`,
+        pure), re-applied whenever the stack's size or the layout changes,
+        so it opens at the base and stays put as lanes come and go.
+      - The note now says how many events are hidden **on each side**,
+        and follows the scroll position ("34 more events above, 18
+        below."), with a button per side that scrolls a view's worth
+        (less a lane, for context) toward them, smoothly unless reduced
+        motion is preferred. The old count assumed the view never moved.
+        Counts were checked against the real DOM at several scroll
+        positions. (`stackOverflow`: a partly visible lane counts as
+        hidden.)
+      - Each edge with events past it gets a cue -- a fade plus a chevron
+        on its own surface-coloured disc (5.0:1, so it never depends on
+        the colour of the fill behind it) -- in all four layouts. The old
+        fade existed only for horizontal layouts, and only on one edge.
+        The cues sit outside the scrolling box, so they stay put while
+        it scrolls (the old sticky fade also added 24px of empty scroll).
+      - Found while doing it: the stack axis could not be scrolled on a
+        **touch screen** at all -- the canvas had `touch-action: none`
+        for drag-to-pan, and the canvas fills the scroll area. Drags
+        across the time axis are now left to the browser (`pan-y` /
+        `pan-x`), so they scroll the stack, while drags along it still
+        pan time. Verified with synthesized touch input in Chromium.
+        Event labels keep `touch-action: none` (they drag both ways), so
+        a swipe has to start on the background.
+      - Simplification: the scroll state only re-renders the timeline
+        when it changes which events are hidden, not every scroll frame.
+      - Found in PR review and fixed: dragging an event re-ranked it by
+        the pointer's position in the *viewport*, ignoring the scroll
+        offset -- harmless while the view opened at scroll 0, but opening
+        at the base made every drag of a base-lane event jump it ~28
+        lanes. Lanes are now measured against the canvas. Also: the wheel
+        both zoomed and scrolled the stack (React's wheel listener is
+        passive, so `preventDefault` did nothing; now a native listener);
+        a scroll button that ran out of events unmounted and dropped
+        focus (both stay while overflowing, `aria-disabled` when empty);
+        the per-side counts were a live region that re-announced at every
+        lane while scrolling (the live region now says only how many
+        don't fit, which scrolling doesn't change); the cues covered names
+        in the outermost visible lane, focus ring included (now layered
+        under names, over fills), and the scrollbar (now inset by its
+        measured width); a second press during a smooth scroll went a page
+        from wherever the animation was (now from where the first was
+        headed); and a swipe reaching the end of the stack chained on to
+        scroll the page (`overscroll-behavior: contain`).
+      - Known trade-off: when the stack *doesn't* overflow, a vertical
+        swipe over the timeline now scrolls the page (it previously did
+        nothing). That is the expected behaviour for a page on a phone,
+        and a horizontal swipe still pans time.
 - [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
       Monday of every month"). Schema + UI work; `rrule` already supports
       all three.
