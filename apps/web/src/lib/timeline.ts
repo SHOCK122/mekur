@@ -341,3 +341,108 @@ export function laneSizeFor(labelThicknesses: Iterable<number>, minimum: number)
   }
   return size;
 }
+
+// ---------------------------------------------------------------------------
+// Stack-axis overflow
+// ---------------------------------------------------------------------------
+//
+// When more lanes are stacked than fit, the stack axis scrolls. Positions
+// along it are measured as an *offset from the base*: 0 means the base
+// edge is in view, whichever physical edge the base is. That keeps the
+// view anchored to the base as lanes come and go, and lets one rule cover
+// all four layouts.
+
+/** The scroll state of the timeline's viewport, as the DOM reports it. */
+export interface ScrollBox {
+  scrollTop: number;
+  scrollLeft: number;
+  scrollHeight: number;
+  scrollWidth: number;
+  clientHeight: number;
+  clientWidth: number;
+}
+
+function maxScroll(base: BaseEdge, box: Omit<ScrollBox, "scrollTop" | "scrollLeft">): number {
+  return base === "top" || base === "bottom"
+    ? Math.max(0, box.scrollHeight - box.clientHeight)
+    : Math.max(0, box.scrollWidth - box.clientWidth);
+}
+
+/** How far the view is scrolled away from the base, in px. */
+export function stackOffsetFromScroll(base: BaseEdge, box: ScrollBox): number {
+  const max = maxScroll(base, box);
+  switch (base) {
+    case "top":
+      return box.scrollTop;
+    case "bottom":
+      return Math.max(0, max - box.scrollTop);
+    case "left":
+      return box.scrollLeft;
+    case "right":
+      return Math.max(0, max - box.scrollLeft);
+  }
+}
+
+/** The scroll position that puts the view `offset` px away from the base,
+ * clamped to what the content allows. */
+export function scrollForStackOffset(
+  base: BaseEdge,
+  offset: number,
+  box: Omit<ScrollBox, "scrollTop" | "scrollLeft">
+): { top: number } | { left: number } {
+  const max = maxScroll(base, box);
+  const clamped = Math.min(max, Math.max(0, offset));
+  switch (base) {
+    case "top":
+      return { top: clamped };
+    case "bottom":
+      return { top: max - clamped };
+    case "left":
+      return { left: clamped };
+    case "right":
+      return { left: max - clamped };
+  }
+}
+
+export interface StackOverflow {
+  /** Events (wholly or partly) hidden between the view and the base. */
+  towardBase: number;
+  /** Events (wholly or partly) hidden beyond the view, away from the base. */
+  beyond: number;
+}
+
+/**
+ * How many events lie outside the visible part of the stack axis, on each
+ * side. `lanes` holds each event's lane; `offset` is the distance scrolled
+ * away from the base. A lane only partly in view counts as hidden, since
+ * its name may be cut off. Half a pixel of slack absorbs sub-pixel scroll
+ * positions.
+ */
+export function stackOverflow(
+  lanes: Iterable<number>,
+  laneSize: number,
+  visibleSize: number,
+  offset: number
+): StackOverflow {
+  const slack = 0.5;
+  const result: StackOverflow = { towardBase: 0, beyond: 0 };
+  for (const lane of lanes) {
+    const near = lane * laneSize;
+    if (near < offset - slack) result.towardBase++;
+    else if (near + laneSize > offset + visibleSize + slack) result.beyond++;
+  }
+  return result;
+}
+
+const OPPOSITE_EDGE: Record<BaseEdge, BaseEdge> = {
+  top: "bottom",
+  bottom: "top",
+  left: "right",
+  right: "left",
+};
+
+/** The physical edge on each side of the stack: the base, and the one
+ * opposite it where higher lanes run off. */
+export function stackSides(base: BaseEdge): { towardBase: BaseEdge; beyond: BaseEdge } {
+  return { towardBase: base, beyond: OPPOSITE_EDGE[base] };
+}

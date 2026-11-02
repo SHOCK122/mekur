@@ -335,20 +335,125 @@ describe("Timeline", () => {
     expect(modal.querySelector(".fade-open-ended")).toBeTruthy();
   });
 
-  it("announces when events are stacked beyond the visible edge", () => {
-    // A bare scrollbar is easy to miss and unreliable on touch, so the
-    // overflow is stated in text as well.
-    const start = new Date(Date.now() + 60 * 60 * 1000);
-    const many = Array.from({ length: 40 }, (_, i) =>
-      makeEvent({
-        id: `e${i}`,
-        title: `Event ${i}`,
-        rank: `r${String(i).padStart(3, "0")}`,
-        startTime: start.toISOString(),
-      })
-    );
-    render(<Timeline events={many} onEditEvent={() => {}} />);
-    expect(screen.getByRole("status")).toHaveTextContent(/more events stacked beyond the edge/i);
+  describe("when events stack past the edge", () => {
+    // jsdom has no layout: the viewport is taken to be 800x320 and every
+    // lane 28px, so 40 simultaneous events need 1,120px and lanes 0-10
+    // fit at the base. Scroll geometry is stubbed where a test needs it.
+    function manyEvents(count = 40) {
+      const start = new Date(Date.now() + 60 * 60 * 1000);
+      return Array.from({ length: count }, (_, i) =>
+        makeEvent({
+          id: `e${i}`,
+          title: `Event ${i}`,
+          rank: `r${String(i).padStart(3, "0")}`,
+          startTime: start.toISOString(),
+        })
+      );
+    }
+
+    function stubScrollBox(el: HTMLElement, box: { scrollHeight: number; clientHeight: number }) {
+      let top = 0;
+      Object.defineProperty(el, "scrollHeight", { configurable: true, value: box.scrollHeight });
+      Object.defineProperty(el, "clientHeight", { configurable: true, value: box.clientHeight });
+      Object.defineProperty(el, "scrollTop", {
+        configurable: true,
+        get: () => top,
+        set: (v: number) => {
+          top = v;
+        },
+      });
+      const scrollTo = vi.fn((options: ScrollToOptions) => {
+        if (options.top !== undefined) top = options.top;
+      });
+      el.scrollTo = scrollTo as unknown as typeof el.scrollTo;
+      return scrollTo;
+    }
+
+    it("says how many are hidden and on which side", () => {
+      // A bare scrollbar is easy to miss and unreliable on touch, so the
+      // overflow is stated in text as well. The default base is the
+      // bottom, so the overflowing lanes are above.
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      expect(screen.getByRole("status")).toHaveTextContent("29 more events above");
+      expect(screen.getByRole("status")).not.toHaveTextContent(/below/);
+      expect(screen.getByRole("button", { name: /scroll up/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /scroll down/i })).toBeNull();
+    });
+
+    it("cues the edge the hidden events are beyond", () => {
+      const { container } = render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      expect(container.querySelector(".stack-cue-top")).toBeTruthy();
+      expect(container.querySelector(".stack-cue-bottom")).toBeNull();
+    });
+
+    it("says nothing when every lane fits", () => {
+      const { container } = render(<Timeline events={manyEvents(5)} onEditEvent={() => {}} />);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(container.querySelector(".stack-cue-top, .stack-cue-bottom")).toBeNull();
+    });
+
+    it("opens scrolled to the base", () => {
+      // Regression: with the base at the bottom, the viewport opened at
+      // scrollTop 0 -- showing the lanes furthest from the base and hiding
+      // the base itself.
+      const setTop = vi.fn();
+      const restore = [
+        vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (
+          this: HTMLElement
+        ) {
+          return this.classList.contains("timeline-viewport") ? 1120 : 0;
+        }),
+        vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+          this: HTMLElement
+        ) {
+          return this.classList.contains("timeline-viewport") ? 320 : 0;
+        }),
+        vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(setTop),
+      ];
+      try {
+        render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+        expect(setTop).toHaveBeenLastCalledWith(800);
+      } finally {
+        restore.forEach((spy) => spy.mockRestore());
+      }
+    });
+
+    it("follows the scroll position", () => {
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      const viewport = screen.getByLabelText("Timeline events");
+      stubScrollBox(viewport, { scrollHeight: 1120, clientHeight: 320 });
+      // Scrolled all the way up, away from the base: now everything
+      // hidden is below, and nothing above.
+      viewport.scrollTop = 0;
+      fireEvent.scroll(viewport);
+      expect(screen.getByRole("status")).toHaveTextContent("29 more events below");
+      expect(screen.getByRole("status")).not.toHaveTextContent(/above/);
+      expect(screen.getByRole("button", { name: /scroll down/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /scroll up/i })).toBeNull();
+    });
+
+    it("scrolls a page toward the hidden events from the button", async () => {
+      const user = userEvent.setup();
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      const viewport = screen.getByLabelText("Timeline events");
+      const scrollTo = stubScrollBox(viewport, { scrollHeight: 1120, clientHeight: 320 });
+      viewport.scrollTop = 800;
+      fireEvent.scroll(viewport);
+      await user.click(screen.getByRole("button", { name: /scroll up/i }));
+      // One view's worth less a lane, so the last lane seen stays in view
+      // for context: 800 - (320 - 28).
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 508 }));
+    });
+
+    it("names the sides in a vertical layout", async () => {
+      const user = userEvent.setup();
+      render(<Timeline events={manyEvents()} onEditEvent={() => {}} />);
+      await user.click(screen.getByRole("button", { name: /layout options/i }));
+      await user.selectOptions(screen.getByLabelText(/^layout$/i), "vertical:forward");
+      await user.selectOptions(screen.getByLabelText(/^base$/i), "left");
+      expect(screen.getByRole("status")).toHaveTextContent(/more events to the right/);
+      expect(screen.getByRole("button", { name: /scroll right/i })).toBeInTheDocument();
+    });
   });
 
   it("lets a long name extend beyond a short event rather than truncating it", () => {
