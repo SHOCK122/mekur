@@ -14,6 +14,14 @@ export function fromLocalInput(value: string): string | undefined {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+/** The instant for a datetime-local value, or null when it is empty or
+ * not (yet) a valid date -- safe to call while someone is typing. */
+export function dateFromLocalInput(value: string): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /**
  * Checks a start/end pair from a form. Returns an error message, or null
  * if valid. End is optional: an event may be open-ended.

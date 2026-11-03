@@ -240,4 +240,118 @@ describe("EventEditPanel", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0]![0].startTime).toBe(new Date("2026-08-01T08:15").toISOString());
   });
+
+  describe("monthly and yearly patterns", () => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // Tuesday 20 January 2026, 09:00 local: the third Tuesday.
+    const tuesday = new Date(2026, 0, 20, 9).toISOString();
+
+    it("repeats on the third Tuesday of every month, in the local time zone", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      render(<EventEditPanel {...handlers()} event={makeEvent({ startTime: tuesday, endTime: undefined })} onSave={onSave} />);
+
+      await user.click(screen.getByRole("button", { name: /repeat/i }));
+      expect(screen.queryByLabelText(/repeat on/i)).not.toBeInTheDocument();
+      await user.selectOptions(screen.getByLabelText(/repeat unit/i), "MONTHLY");
+      const on = screen.getByLabelText(/repeat on/i);
+      expect(Array.from((on as HTMLSelectElement).options).map((o) => o.text)).toEqual([
+        "On day 20",
+        "On the third Tuesday",
+      ]);
+      await user.selectOptions(on, "On the third Tuesday");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].recurrence).toEqual({
+        freq: "MONTHLY",
+        interval: 1,
+        byDay: ["TU"],
+        bySetPos: [3],
+        tzid: zone,
+      });
+    });
+
+    it("keeps the kind of pattern when the start moves", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      const event = makeEvent({
+        startTime: tuesday,
+        endTime: undefined,
+        recurrence: { freq: "MONTHLY", interval: 1, byDay: ["TU"], bySetPos: [3], tzid: zone },
+      });
+      render(<EventEditPanel {...handlers()} event={event} onSave={onSave} />);
+      expect(screen.getByLabelText(/repeat on/i)).toHaveDisplayValue("On the third Tuesday");
+
+      // Wednesday 7 January: the first Wednesday.
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: "2026-01-07T09:00" } });
+      expect(screen.getByLabelText(/repeat on/i)).toHaveDisplayValue("On the first Wednesday");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].recurrence).toMatchObject({ byDay: ["WE"], bySetPos: [1] });
+    });
+
+    it("starts a new monthly rule on the same date, in the local zone", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      render(<EventEditPanel {...handlers()} event={makeEvent({ startTime: tuesday, endTime: undefined })} onSave={onSave} />);
+      await user.click(screen.getByRole("button", { name: /repeat/i }));
+      await user.selectOptions(screen.getByLabelText(/repeat unit/i), "MONTHLY");
+      expect(screen.getByLabelText(/repeat on/i)).toHaveDisplayValue("On day 20");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].recurrence).toEqual({ freq: "MONTHLY", interval: 1, tzid: zone });
+    });
+
+    it("still carries the pattern over when the start passes through empty", async () => {
+      const event = makeEvent({
+        startTime: tuesday,
+        endTime: undefined,
+        recurrence: { freq: "MONTHLY", interval: 1, byDay: ["TU"], bySetPos: [3], tzid: zone },
+      });
+      render(<EventEditPanel {...handlers()} event={event} />);
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: "" } });
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: "2026-01-07T09:00" } });
+      expect(screen.getByLabelText(/repeat on/i)).toHaveDisplayValue("On the first Wednesday");
+    });
+
+    it("opens a rule with an unknown time zone instead of crashing", () => {
+      const event = makeEvent({
+        startTime: tuesday,
+        recurrence: { freq: "MONTHLY", interval: 1, byDay: ["TU"], bySetPos: [3], tzid: "Nowhere/Nope" },
+      });
+      render(<EventEditPanel {...handlers()} event={event} />);
+      expect(screen.getByLabelText(/repeat on/i)).toBeInTheDocument();
+    });
+
+    it("drops the pattern when the unit changes away from months", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      const event = makeEvent({
+        startTime: tuesday,
+        endTime: undefined,
+        recurrence: { freq: "MONTHLY", interval: 1, byDay: ["TU"], bySetPos: [3], tzid: zone },
+      });
+      render(<EventEditPanel {...handlers()} event={event} onSave={onSave} />);
+      await user.selectOptions(screen.getByLabelText(/repeat unit/i), "WEEKLY");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].recurrence).toEqual({ freq: "WEEKLY", interval: 1 });
+    });
+
+    it("shows a rule that matches no offered pattern as it is, and keeps it", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      const event = makeEvent({
+        startTime: tuesday,
+        endTime: undefined,
+        recurrence: { freq: "MONTHLY", interval: 1, byMonthDay: [1, 15] },
+      });
+      render(<EventEditPanel {...handlers()} event={event} onSave={onSave} />);
+      expect(screen.getByLabelText(/repeat on/i)).toHaveDisplayValue("Repeats every month on day 1 and day 15");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].recurrence).toEqual({ freq: "MONTHLY", interval: 1, byMonthDay: [1, 15] });
+    });
+  });
 });

@@ -4,6 +4,7 @@ import {
   EventContentSchema,
   SealedEnvelopeSchema,
   KeyringEnvelopeSchema,
+  RecurrenceRuleSchema,
 } from "../src/index.js";
 
 describe("EncryptedEnvelopeSchema", () => {
@@ -164,5 +165,64 @@ describe("KeyringEnvelopeSchema", () => {
     const envelope = { v: 1, algo: "xchacha20poly1305", keyId: "keyring", nonce: "bm9uY2U=", ciphertext: big };
     expect(() => EncryptedEnvelopeSchema.parse(envelope)).toThrow();
     expect(KeyringEnvelopeSchema.parse(envelope).ciphertext).toHaveLength(big.length);
+  });
+});
+
+describe("RecurrenceRuleSchema calendar parts", () => {
+  const ok = (rule: unknown) => RecurrenceRuleSchema.safeParse(rule).success;
+
+  it("accepts the first Monday of every month, in a time zone", () => {
+    expect(
+      ok({ freq: "MONTHLY", interval: 1, byDay: ["MO"], bySetPos: [1], tzid: "Australia/Sydney" })
+    ).toBe(true);
+  });
+
+  it("accepts the last day of every month and the last Friday of March", () => {
+    expect(ok({ freq: "MONTHLY", byMonthDay: [-1] })).toBe(true);
+    expect(ok({ freq: "YEARLY", byMonth: [3], byDay: ["FR"], bySetPos: [-1] })).toBe(true);
+  });
+
+  it("still accepts rules written before calendar parts existed", () => {
+    expect(ok({ freq: "WEEKLY", interval: 1, byDay: ["MO", "WE"] })).toBe(true);
+    expect(ok({ freq: "DAILY", interval: 3 })).toBe(true);
+  });
+
+  it("rejects calendar parts on rules that do not repeat by month or year", () => {
+    expect(ok({ freq: "DAILY", byMonthDay: [1] })).toBe(false);
+    expect(ok({ freq: "WEEKLY", byMonth: [1] })).toBe(false);
+    expect(ok({ freq: "MINUTELY", byDay: ["MO"], bySetPos: [2] })).toBe(false);
+  });
+
+  it("rejects bySetPos without anything to pick from", () => {
+    expect(ok({ freq: "MONTHLY", bySetPos: [1] })).toBe(false);
+  });
+
+  it("rejects out-of-range and zero values", () => {
+    expect(ok({ freq: "MONTHLY", byMonthDay: [0] })).toBe(false);
+    expect(ok({ freq: "MONTHLY", byMonthDay: [32] })).toBe(false);
+    expect(ok({ freq: "YEARLY", byMonth: [13] })).toBe(false);
+    expect(ok({ freq: "MONTHLY", byDay: ["MO"], bySetPos: [0] })).toBe(false);
+    expect(ok({ freq: "MONTHLY", byMonthDay: [] })).toBe(false);
+  });
+
+  it("rejects a day that none of the chosen months has, which would never occur", () => {
+    expect(ok({ freq: "YEARLY", byMonth: [2], byMonthDay: [30] })).toBe(false);
+    expect(ok({ freq: "YEARLY", byMonth: [4, 6], byMonthDay: [-31] })).toBe(false);
+    // February 29th does occur, in leap years; and one long month is enough.
+    expect(ok({ freq: "YEARLY", byMonth: [2], byMonthDay: [29] })).toBe(true);
+    expect(ok({ freq: "MONTHLY", byMonth: [2, 3], byMonthDay: [31] })).toBe(true);
+  });
+
+  it("rejects positions past the most days a month or year can offer", () => {
+    expect(ok({ freq: "MONTHLY", byDay: ["MO"], bySetPos: [6] })).toBe(false);
+    expect(ok({ freq: "MONTHLY", byDay: ["MO"], bySetPos: [-5] })).toBe(true);
+    expect(ok({ freq: "MONTHLY", byMonthDay: [1, 15], bySetPos: [3] })).toBe(false);
+    // Yearly without a month: every month's days are candidates.
+    expect(ok({ freq: "YEARLY", byDay: ["MO"], bySetPos: [20] })).toBe(true);
+    expect(ok({ freq: "YEARLY", byMonth: [3], byDay: ["MO"], bySetPos: [6] })).toBe(false);
+  });
+
+  it("rejects an unknown time zone", () => {
+    expect(ok({ freq: "MONTHLY", byMonthDay: [1], tzid: "Mars/Olympus_Mons" })).toBe(false);
   });
 });

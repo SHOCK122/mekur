@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
 import { RecurrenceFields } from "./RecurrenceFields.js";
-import { toLocalInput, fromLocalInput, validateTimes } from "../lib/datetime.js";
+import { toLocalInput, fromLocalInput, dateFromLocalInput, validateTimes } from "../lib/datetime.js";
 
 interface NewEventFormProps {
   /** Resolves true when the event was saved, so the form knows to reset. */
@@ -34,6 +34,8 @@ export function NewEventForm({ onCreate, nextRank }: NewEventFormProps) {
     setEnd("");
     setRecurrence(undefined);
   }
+
+  const startDate = dateFromLocalInput(start);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,7 +89,7 @@ export function NewEventForm({ onCreate, nextRank }: NewEventFormProps) {
         />
       </div>
 
-      <RecurrenceFields value={recurrence} onChange={setRecurrence} />
+      <RecurrenceFields value={recurrence} onChange={setRecurrence} start={startDate} />
 
       {error && (
         <p className="auth-error" role="alert">

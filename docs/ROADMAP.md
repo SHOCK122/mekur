@@ -408,9 +408,62 @@ worth of dead code and fixes what the model switch broke.
         swipe over the timeline now scrolls the page (it previously did
         nothing). That is the expected behaviour for a page on a phone,
         and a horizontal swipe still pans time.
-- [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
-      Monday of every month"). Schema + UI work; `rrule` already supports
-      all three.
+- [x] **Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth`** ("first
+      Monday of every month"). Schema, expansion and editor.
+      - Monthly and yearly repeats get an "On" choice derived from the
+        start: the same date, "the third Tuesday", "the last Friday" (when
+        the start is in a month's final week), "the last day" (when it is
+        a month's last; yearly, only for February -- otherwise it is just
+        the date); yearly ones name the month. Moving the start keeps the
+        kind of pattern ("the third Tuesday" moved to a Wednesday becomes
+        "the third Wednesday"; a fifth Tuesday becomes the last), so the
+        start is always an occurrence of its own series
+        (`followStart`, pure). This applies to the editor **and** to
+        dragging or keyboard-moving a series on the timeline, previews
+        included. Changing the unit to or from months/years resets the
+        pattern.
+      - Simplification: no free-form day/month pickers ("the 1st and 15th",
+        "only in summer"). The schema and expansion support them; a rule
+        from another client that matches no offered pattern is shown by its
+        description and kept as is (also when its start moves).
+      - Found while doing it: rrule evaluates `BYDAY`/`BYMONTHDAY` in UTC,
+        so "the first Monday" at 09:00 in Sydney (22:00 UTC on Sunday)
+        repeated on Tuesdays -- and, found in review, a plain "day 31" set
+        at 20:00 in New York (01:00 UTC on the 1st) repeated on every
+        month's last day instead of skipping short months. Rules now carry
+        an optional **`tzid`** and are evaluated on that zone's wall clock
+        (`lib/zonedTime.ts`, `Intl` only; DST gaps resolve forward,
+        repeated hours to the earlier one). Every monthly/yearly rule the
+        editor writes sets it to the creator's zone, and patterns are read
+        in the rule's zone when someone elsewhere edits or drags it, so
+        everyone sharing the event sees the same instants. Rules without
+        one run in UTC exactly as before -- adding a zone to existing
+        series would move their post-DST occurrences by an hour and orphan
+        their skipped dates. DST drift for plain daily/weekly repeats
+        remains, under "Timezone edge cases" in the backlog. Privacy note:
+        the zone travels inside the encrypted content, so the server
+        learns nothing, but everyone the event is shared with learns the
+        time zone it was set in -- inherent in "09:00 on the first Monday,
+        there".
+      - Found while doing it: **a rule that never matches freezes the
+        page.** rrule walks to the year 9999 looking for a match, ignoring
+        `until` (it only checks it against matches): ~0.5s per expansion
+        for "the sixth Monday", ~7s for a daily "February 30th". The schema
+        restricts calendar parts to monthly/yearly rules, requires
+        `bySetPos` to have something to pick from and to stay within the
+        most days a month or year can offer, and rejects days no chosen
+        month has. Decrypted content isn't schema-checked anywhere and
+        comes from whoever holds the edit token, so expansion re-validates
+        the calendar fields and drops just the ones that fail (an unknown
+        zone falls back to UTC; a bad position takes its weekday with it,
+        so "the sixth Tuesday" doesn't become every Tuesday). For what
+        validation can't see -- "every 12 months from January, only in
+        February" -- it remembers per rule whether it ever occurs, so the
+        walk is paid once, not on every render.
+      - Found in review: validation ran on every expansion (every pan
+        frame), so it is memoised per rule object; zoned expansion
+        confirms each occurrence's offset with the previous one's instead
+        of a full search, halving the `Intl` work.
 - [ ] Single-occurrence overrides (iCalendar `RECURRENCE-ID`): edit one
       occurrence without splitting the series by hand.
 - [ ] Undo for timeline drags (one level is enough).

@@ -4,6 +4,10 @@ import {
   describeRecurrence,
   withSkippedOccurrence,
   withoutSkippedOccurrence,
+  repeatPatterns,
+  usesPattern,
+  withPattern,
+  followStart,
 } from "../src/lib/recurrence.js";
 
 describe("expandOccurrences", () => {
@@ -331,5 +335,324 @@ describe("skipped occurrences", () => {
     const afterRestore = withoutSkippedOccurrence(both, a);
     expect(afterRestore).toHaveLength(1);
     expect(new Date(afterRestore[0]!).getTime()).toBe(b.getTime());
+  });
+});
+
+describe("calendar patterns (byMonthDay, byMonth, bySetPos)", () => {
+  const starts = (event: Parameters<typeof expandOccurrences>[0], from: string, to: string) =>
+    expandOccurrences(event, new Date(from), new Date(to)).map((o) => o.start.toISOString());
+
+  it("repeats on the first Monday of every month", () => {
+    const event = {
+      startTime: "2026-01-05T09:00:00.000Z",
+      endTime: "2026-01-05T10:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1, byDay: ["MO" as const], bySetPos: [1] },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2026-04-30T00:00:00Z")).toEqual([
+      "2026-01-05T09:00:00.000Z",
+      "2026-02-02T09:00:00.000Z",
+      "2026-03-02T09:00:00.000Z",
+      "2026-04-06T09:00:00.000Z",
+    ]);
+  });
+
+  it("repeats on the last day of every month", () => {
+    const event = {
+      startTime: "2026-01-31T12:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1, byMonthDay: [-1] },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2026-04-01T00:00:00Z")).toEqual([
+      "2026-01-31T12:00:00.000Z",
+      "2026-02-28T12:00:00.000Z",
+      "2026-03-31T12:00:00.000Z",
+    ]);
+  });
+
+  it("repeats on the last Friday of March, yearly", () => {
+    const event = {
+      startTime: "2026-03-27T18:00:00.000Z",
+      recurrence: { freq: "YEARLY" as const, interval: 1, byMonth: [3], byDay: ["FR" as const], bySetPos: [-1] },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2029-01-01T00:00:00Z")).toEqual([
+      "2026-03-27T18:00:00.000Z",
+      "2027-03-26T18:00:00.000Z",
+      "2028-03-31T18:00:00.000Z",
+    ]);
+  });
+
+  it("evaluates the weekday on the rule's own wall clock, not UTC", () => {
+    // 09:00 on the first Monday in Sydney is 22:00 UTC the Sunday before.
+    // Evaluated in UTC, "Monday" would land a day late, at 09:00 Tuesday.
+    const event = {
+      startTime: "2026-01-04T22:00:00.000Z",
+      recurrence: {
+        freq: "MONTHLY" as const,
+        interval: 1,
+        byDay: ["MO" as const],
+        bySetPos: [1],
+        tzid: "Australia/Sydney",
+      },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2026-05-01T00:00:00Z")).toEqual([
+      "2026-01-04T22:00:00.000Z", // Mon 5 Jan, 09:00 AEDT
+      "2026-02-01T22:00:00.000Z", // Mon 2 Feb
+      "2026-03-01T22:00:00.000Z", // Mon 2 Mar
+      "2026-04-05T23:00:00.000Z", // Mon 6 Apr, 09:00 AEST: clocks went back on 5 Apr
+    ]);
+  });
+
+  it("keeps skipped occurrences matching in a time zone", () => {
+    const event = {
+      startTime: "2026-01-04T22:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1, byDay: ["MO" as const], bySetPos: [1], tzid: "Australia/Sydney" },
+      skippedOccurrences: ["2026-02-01T22:00:00.000Z"],
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2026-03-15T00:00:00Z")).toEqual([
+      "2026-01-04T22:00:00.000Z",
+      "2026-03-01T22:00:00.000Z",
+    ]);
+  });
+
+  it("returns nothing, quickly, for a valid rule that never occurs", () => {
+    // Every 12 months from January, but only in February: never. The
+    // schema can't see that (it depends on the start); rrule alone walks
+    // to the year 9999 looking.
+    const event = {
+      startTime: "2026-01-05T09:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 12, byMonth: [2] },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z")).toEqual([]);
+    const began = performance.now();
+    for (let i = 0; i < 50; i++) starts(event, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z");
+    expect(performance.now() - began).toBeLessThan(250);
+  });
+
+  it("drops only the calendar fields that fail, and a position together with its weekday", () => {
+    // An until with an offset fails the schema, but has always worked;
+    // it mustn't take the "third Tuesday" with it.
+    const withOffset = {
+      startTime: "2026-01-20T09:00:00.000Z",
+      recurrence: {
+        freq: "MONTHLY" as const,
+        interval: 1,
+        byDay: ["TU" as const],
+        bySetPos: [3],
+        until: "2026-12-31T23:59:59+01:00",
+      },
+    };
+    expect(starts(withOffset, "2026-01-01T00:00:00Z", "2026-04-01T00:00:00Z")).toEqual([
+      "2026-01-20T09:00:00.000Z",
+      "2026-02-17T09:00:00.000Z",
+      "2026-03-17T09:00:00.000Z",
+    ]);
+    // Without its (invalid) position, "the sixth Tuesday" must not turn
+    // into every Tuesday: it falls back to the plain monthly date.
+    const sixth = {
+      startTime: "2026-01-20T09:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1, byDay: ["TU" as const], bySetPos: [6] },
+    };
+    expect(starts(sixth, "2026-01-01T00:00:00Z", "2026-04-01T00:00:00Z")).toEqual([
+      "2026-01-20T09:00:00.000Z",
+      "2026-02-20T09:00:00.000Z",
+      "2026-03-20T09:00:00.000Z",
+    ]);
+  });
+
+  it("ignores calendar parts that don't validate instead of walking forever", () => {
+    // Content comes from whoever holds the edit capability; a daily rule
+    // for February 30th is invalid and would walk ~3 million days.
+    const event = {
+      startTime: "2026-01-05T09:00:00.000Z",
+      recurrence: { freq: "DAILY" as const, interval: 1, byMonth: [2], byMonthDay: [30] },
+    };
+    const began = performance.now();
+    expect(starts(event, "2026-01-05T00:00:00Z", "2026-01-08T00:00:00Z")).toEqual([
+      "2026-01-05T09:00:00.000Z",
+      "2026-01-06T09:00:00.000Z",
+      "2026-01-07T09:00:00.000Z",
+    ]);
+    expect(performance.now() - began).toBeLessThan(250);
+  });
+
+  it("ignores an unknown time zone and falls back to UTC", () => {
+    const event = {
+      startTime: "2026-01-05T09:00:00.000Z",
+      recurrence: { freq: "MONTHLY" as const, interval: 1, byDay: ["MO" as const], bySetPos: [1], tzid: "Nowhere/Nope" },
+    };
+    expect(starts(event, "2026-01-01T00:00:00Z", "2026-02-15T00:00:00Z")).toEqual([
+      "2026-01-05T09:00:00.000Z",
+      "2026-02-02T09:00:00.000Z",
+    ]);
+  });
+});
+
+describe("repeatPatterns", () => {
+  // Starts are built on the local clock, so read them in the local zone.
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const labels = (freq: "MONTHLY" | "YEARLY", start: Date) =>
+    repeatPatterns(freq, start, zone).map((p) => p.label);
+
+  it("offers the date and the nth weekday", () => {
+    // Tuesday 20 January 2026 (local time).
+    expect(labels("MONTHLY", new Date(2026, 0, 20, 9))).toEqual(["On day 20", "On the third Tuesday"]);
+  });
+
+  it("offers the last weekday in a month's final week, and the last day on it", () => {
+    // Saturday 31 January 2026: the fifth Saturday, so no "nth" option.
+    // The last day differs from day 31, which skips shorter months.
+    expect(labels("MONTHLY", new Date(2026, 0, 31, 9))).toEqual([
+      "On day 31 (skips months without one)",
+      "On the last Saturday",
+      "On the last day",
+    ]);
+    // Monday 30 November 2026: both the last Monday and the last day.
+    expect(labels("MONTHLY", new Date(2026, 10, 30, 9))).toEqual([
+      "On day 30 (skips months without one)",
+      "On the last Monday",
+      "On the last day",
+    ]);
+    // Thursday 26 February 2026: fourth and last Thursday.
+    expect(labels("MONTHLY", new Date(2026, 1, 26, 9))).toEqual([
+      "On day 26",
+      "On the fourth Thursday",
+      "On the last Thursday",
+    ]);
+  });
+
+  it("reads the start in the given zone, not the device's", () => {
+    // 22:00 UTC on Sunday 4 January is Monday 5 January in Sydney.
+    const start = new Date("2026-01-04T22:00:00Z");
+    expect(repeatPatterns("MONTHLY", start, "Australia/Sydney").map((p) => p.label)).toEqual([
+      "On day 5",
+      "On the first Monday",
+    ]);
+    expect(repeatPatterns("MONTHLY", start, "UTC").map((p) => p.label)).toEqual(["On day 4", "On the first Sunday"]);
+  });
+
+  it("offers the last day yearly only for February, where it isn't a fixed date", () => {
+    expect(labels("YEARLY", new Date(2026, 3, 30, 9))).toEqual(["On April 30", "On the last Thursday of April"]);
+    expect(labels("YEARLY", new Date(2026, 1, 28, 9))).toEqual([
+      "On February 28",
+      "On the fourth Saturday of February",
+      "On the last Saturday of February",
+      "On the last day of February",
+    ]);
+  });
+
+  it("names the month for yearly series", () => {
+    expect(labels("YEARLY", new Date(2026, 2, 27, 9))).toEqual([
+      "On March 27",
+      "On the fourth Friday of March",
+      "On the last Friday of March",
+    ]);
+    expect(labels("YEARLY", new Date(2028, 1, 29, 9))).toEqual([
+      "On February 29 (leap years only)",
+      "On the last Tuesday of February",
+      "On the last day of February",
+    ]);
+  });
+
+  it("offers nothing for other frequencies", () => {
+    expect(repeatPatterns("WEEKLY", new Date(2026, 0, 20), "UTC")).toEqual([]);
+  });
+
+  it("every pattern carries the time zone, and the start is an occurrence of each", () => {
+    const start = new Date(2026, 10, 30, 9);
+    for (const freq of ["MONTHLY", "YEARLY"] as const) {
+      for (const pattern of repeatPatterns(freq, start, zone)) {
+        expect(pattern.fields.tzid).toBe(zone);
+        const rule = withPattern({ freq, interval: 1 }, pattern.fields);
+        const [first] = expandOccurrences(
+          { startTime: start.toISOString(), recurrence: rule },
+          new Date(start.getTime() - 1000),
+          new Date(start.getTime() + 1000)
+        );
+        expect(first?.start.toISOString()).toBe(start.toISOString());
+      }
+    }
+  });
+
+  it("withPattern replaces every calendar field, and usesPattern recognises the result", () => {
+    const [date, nth] = repeatPatterns("MONTHLY", new Date(2026, 0, 20, 9), "UTC");
+    const rule = withPattern({ freq: "MONTHLY", interval: 2, until: "2027-01-01T00:00:00.000Z" }, nth!.fields);
+    expect(usesPattern(rule, nth!)).toBe(true);
+    expect(usesPattern(rule, date!)).toBe(false);
+    expect(withPattern(rule, date!.fields)).toEqual({
+      freq: "MONTHLY",
+      interval: 2,
+      until: "2027-01-01T00:00:00.000Z",
+      tzid: "UTC",
+    });
+  });
+});
+
+describe("followStart", () => {
+  const thirdTuesday = { freq: "MONTHLY" as const, interval: 1, byDay: ["TU" as const], bySetPos: [3], tzid: "UTC" };
+  const at = (iso: string) => new Date(iso);
+
+  it("keeps the kind of pattern on the new date", () => {
+    // Tue 20 Jan -> Wed 7 Jan: the first Wednesday.
+    expect(followStart(thirdTuesday, at("2026-01-20T09:00Z"), at("2026-01-07T09:00Z"))).toEqual({
+      ...thirdTuesday,
+      byDay: ["WE"],
+      bySetPos: [1],
+    });
+  });
+
+  it("turns a fifth weekday into the last one, and a last day mid-month into the date", () => {
+    expect(followStart(thirdTuesday, at("2026-01-20T09:00Z"), at("2026-03-31T09:00Z"))).toEqual({
+      ...thirdTuesday,
+      bySetPos: [-1],
+    });
+    const lastDay = { freq: "MONTHLY" as const, interval: 1, byMonthDay: [-1], tzid: "UTC" };
+    expect(followStart(lastDay, at("2026-01-31T09:00Z"), at("2026-02-12T09:00Z"))).toEqual({
+      freq: "MONTHLY",
+      interval: 1,
+      tzid: "UTC",
+    });
+  });
+
+  it("reads both dates in the rule's own zone", () => {
+    const sydney = { ...thirdTuesday, byDay: ["MO" as const], bySetPos: [1], tzid: "Australia/Sydney" };
+    // Mon 5 Jan 09:00 Sydney -> Mon 2 Feb 09:00 Sydney (Sundays in UTC): unchanged.
+    expect(followStart(sydney, at("2026-01-04T22:00Z"), at("2026-02-01T22:00Z"))).toBe(sydney);
+  });
+
+  it("doesn't throw on a time zone this runtime doesn't know", () => {
+    const bogus = { ...thirdTuesday, tzid: "Nowhere/Nope" };
+    expect(() => followStart(bogus, at("2026-01-20T09:00Z"), at("2026-01-21T09:00Z"))).not.toThrow();
+  });
+
+  it("leaves alone rules it can't place, and other frequencies", () => {
+    const custom = { freq: "MONTHLY" as const, interval: 1, byMonthDay: [1, 15] };
+    expect(followStart(custom, at("2026-01-01T09:00Z"), at("2026-01-02T09:00Z"))).toBe(custom);
+    const weekly = { freq: "WEEKLY" as const, interval: 1, byDay: ["MO" as const] };
+    expect(followStart(weekly, at("2026-01-05T09:00Z"), at("2026-01-06T09:00Z"))).toBe(weekly);
+  });
+});
+
+describe("describeRecurrence with calendar patterns", () => {
+  it("describes nth weekdays, last days and months", () => {
+    expect(describeRecurrence({ freq: "MONTHLY", interval: 1, byDay: ["TU"], bySetPos: [3] })).toBe(
+      "Repeats every month on the third Tuesday"
+    );
+    expect(describeRecurrence({ freq: "MONTHLY", interval: 2, byMonthDay: [-1] })).toBe(
+      "Repeats every 2 months on the last day"
+    );
+    expect(
+      describeRecurrence({ freq: "YEARLY", interval: 1, byMonth: [3], byDay: ["FR"], bySetPos: [-1] })
+    ).toBe("Repeats every year on the last Friday of March");
+    expect(describeRecurrence({ freq: "MONTHLY", interval: 1, byMonthDay: [1, 15] })).toBe(
+      "Repeats every month on day 1 and day 15"
+    );
+    expect(describeRecurrence({ freq: "YEARLY", interval: 1, byMonth: [6, 7] })).toBe(
+      "Repeats every year in June and July"
+    );
+  });
+
+  it("describes a monthly rule with weekdays as monthly, not weekly", () => {
+    expect(describeRecurrence({ freq: "MONTHLY", interval: 1, byDay: ["MO"] })).toBe(
+      "Repeats every month on Monday"
+    );
   });
 });

@@ -3,7 +3,7 @@ import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 import { RecurrenceFields } from "./RecurrenceFields.js";
 import { describeRecurrence, withoutSkippedOccurrence } from "../lib/recurrence.js";
-import { toLocalInput, fromLocalInput, validateTimes } from "../lib/datetime.js";
+import { toLocalInput, fromLocalInput, dateFromLocalInput, validateTimes } from "../lib/datetime.js";
 
 interface EventEditPanelProps {
   event: DecryptedEvent;
@@ -48,6 +48,8 @@ export function EventEditPanel({
   const [end, setEnd] = useState(initialEnd);
   const [important, setImportant] = useState(Boolean(event.important));
   const [recurrence, setRecurrence] = useState<RecurrenceRule | undefined>(event.recurrence);
+  // What the repeat patterns are derived from; untouched, the exact start.
+  const startDate = start === initialStart ? new Date(event.startTime) : dateFromLocalInput(start);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Drives both the opening and closing animation; closing waits for it to
@@ -163,7 +165,7 @@ export function EventEditPanel({
             {readOnly ? (
               event.recurrence && <p className="event-recurrence">{describeRecurrence(event.recurrence)}</p>
             ) : (
-              <RecurrenceFields value={recurrence} onChange={setRecurrence} />
+              <RecurrenceFields value={recurrence} onChange={setRecurrence} start={startDate} />
             )}
           </fieldset>
 
