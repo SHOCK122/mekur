@@ -194,6 +194,12 @@ button:disabled {
   gap: 0.6rem;
 }
 
+/* Pattern names ("On the first Wednesday of February") are longer than a
+   half-width column; give them the whole row. */
+.repeat-on {
+  grid-column: 1 / -1;
+}
+
 .inline-label {
   display: flex;
   flex-direction: column;

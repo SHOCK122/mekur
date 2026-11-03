@@ -408,9 +408,42 @@ worth of dead code and fixes what the model switch broke.
         swipe over the timeline now scrolls the page (it previously did
         nothing). That is the expected behaviour for a page on a phone,
         and a horizontal swipe still pans time.
-- [ ] Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth` ("first
-      Monday of every month"). Schema + UI work; `rrule` already supports
-      all three.
+- [x] **Richer recurrence: `bySetPos`, `byMonthDay`, `byMonth`** ("first
+      Monday of every month"). Schema, expansion and editor.
+      - Monthly and yearly repeats get an "On" choice derived from the
+        start: the same date, "the third Tuesday", "the last Friday" (when
+        the start is in a month's final week), "the last day" (when it is
+        a month's last); yearly ones name the month. Moving the start keeps
+        the kind of pattern ("the third Tuesday" moved to a Wednesday
+        becomes "the third Wednesday"), so the start is always an
+        occurrence of its own series. Changing the unit to or from
+        months/years resets the pattern.
+      - Simplification: no free-form day/month pickers ("the 1st and 15th",
+        "only in summer"). The schema and expansion support them; a rule
+        from another client that matches no offered pattern is shown by its
+        description and kept as is.
+      - Found while doing it: rrule evaluates `BYDAY`/`BYMONTHDAY` in UTC,
+        so "the first Monday" at 09:00 in Sydney (22:00 UTC on Sunday)
+        repeated on Tuesdays. Rules now carry an optional **`tzid`** and are
+        evaluated on that zone's wall clock (`lib/zonedTime.ts`, `Intl`
+        only; DST gaps resolve forward, repeated hours to the earlier one).
+        Patterns set it to the creator's zone, so everyone sharing the
+        event sees the same instants. Plain repeats still carry no zone and
+        run in UTC exactly as before -- giving them one would move every
+        existing series' post-DST occurrences by an hour and orphan their
+        skipped dates. That DST drift for plain daily/weekly repeats
+        remains, under "Timezone edge cases" in the backlog.
+      - Found while doing it: **a rule that never matches freezes the
+        page.** rrule walks to the year 9999 looking for a match, ignoring
+        `until` (it only checks it against matches): ~0.5s per expansion
+        for "the sixth Monday", ~7s for a daily "February 30th". The schema
+        restricts calendar parts to monthly/yearly rules, requires
+        `bySetPos` to have something to pick from, and rejects days no
+        chosen month has. Decrypted content isn't schema-checked anywhere
+        and comes from whoever holds the edit token, so expansion
+        re-validates and drops what fails (an unknown zone falls back to
+        UTC), and remembers per rule whether it ever occurs -- a crafted
+        "sixth Monday" costs that walk once, not on every render.
 - [ ] Single-occurrence overrides (iCalendar `RECURRENCE-ID`): edit one
       occurrence without splitting the series by hand.
 - [ ] Undo for timeline drags (one level is enough).

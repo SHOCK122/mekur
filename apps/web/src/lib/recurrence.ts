@@ -1,5 +1,6 @@
 import { RRule, Weekday as RRuleWeekday } from "rrule";
-import type { RecurrenceRule, Weekday } from "@schedule-app/shared";
+import { RecurrenceRuleSchema, type RecurrenceRule, type Weekday } from "@schedule-app/shared";
+import { instantFromWallClock, wallClockAsUtc } from "./zonedTime.js";
 
 const FREQ_MAP: Record<RecurrenceRule["freq"], number> = {
   MINUTELY: RRule.MINUTELY,
@@ -100,20 +101,37 @@ export function expandOccurrences(
   // progress at its start.
   const lookbackMs = durationMs !== null && durationMs > 0 ? durationMs : 0;
 
+  const recurrence = usableRule(event.recurrence);
+  // A rule with a time zone is evaluated on that zone's wall clock: rrule
+  // only knows UTC, so it is handed wall-clock readings dressed as UTC
+  // ("floating" times) and each result is mapped back to a real instant.
+  // Without one, the rule runs in UTC as it always has.
+  const tz = recurrence.tzid;
+  const toRule = tz ? (d: Date) => wallClockAsUtc(d, tz) : (d: Date) => d;
+  const fromRule = tz ? (d: Date) => instantFromWallClock(d, tz) : (d: Date) => d;
+
+  const ruleOptions = {
+    freq: FREQ_MAP[recurrence.freq],
+    interval: recurrence.interval,
+    byweekday: recurrence.byDay?.map((d) => WEEKDAY_MAP[d]),
+    bymonthday: recurrence.byMonthDay,
+    bymonth: recurrence.byMonth,
+    bysetpos: recurrence.bySetPos,
+    count: recurrence.count,
+    until: recurrence.until ? toRule(new Date(recurrence.until)) : undefined,
+  };
+  if (!everOccurs(ruleOptions, toRule(start))) return [];
+
   const rule = new RRule({
-    freq: FREQ_MAP[event.recurrence.freq],
-    interval: event.recurrence.interval,
-    byweekday: event.recurrence.byDay?.map((d) => WEEKDAY_MAP[d]),
-    count: event.recurrence.count,
-    until: event.recurrence.until ? new Date(event.recurrence.until) : undefined,
+    ...ruleOptions,
     // Start the rule near the window instead of at the series' real
     // beginning. Without this, viewing an hour of a minutely series that
     // began years ago walks every intervening occurrence -- measured at
     // over two minutes for a single expansion.
-    dtstart: advancedStart(start, event.recurrence, rangeStart, lookbackMs),
+    dtstart: advancedStart(toRule(start), recurrence, toRule(rangeStart), lookbackMs),
   });
 
-  const { inProgress, inside } = collectBounded(rule, rangeStart, rangeEnd, lookbackMs, isSkipped);
+  const { inProgress, inside } = collectBounded(rule, rangeStart, rangeEnd, lookbackMs, isSkipped, fromRule);
   const before = [inProgress.latest, options.includeSkipped ? inProgress.latestSkipped : null]
     .filter((d): d is Date => d !== null)
     .sort((a, b) => a.getTime() - b.getTime());
@@ -126,6 +144,52 @@ export function expandOccurrences(
     }))
     .filter(keep)
     .slice(0, MAX_OCCURRENCES_PER_EVENT);
+}
+
+/** The rule as it can safely be expanded. Decrypted content is whatever
+ * a holder of the edit capability wrote, so it is checked here rather than
+ * trusted: an unknown time zone is dropped (the rule runs in UTC), and if
+ * the calendar parts still don't validate they are dropped too, leaving
+ * the rule as rules were before they existed. (A rule that can never match
+ * would otherwise make rrule walk to the year 9999 -- seconds, for a daily
+ * one.) */
+function usableRule(recurrence: RecurrenceRule): RecurrenceRule {
+  const parsed = RecurrenceRuleSchema.safeParse(recurrence);
+  if (parsed.success) return parsed.data;
+  const { tzid, byMonthDay: _d, byMonth: _m, bySetPos: _p, ...rest } = recurrence;
+  if (tzid !== undefined) {
+    const withoutZone = RecurrenceRuleSchema.safeParse({ ...recurrence, tzid: undefined });
+    if (withoutZone.success) return withoutZone.data;
+  }
+  return rest;
+}
+
+/** Whether a rule produces anything at all, remembered per rule and start.
+ * Validation rejects the impossible rules a person could pick (February
+ * 30th), but not every one: "the sixth Monday" passes and never occurs,
+ * and rrule would walk to the year 9999 looking for it on every render.
+ * This pays that walk at most once per distinct rule. Only rules with
+ * calendar parts are checked; every other rule matches immediately. */
+const occursCache = new Map<string, boolean>();
+const OCCURS_CACHE_LIMIT = 500;
+
+function everOccurs(options: Partial<ConstructorParameters<typeof RRule>[0]>, dtstart: Date): boolean {
+  if (!options?.bymonthday && !options?.bymonth && !options?.bysetpos) return true;
+  const key = JSON.stringify([options, dtstart.toISOString()]);
+  const cached = occursCache.get(key);
+  if (cached !== undefined) return cached;
+  // `until` and `count` don't bound rrule's walk (it only checks them
+  // against matches), so they are left out: this asks whether the pattern
+  // matches ever, which is what decides how long the walk can take.
+  const { until: _until, count: _count, ...pattern } = options;
+  let occurs = false;
+  new RRule({ ...pattern, dtstart }).all(() => {
+    occurs = true;
+    return false;
+  });
+  if (occursCache.size >= OCCURS_CACHE_LIMIT) occursCache.clear();
+  occursCache.set(key, occurs);
+  return occurs;
 }
 
 /** Adds an occurrence to a series' skip list, without duplicating it. */
@@ -217,7 +281,9 @@ function collectBounded(
   rangeStart: Date,
   rangeEnd: Date,
   durationMs: number,
-  isSkipped: (date: Date) => boolean
+  isSkipped: (date: Date) => boolean,
+  /** Maps a date the rule produced to the instant it stands for. */
+  fromRule: (date: Date) => Date
 ): { inProgress: { latest: Date | null; latestSkipped: Date | null }; inside: Date[] } {
   const inside: Date[] = [];
   const inProgress: { latest: Date | null; latestSkipped: Date | null } = {
@@ -225,7 +291,8 @@ function collectBounded(
     latestSkipped: null,
   };
   const inProgressFrom = rangeStart.getTime() - durationMs;
-  rule.all((date) => {
+  rule.all((ruleDate) => {
+    const date = fromRule(ruleDate);
     if (date > rangeEnd) return false;
     if (date >= rangeStart) {
       inside.push(date);
@@ -238,10 +305,166 @@ function collectBounded(
   return { inProgress, inside };
 }
 
+const WEEKDAY_NAMES: Record<Weekday, string> = {
+  MO: "Monday",
+  TU: "Tuesday",
+  WE: "Wednesday",
+  TH: "Thursday",
+  FR: "Friday",
+  SA: "Saturday",
+  SU: "Sunday",
+};
+/** Indexed by `Date#getDay()`. */
+const WEEKDAYS_FROM_SUNDAY: Weekday[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function monthName(month: number): string {
+  return MONTH_NAMES[month - 1] ?? String(month);
+}
+
+function ordinal(n: number): string {
+  if (n === -1) return "last";
+  if (n < 0) return `${ordinal(-n)}-to-last`;
+  const words = ["first", "second", "third", "fourth", "fifth"];
+  const word = words[n - 1];
+  if (word) return word;
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+function list(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** The calendar fields a monthly or yearly pattern sets. Choosing a
+ * pattern replaces all of them, so none outlive the pattern they were part
+ * of. */
+const PATTERN_FIELDS = ["byDay", "byMonthDay", "byMonth", "bySetPos", "tzid"] as const;
+type PatternFields = Pick<RecurrenceRule, (typeof PATTERN_FIELDS)[number]>;
+
+export interface RepeatPattern {
+  /** Stable within one start date and frequency; used as an option value. */
+  key: string;
+  label: string;
+  fields: PatternFields;
+}
+
+/**
+ * The ways a monthly or yearly series can repeat, derived from its start
+ * (read on the local clock): on the same date, on the same weekday of the
+ * month ("the third Tuesday"), on the last such weekday when the start is
+ * in a month's final week, and on the last day when it is a month's last.
+ * Offering choices derived from the start, rather than free-form day and
+ * month pickers, keeps the start itself an occurrence of the series.
+ *
+ * Patterns other than the plain date carry the local time zone, so "the
+ * first Monday" is a Monday where it was set, for everyone who sees it.
+ * The plain date carries none: it has always been evaluated in UTC, and a
+ * date-of-month in UTC lands on the same local date at a fixed time of day.
+ */
+export function repeatPatterns(freq: RecurrenceRule["freq"], start: Date, timeZone: string): RepeatPattern[] {
+  if (freq !== "MONTHLY" && freq !== "YEARLY") return [];
+  const yearly = freq === "YEARLY";
+  const day = start.getDate();
+  const month = start.getMonth() + 1;
+  const daysInMonth = new Date(start.getFullYear(), month, 0).getDate();
+  const weekday = WEEKDAYS_FROM_SUNDAY[start.getDay()] ?? "MO";
+  const nth = Math.ceil(day / 7);
+  const ofMonth = yearly ? ` of ${monthName(month)}` : "";
+  const inMonth: PatternFields = yearly ? { byMonth: [month] } : {};
+
+  const patterns: RepeatPattern[] = [
+    {
+      key: "date",
+      label: yearly
+        ? `On ${monthName(month)} ${day}${month === 2 && day === 29 ? " (leap years only)" : ""}`
+        : `On day ${day}${day > 28 ? " (skips months without one)" : ""}`,
+      fields: {},
+    },
+  ];
+  if (nth <= 4) {
+    patterns.push({
+      key: "nth-weekday",
+      label: `On the ${ordinal(nth)} ${WEEKDAY_NAMES[weekday]}${ofMonth}`,
+      fields: { ...inMonth, byDay: [weekday], bySetPos: [nth], tzid: timeZone },
+    });
+  }
+  if (day > daysInMonth - 7) {
+    patterns.push({
+      key: "last-weekday",
+      label: `On the last ${WEEKDAY_NAMES[weekday]}${ofMonth}`,
+      fields: { ...inMonth, byDay: [weekday], bySetPos: [-1], tzid: timeZone },
+    });
+  }
+  if (day === daysInMonth && day < 31) {
+    patterns.push({
+      key: "last-day",
+      label: `On the last day${ofMonth}`,
+      fields: { ...inMonth, byMonthDay: [-1], tzid: timeZone },
+    });
+  }
+  return patterns;
+}
+
+/** Whether `rule` uses exactly `pattern`'s calendar fields. */
+export function usesPattern(rule: RecurrenceRule, pattern: RepeatPattern): boolean {
+  return PATTERN_FIELDS.every(
+    (field) => JSON.stringify(rule[field]) === JSON.stringify(pattern.fields[field])
+  );
+}
+
+/** `rule` with its calendar fields replaced by `pattern`'s. */
+export function withPattern(rule: RecurrenceRule, fields: PatternFields): RecurrenceRule {
+  const next: RecurrenceRule = { ...rule };
+  for (const field of PATTERN_FIELDS) delete next[field];
+  return { ...next, ...fields };
+}
+
+/** Whether `rule` has a monthly or yearly pattern beyond "the same date". */
+export function hasCalendarPattern(rule: RecurrenceRule): boolean {
+  return rule.byMonthDay !== undefined || rule.byMonth !== undefined || rule.bySetPos !== undefined;
+}
+
+/** The calendar part of a monthly/yearly summary: "on the third Tuesday",
+ * "on the last day of March". Empty when there is none. */
+function describeCalendarPattern(recurrence: RecurrenceRule): string {
+  const { byDay, byMonthDay, byMonth, bySetPos } = recurrence;
+  const parts: string[] = [];
+  const days = byDay?.map((d) => WEEKDAY_NAMES[d]) ?? [];
+  if (bySetPos && byDay && !byMonthDay) {
+    parts.push(`on the ${list(bySetPos.map(ordinal))} ${list(days)}`);
+  } else {
+    if (byMonthDay) {
+      const named = byMonthDay.map((d) => (d === -1 ? "the last day" : d < 0 ? `the ${ordinal(d)} day` : `day ${d}`));
+      parts.push(`on ${list(named)}`);
+    }
+    if (days.length > 0) parts.push(`${byMonthDay ? "if a" : "on"} ${list(days)}`);
+    if (bySetPos) parts.push(`(${list(bySetPos.map(ordinal))} match)`);
+  }
+  if (byMonth) parts.push(`${parts.length > 0 ? "of" : "in"} ${list(byMonth.map(monthName))}`);
+  return parts.join(" ");
+}
+
 /** Short human-readable summary of a recurrence rule, for display. */
 export function describeRecurrence(recurrence: RecurrenceRule): string {
   const { freq, interval, byDay } = recurrence;
-  if (byDay && byDay.length > 0) {
+  const calendar = freq === "MONTHLY" || freq === "YEARLY";
+  if (!calendar && byDay && byDay.length > 0) {
     const isWeekdays = ["MO", "TU", "WE", "TH", "FR"].every((d) => byDay.includes(d as Weekday)) && byDay.length === 5;
     if (isWeekdays) return "Repeats every weekday";
     return `Repeats weekly on ${byDay.join(", ")}`;
@@ -256,7 +479,9 @@ export function describeRecurrence(recurrence: RecurrenceRule): string {
   };
   const unitLabel = interval === 1 ? unit[freq] : `${unit[freq]}s`;
   const every = interval === 1 ? `Repeats every ${unitLabel}` : `Repeats every ${interval} ${unitLabel}`;
+  const pattern = calendar ? describeCalendarPattern(recurrence) : "";
+  const described = pattern ? `${every} ${pattern}` : every;
   return recurrence.until
-    ? `${every} until ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(recurrence.until))}`
-    : every;
+    ? `${described} until ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(recurrence.until))}`
+    : described;
 }
