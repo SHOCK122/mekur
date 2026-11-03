@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { instantFromWallClock, wallClockAsUtc } from "../src/lib/zonedTime.js";
+import { instantFromWallClock, wallClockAsUtc, wallClockConverter } from "../src/lib/zonedTime.js";
 
 describe("wallClockAsUtc / instantFromWallClock", () => {
   it("reads the wall clock in a zone", () => {
@@ -38,5 +38,17 @@ describe("wallClockAsUtc / instantFromWallClock", () => {
     expect(instantFromWallClock(new Date("2026-11-01T01:30:00Z"), "America/New_York").toISOString()).toBe(
       "2026-11-01T05:30:00.000Z"
     );
+  });
+});
+
+describe("wallClockConverter", () => {
+  it("agrees with instantFromWallClock across a year of hourly readings, DST changes included", () => {
+    for (const tz of ["America/New_York", "Australia/Lord_Howe", "Europe/London"]) {
+      const convert = wallClockConverter(tz);
+      for (let t = Date.UTC(2026, 0, 1); t < Date.UTC(2027, 0, 1); t += 30 * 60_000) {
+        const wall = new Date(t);
+        expect(convert(wall).getTime()).toBe(instantFromWallClock(wall, tz).getTime());
+      }
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { RRule, Weekday as RRuleWeekday } from "rrule";
-import { RecurrenceRuleSchema, type RecurrenceRule, type Weekday } from "@schedule-app/shared";
-import { instantFromWallClock, wallClockAsUtc } from "./zonedTime.js";
+import { RecurrenceRuleSchema, isValidTimeZone, type RecurrenceRule, type Weekday } from "@schedule-app/shared";
+import { wallClockAsUtc, wallClockConverter } from "./zonedTime.js";
 
 const FREQ_MAP: Record<RecurrenceRule["freq"], number> = {
   MINUTELY: RRule.MINUTELY,
@@ -108,7 +108,7 @@ export function expandOccurrences(
   // Without one, the rule runs in UTC as it always has.
   const tz = recurrence.tzid;
   const toRule = tz ? (d: Date) => wallClockAsUtc(d, tz) : (d: Date) => d;
-  const fromRule = tz ? (d: Date) => instantFromWallClock(d, tz) : (d: Date) => d;
+  const fromRule = tz ? wallClockConverter(tz) : (d: Date) => d;
 
   const ruleOptions = {
     freq: FREQ_MAP[recurrence.freq],
@@ -146,22 +146,37 @@ export function expandOccurrences(
     .slice(0, MAX_OCCURRENCES_PER_EVENT);
 }
 
-/** The rule as it can safely be expanded. Decrypted content is whatever
- * a holder of the edit capability wrote, so it is checked here rather than
- * trusted: an unknown time zone is dropped (the rule runs in UTC), and if
- * the calendar parts still don't validate they are dropped too, leaving
- * the rule as rules were before they existed. (A rule that can never match
- * would otherwise make rrule walk to the year 9999 -- seconds, for a daily
- * one.) */
+/** The fields that describe which days a monthly or yearly rule falls
+ * on, plus the zone they are read in. */
+const CALENDAR_KEYS = ["byDay", "byMonthDay", "byMonth", "bySetPos", "tzid"] as const;
+
+const usableRules = new WeakMap<RecurrenceRule, RecurrenceRule>();
+
+/** The rule as it can safely be expanded. Decrypted content is whatever a
+ * holder of the edit capability wrote, so its calendar fields are checked
+ * here rather than trusted, and the ones that fail are dropped: an
+ * unknown zone leaves the rule in UTC, an impossible day leaves the rest.
+ * (A rule that can never match would make rrule walk to the year 9999 --
+ * seconds, for a daily one.) Other fields are left as they are, as they
+ * always were. Remembered per rule object: this runs on every render. */
 function usableRule(recurrence: RecurrenceRule): RecurrenceRule {
-  const parsed = RecurrenceRuleSchema.safeParse(recurrence);
-  if (parsed.success) return parsed.data;
-  const { tzid, byMonthDay: _d, byMonth: _m, bySetPos: _p, ...rest } = recurrence;
-  if (tzid !== undefined) {
-    const withoutZone = RecurrenceRuleSchema.safeParse({ ...recurrence, tzid: undefined });
-    if (withoutZone.success) return withoutZone.data;
+  const known = usableRules.get(recurrence);
+  if (known) return known;
+  const rule: RecurrenceRule = { ...recurrence };
+  // Each pass drops the fields that failed; refinements across fields only
+  // run once every field parses on its own, so this can take a few.
+  for (let pass = 0; pass <= CALENDAR_KEYS.length; pass++) {
+    const { freq, byDay, byMonthDay, byMonth, bySetPos, tzid } = rule;
+    const check = RecurrenceRuleSchema.safeParse({ freq, interval: 1, byDay, byMonthDay, byMonth, bySetPos, tzid });
+    if (check.success) break;
+    const failing = new Set(check.error.issues.map((issue) => issue.path[0]));
+    if (!CALENDAR_KEYS.some((key) => failing.has(key))) break;
+    for (const key of CALENDAR_KEYS) if (failing.has(key)) delete rule[key];
+    // Without its position, "the third Tuesday" would be every Tuesday.
+    if (failing.has("bySetPos")) delete rule.byDay;
   }
-  return rest;
+  usableRules.set(recurrence, rule);
+  return rule;
 }
 
 /** Whether a rule produces anything at all, remembered per rule and start.
@@ -354,36 +369,44 @@ function list(items: string[]): string {
 /** The calendar fields a monthly or yearly pattern sets. Choosing a
  * pattern replaces all of them, so none outlive the pattern they were part
  * of. */
-const PATTERN_FIELDS = ["byDay", "byMonthDay", "byMonth", "bySetPos", "tzid"] as const;
+const PATTERN_FIELDS = CALENDAR_KEYS;
 type PatternFields = Pick<RecurrenceRule, (typeof PATTERN_FIELDS)[number]>;
 
+export type PatternKind = "date" | "nth-weekday" | "last-weekday" | "last-day";
+
 export interface RepeatPattern {
-  /** Stable within one start date and frequency; used as an option value. */
-  key: string;
+  key: PatternKind;
   label: string;
   fields: PatternFields;
 }
 
+/** The zone a rule's patterns are read in: its own, or else this
+ * device's. A zone this runtime doesn't know (decrypted content is
+ * untrusted) counts as none, as in expansion, rather than throwing. */
+export function patternZone(rule: RecurrenceRule | undefined): string {
+  return rule?.tzid && isValidTimeZone(rule.tzid) ? rule.tzid : Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 /**
  * The ways a monthly or yearly series can repeat, derived from its start
- * (read on the local clock): on the same date, on the same weekday of the
- * month ("the third Tuesday"), on the last such weekday when the start is
- * in a month's final week, and on the last day when it is a month's last.
- * Offering choices derived from the start, rather than free-form day and
- * month pickers, keeps the start itself an occurrence of the series.
+ * as read on `timeZone`'s clock: on the same date, on the same weekday of
+ * the month ("the third Tuesday"), on the last such weekday when the start
+ * is in a month's final week, and on the last day when it is a month's
+ * last. Offering choices derived from the start, rather than free-form day
+ * and month pickers, keeps the start itself an occurrence of the series.
  *
- * Patterns other than the plain date carry the local time zone, so "the
- * first Monday" is a Monday where it was set, for everyone who sees it.
- * The plain date carries none: it has always been evaluated in UTC, and a
- * date-of-month in UTC lands on the same local date at a fixed time of day.
+ * Every pattern carries the zone, so "the first Monday" -- or "day 31" --
+ * is read where it was set, for everyone who sees it. (In UTC, an evening
+ * start west of Greenwich falls on the next day.)
  */
 export function repeatPatterns(freq: RecurrenceRule["freq"], start: Date, timeZone: string): RepeatPattern[] {
   if (freq !== "MONTHLY" && freq !== "YEARLY") return [];
   const yearly = freq === "YEARLY";
-  const day = start.getDate();
-  const month = start.getMonth() + 1;
-  const daysInMonth = new Date(start.getFullYear(), month, 0).getDate();
-  const weekday = WEEKDAYS_FROM_SUNDAY[start.getDay()] ?? "MO";
+  const wall = wallClockAsUtc(start, timeZone);
+  const day = wall.getUTCDate();
+  const month = wall.getUTCMonth() + 1;
+  const daysInMonth = new Date(Date.UTC(wall.getUTCFullYear(), month, 0)).getUTCDate();
+  const weekday = WEEKDAYS_FROM_SUNDAY[wall.getUTCDay()] ?? "MO";
   const nth = Math.ceil(day / 7);
   const ofMonth = yearly ? ` of ${monthName(month)}` : "";
   const inMonth: PatternFields = yearly ? { byMonth: [month] } : {};
@@ -394,7 +417,7 @@ export function repeatPatterns(freq: RecurrenceRule["freq"], start: Date, timeZo
       label: yearly
         ? `On ${monthName(month)} ${day}${month === 2 && day === 29 ? " (leap years only)" : ""}`
         : `On day ${day}${day > 28 ? " (skips months without one)" : ""}`,
-      fields: {},
+      fields: { tzid: timeZone },
     },
   ];
   if (nth <= 4) {
@@ -411,7 +434,9 @@ export function repeatPatterns(freq: RecurrenceRule["freq"], start: Date, timeZo
       fields: { ...inMonth, byDay: [weekday], bySetPos: [-1], tzid: timeZone },
     });
   }
-  if (day === daysInMonth && day < 31) {
+  // Yearly, the last day of any month but February is a fixed date, the
+  // same as the plain pattern.
+  if (day === daysInMonth && (!yearly || month === 2)) {
     patterns.push({
       key: "last-day",
       label: `On the last day${ofMonth}`,
@@ -435,9 +460,37 @@ export function withPattern(rule: RecurrenceRule, fields: PatternFields): Recurr
   return { ...next, ...fields };
 }
 
-/** Whether `rule` has a monthly or yearly pattern beyond "the same date". */
-export function hasCalendarPattern(rule: RecurrenceRule): boolean {
-  return rule.byMonthDay !== undefined || rule.byMonth !== undefined || rule.bySetPos !== undefined;
+/** What a kind of pattern becomes on a date that doesn't offer it. */
+const FALLBACK: Record<PatternKind, PatternKind[]> = {
+  date: [],
+  "nth-weekday": ["last-weekday"],
+  "last-weekday": ["nth-weekday"],
+  "last-day": [],
+};
+
+/**
+ * A monthly/yearly rule, carried over to a series that now starts at `to`
+ * instead of `from`. The kind of pattern is kept: "the third Tuesday",
+ * moved to a Wednesday, becomes "the third Wednesday", so the start stays
+ * an occurrence of its own series (rrule doesn't produce a start that
+ * doesn't match, so it would otherwise vanish). A kind the new date
+ * doesn't offer becomes the nearest one that it does: the fifth Tuesday is
+ * the last one; the last day, moved to the 12th, is the 12th.
+ *
+ * Returns the rule itself when nothing changes, including for rules that
+ * match none of the offered patterns (written elsewhere): those are kept
+ * as they are rather than guessed at.
+ */
+export function followStart(rule: RecurrenceRule, from: Date, to: Date): RecurrenceRule {
+  if (rule.freq !== "MONTHLY" && rule.freq !== "YEARLY") return rule;
+  const zone = patternZone(rule);
+  const kind = repeatPatterns(rule.freq, from, zone).find((pattern) => usesPattern(rule, pattern))?.key;
+  if (!kind) return rule;
+  const options = repeatPatterns(rule.freq, to, zone);
+  const next =
+    [kind, ...FALLBACK[kind], "date"].map((key) => options.find((p) => p.key === key)).find(Boolean) ??
+    options[0];
+  return next && !usesPattern(rule, next) ? withPattern(rule, next.fields) : rule;
 }
 
 /** The calendar part of a monthly/yearly summary: "on the third Tuesday",

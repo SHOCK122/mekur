@@ -99,6 +99,18 @@ export const RecurrenceRuleSchema = z
     if (rule.bySetPos !== undefined && rule.byDay === undefined && rule.byMonthDay === undefined) {
       ctx.addIssue({ code: "custom", path: ["bySetPos"], message: "bySetPos needs byDay or byMonthDay" });
     }
+    // Positions past the most days one month (or year) can offer would
+    // never occur: there is no sixth Monday. (An upper bound -- byDay can
+    // narrow byMonthDay further -- so expansion still guards the rest.)
+    if (rule.bySetPos !== undefined) {
+      const months = rule.byMonth?.length ?? (rule.freq === "YEARLY" ? 12 : 1);
+      const perMonth = rule.byMonthDay ? rule.byMonthDay.length : 5 * (rule.byDay?.length ?? 0);
+      rule.bySetPos.forEach((pos, i) => {
+        if (Math.abs(pos) > months * perMonth) {
+          ctx.addIssue({ code: "custom", path: ["bySetPos", i], message: "there are never that many matching days" });
+        }
+      });
+    }
     // A day no allowed month has (February 30th) would never occur, and
     // expanding a rule that never matches walks to the year 9999.
     if (rule.byMonthDay !== undefined) {

@@ -213,6 +213,15 @@ describe("RecurrenceRuleSchema calendar parts", () => {
     expect(ok({ freq: "MONTHLY", byMonth: [2, 3], byMonthDay: [31] })).toBe(true);
   });
 
+  it("rejects positions past the most days a month or year can offer", () => {
+    expect(ok({ freq: "MONTHLY", byDay: ["MO"], bySetPos: [6] })).toBe(false);
+    expect(ok({ freq: "MONTHLY", byDay: ["MO"], bySetPos: [-5] })).toBe(true);
+    expect(ok({ freq: "MONTHLY", byMonthDay: [1, 15], bySetPos: [3] })).toBe(false);
+    // Yearly without a month: every month's days are candidates.
+    expect(ok({ freq: "YEARLY", byDay: ["MO"], bySetPos: [20] })).toBe(true);
+    expect(ok({ freq: "YEARLY", byMonth: [3], byDay: ["MO"], bySetPos: [6] })).toBe(false);
+  });
+
   it("rejects an unknown time zone", () => {
     expect(ok({ freq: "MONTHLY", byMonthDay: [1], tzid: "Mars/Olympus_Mons" })).toBe(false);
   });

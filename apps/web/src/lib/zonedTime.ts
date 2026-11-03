@@ -69,3 +69,27 @@ export function instantFromWallClock(wall: Date, timeZone: string): Date {
   if (candidates.length > 0) return new Date(Math.min(...candidates));
   return new Date(reading - before);
 }
+
+/**
+ * instantFromWallClock for many readings in one zone, in order -- a
+ * series' occurrences. The offset rarely changes between consecutive
+ * readings, so the last one is tried first and confirmed with a single
+ * lookup; only readings near a change pay for the full search.
+ */
+export function wallClockConverter(timeZone: string): (wall: Date) => Date {
+  let offset: number | null = null;
+  return (wall) => {
+    const reading = wall.getTime();
+    if (offset !== null) {
+      const instant = reading - offset;
+      // Confirming the reading isn't enough: right after clocks go back it
+      // also matches the later of two instants, and the earlier is wanted.
+      if (offsetAt(instant, timeZone) === offset && offsetAt(instant - HALF_DAY_MS, timeZone) === offset) {
+        return new Date(instant);
+      }
+    }
+    const instant = instantFromWallClock(wall, timeZone);
+    offset = offsetAt(instant.getTime(), timeZone);
+    return instant;
+  };
+}

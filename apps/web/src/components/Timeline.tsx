@@ -23,7 +23,7 @@ import {
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
-import { expandOccurrences } from "../lib/recurrence.js";
+import { expandOccurrences, followStart } from "../lib/recurrence.js";
 import { rankAtEnd } from "../lib/fractionalRank.js";
 import {
   timeDeltaFromDrag,
@@ -94,6 +94,23 @@ interface EventPreview {
   startTime: string;
   endTime?: string;
   rank?: string;
+}
+
+/**
+ * An event with a change to its times applied. A monthly/yearly pattern
+ * follows a moved start ("the third Tuesday", dragged a day later, becomes
+ * "the third Wednesday"), exactly as in the editor; otherwise the moved
+ * start wouldn't be an occurrence of its own series and would vanish
+ * mid-drag. Always derived from the saved event, so repeated previews and
+ * merged saves agree.
+ */
+function withChange<T extends DecryptedEvent>(saved: T, change: EventPreview): T {
+  const moved = { ...saved, ...change };
+  if (!saved.recurrence || change.startTime === saved.startTime) return moved;
+  return {
+    ...moved,
+    recurrence: followStart(saved.recurrence, new Date(saved.startTime), new Date(change.startTime)),
+  };
 }
 
 /** Keyboard changes not yet saved. Shown exactly like a drag preview. */
@@ -233,11 +250,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
   const placements = useMemo(() => {
     const withPreview = events.map((saved) => {
-      const inFlight = saving.get(saved.id);
-      const event = inFlight ? { ...saved, ...inFlight.preview } : saved;
-      if (drag?.preview && drag.eventId === event.id) return { ...event, ...drag.preview };
-      if (nudge && nudge.eventId === event.id) return { ...event, ...nudge.preview };
-      return event;
+      const inFlight = saving.get(saved.id)?.preview;
+      const change =
+        drag?.preview && drag.eventId === saved.id
+          ? { ...inFlight, ...drag.preview }
+          : nudge && nudge.eventId === saved.id
+            ? { ...inFlight, ...nudge.preview }
+            : inFlight;
+      return change ? withChange(saved, change) : saved;
     });
 
     const knownRanks = withPreview.map((e) => e.rank).filter((r): r is string => Boolean(r));
@@ -590,8 +610,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const merged = { ...savingRef.current.get(eventId)?.preview, ...preview };
     const token = {};
     updateSaving(new Map(savingRef.current).set(eventId, { preview: merged, token }));
+    // A moved start carries its monthly/yearly pattern along (withChange).
+    const saved = events.find((e) => e.id === eventId);
+    const recurrence = saved ? withChange(saved, merged).recurrence : undefined;
+    const changes: Partial<EventContent> =
+      saved && recurrence !== saved.recurrence ? { ...merged, recurrence } : merged;
     const done = saveChain.current
-      .then(() => onChangeRef.current?.(eventId, merged))
+      .then(() => onChangeRef.current?.(eventId, changes))
       .then(
         (result) => {
           if (result === false) setAnnouncement(`Couldn't save the change to ${name}.`);

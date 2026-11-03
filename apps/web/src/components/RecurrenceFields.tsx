@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecurrenceRule } from "@schedule-app/shared";
-import { describeRecurrence, repeatPatterns, usesPattern, withPattern } from "../lib/recurrence.js";
+import { describeRecurrence, followStart, patternZone, repeatPatterns, usesPattern, withPattern } from "../lib/recurrence.js";
 
 type Unit = RecurrenceRule["freq"];
 
@@ -60,15 +60,6 @@ interface RecurrenceFieldsProps {
 
 const CALENDAR_UNITS: ReadonlySet<Unit> = new Set(["MONTHLY", "YEARLY"]);
 
-function localTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-/** The calendar day a start falls on, locally: all the patterns depend on. */
-function dayOf(start: Date | null): string | null {
-  return start ? `${start.getFullYear()}-${start.getMonth()}-${start.getDate()}` : null;
-}
-
 /**
  * The repeat editor, shared by the create form and the edit panel so both
  * offer exactly the same options. A single toggle reveals the interval,
@@ -85,36 +76,39 @@ function dayOf(start: Date | null): string | null {
  */
 export function RecurrenceFields({ value, onChange, start }: RecurrenceFieldsProps) {
   const enabled = value !== undefined;
-  const patterns = value && start ? repeatPatterns(value.freq, start, localTimeZone()) : [];
+  // Read in the rule's own zone: editing someone else's "first Monday"
+  // from another time zone still means their Monday.
+  const patterns = value && start ? repeatPatterns(value.freq, start, patternZone(value)) : [];
   const chosen = value ? patterns.find((pattern) => usesPattern(value, pattern)) : undefined;
 
-  // Moving the start keeps the *kind* of pattern: "the third Tuesday",
-  // started on a Wednesday instead, becomes "the third Wednesday" -- so the
-  // start stays an occurrence of its own series. A kind the new date
-  // doesn't offer ("the last day", moved to the 12th) falls back to the
-  // date. A rule that matched no offered pattern is left alone.
+  // Moving the start keeps the kind of pattern (see followStart). Only a
+  // usable start is remembered, so passing through an empty field on the
+  // way to a new date still carries the pattern over.
   const latest = useRef({ value, onChange, start });
   latest.current = { value, onChange, start };
   const previousStart = useRef(start);
-  const day = dayOf(start);
+  const startMs = start?.getTime() ?? null;
   useEffect(() => {
-    const before = previousStart.current;
-    previousStart.current = latest.current.start;
     const { value: rule, onChange: change, start: now } = latest.current;
-    if (!rule || !before || !now || !CALENDAR_UNITS.has(rule.freq)) return;
-    const zone = localTimeZone();
-    const kind = repeatPatterns(rule.freq, before, zone).find((pattern) => usesPattern(rule, pattern))?.key;
-    if (!kind) return;
-    const options = repeatPatterns(rule.freq, now, zone);
-    const next = options.find((pattern) => pattern.key === kind) ?? options[0];
-    if (next && !usesPattern(rule, next)) change(withPattern(rule, next.fields));
+    if (!now) return;
+    const before = previousStart.current;
+    previousStart.current = now;
+    if (!rule || !before) return;
+    const next = followStart(rule, before, now);
+    if (next !== rule) change(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day]);
+  }, [startMs]);
 
   function changeUnit(freq: Unit) {
-    if (!value) return;
-    const reset = CALENDAR_UNITS.has(freq) || CALENDAR_UNITS.has(value.freq);
-    onChange({ ...(reset && freq !== value.freq ? withPattern(value, {}) : value), freq });
+    if (!value || freq === value.freq) return;
+    if (!CALENDAR_UNITS.has(freq) && !CALENDAR_UNITS.has(value.freq)) {
+      onChange({ ...value, freq });
+      return;
+    }
+    // A new monthly/yearly rule starts on the same date, read in this
+    // device's zone (the date pattern needs no start to build).
+    const fields = CALENDAR_UNITS.has(freq) ? { tzid: patternZone(undefined) } : {};
+    onChange({ ...withPattern(value, fields), freq });
   }
 
   return (

@@ -3,6 +3,7 @@ import { render, screen, within, fireEvent, waitFor, act } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { Timeline } from "../src/components/Timeline.js";
 import type { DecryptedEvent } from "../src/lib/events.js";
+import { followStart, repeatPatterns, withPattern } from "../src/lib/recurrence.js";
 
 function makeEvent(overrides: Partial<DecryptedEvent> = {}): DecryptedEvent {
   const start = new Date(Date.now() + 60 * 60 * 1000);
@@ -773,6 +774,33 @@ describe("Timeline", () => {
       expect(new Date(changes.endTime).getTime()).toBe(
         new Date(event.endTime!).getTime() + 2 * STEP
       );
+    });
+
+    it("carries a monthly pattern along when the keyboard moves a series a day", async () => {
+      // "The third Tuesday" moved to a Wednesday must become "the third
+      // Wednesday": otherwise the moved start isn't an occurrence of its
+      // own series, vanishes, and takes keyboard focus with it.
+      const base = makeEvent();
+      const start = new Date(base.startTime);
+      const pattern = repeatPatterns("MONTHLY", start, "UTC").find((p) => p.key !== "date")!;
+      const recurrence = withPattern({ freq: "MONTHLY", interval: 1 }, pattern.fields);
+      const event = { ...base, recurrence };
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      const presses = (24 * 60 * MINUTE) / STEP;
+      for (let i = 0; i < presses; i++) fireEvent.keyDown(button, { key: "ArrowRight" });
+      expect(label("Standup")).toBe(button);
+      expect(button).toHaveFocus();
+
+      fireEvent.blur(button);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const changes = onChange.mock.calls[0]![1];
+      const moved = new Date(start.getTime() + presses * STEP);
+      expect(changes.startTime).toBe(moved.toISOString());
+      expect(changes.recurrence).toEqual(followStart(recurrence, start, moved));
+      expect(changes.recurrence).not.toEqual(recurrence);
     });
 
     it("pans to keep a keyboard-moved event on screen instead of dropping focus", async () => {
