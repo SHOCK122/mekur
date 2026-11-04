@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
+import { MAX_OCCURRENCE_OVERRIDES, type EventContent, type RecurrenceRule } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 import { RecurrenceFields } from "./RecurrenceFields.js";
-import { describeRecurrence, withoutSkippedOccurrence } from "../lib/recurrence.js";
+import {
+  activeOverrides,
+  describeRecurrence,
+  exceptionsFollowingStart,
+  findOverride,
+  withOverride,
+  withoutOverride,
+  withoutSkippedOccurrence,
+} from "../lib/recurrence.js";
 import { toLocalInput, fromLocalInput, dateFromLocalInput, validateTimes } from "../lib/datetime.js";
 
 interface EventEditPanelProps {
@@ -10,6 +18,9 @@ interface EventEditPanelProps {
   /** Where on screen the event's modal sits, so the panel can visibly grow
    * out of it rather than appearing from nowhere. */
   origin?: { left: number; top: number; width: number; height: number } | null;
+  /** The occurrence that was opened, by the start the series gives it.
+   * With it, a repeating event offers to change just that occurrence. */
+  occurrence?: Date;
   /** Resolves true once saved. */
   onSave: (changes: Partial<EventContent>) => Promise<boolean>;
   /** Delete for everyone. Only offered with an edit capability. */
@@ -29,6 +40,7 @@ const formatDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", tim
 export function EventEditPanel({
   event,
   origin,
+  occurrence,
   onSave,
   onDelete,
   onLeave,
@@ -48,6 +60,36 @@ export function EventEditPanel({
   const [end, setEnd] = useState(initialEnd);
   const [important, setImportant] = useState(Boolean(event.important));
   const [recurrence, setRecurrence] = useState<RecurrenceRule | undefined>(event.recurrence);
+  // The moves that apply. Decrypted content is untrusted, and moves left
+  // behind by a change to the series no longer apply: neither is shown,
+  // and saving a move drops them.
+  const moved = activeOverrides(event);
+
+  // Changing one occurrence of a series moves it (an override) and leaves
+  // the rest; only its times can differ. Offered for an occurrence of a
+  // series this account can edit.
+  const canMoveOne = !readOnly && Boolean(event.recurrence) && occurrence !== undefined;
+  const [scope, setScope] = useState<"series" | "occurrence">("series");
+  const onlyThisOne = canMoveOne && scope === "occurrence";
+  // Where the opened occurrence is now, and where the series alone would
+  // put it. Untouched fields save these exact instants, as above.
+  const [occurrenceTimes] = useState(() => {
+    if (!occurrence) return null;
+    const seriesEnd = event.endTime
+      ? new Date(occurrence.getTime() + new Date(event.endTime).getTime() - new Date(event.startTime).getTime())
+      : null;
+    const series = { startTime: occurrence.toISOString(), endTime: seriesEnd?.toISOString() };
+    const override = findOverride(moved, occurrence);
+    return { series, current: override ? { startTime: override.startTime, endTime: override.endTime } : series };
+  });
+  const [initialOccurrenceStart] = useState(() =>
+    occurrenceTimes ? toLocalInput(new Date(occurrenceTimes.current.startTime)) : ""
+  );
+  const [initialOccurrenceEnd] = useState(() =>
+    occurrenceTimes?.current.endTime ? toLocalInput(new Date(occurrenceTimes.current.endTime)) : ""
+  );
+  const [occurrenceStart, setOccurrenceStart] = useState(initialOccurrenceStart);
+  const [occurrenceEnd, setOccurrenceEnd] = useState(initialOccurrenceEnd);
   // What the repeat patterns are derived from; untouched, the exact start.
   const startDate = start === initialStart ? new Date(event.startTime) : dateFromLocalInput(start);
   const [busy, setBusy] = useState(false);
@@ -92,6 +134,10 @@ export function EventEditPanel({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (onlyThisOne && occurrence && occurrenceTimes) {
+      await saveOccurrence(occurrence, occurrenceTimes);
+      return;
+    }
     if (!title.trim()) {
       setError("Give the event a title.");
       return;
@@ -104,8 +150,46 @@ export function EventEditPanel({
       return;
     }
     // Clearing the end makes the event open-ended again rather than being
-    // an error; clearing the repeat makes it a one-off.
-    await save({ title: title.trim(), startTime, endTime, important, recurrence }, true);
+    // an error; clearing the repeat makes it a one-off. Skips and moves
+    // follow a moved start where the rule allows it.
+    await save(
+      {
+        title: title.trim(),
+        startTime,
+        endTime,
+        important,
+        recurrence,
+        ...(startTime ? exceptionsFollowingStart(event, startTime, recurrence) : {}),
+      },
+      true
+    );
+  }
+
+  async function saveOccurrence(
+    which: Date,
+    times: { series: { startTime: string; endTime?: string }; current: { startTime: string; endTime?: string } }
+  ) {
+    const startTime =
+      occurrenceStart === initialOccurrenceStart ? times.current.startTime : fromLocalInput(occurrenceStart);
+    const endTime = occurrenceEnd === initialOccurrenceEnd ? times.current.endTime : fromLocalInput(occurrenceEnd);
+    const invalid = validateTimes(startTime, endTime);
+    if (invalid || startTime === undefined) {
+      setError(invalid);
+      return;
+    }
+    // Moved back to exactly where the series has it, it is no longer moved.
+    const sameInstant = (a?: string, b?: string) =>
+      a === undefined || b === undefined ? a === b : new Date(a).getTime() === new Date(b).getTime();
+    const backInPlace =
+      sameInstant(startTime, times.series.startTime) && sameInstant(endTime, times.series.endTime);
+    const occurrenceOverrides = backInPlace
+      ? withoutOverride(moved, which)
+      : withOverride(moved, which, { startTime, endTime });
+    if (occurrenceOverrides.length > MAX_OCCURRENCE_OVERRIDES) {
+      setError(`At most ${MAX_OCCURRENCE_OVERRIDES} occurrences can be moved. Put some back first.`);
+      return;
+    }
+    await save({ occurrenceOverrides }, true);
   }
 
   const skipped = event.skippedOccurrences ?? [];
@@ -137,26 +221,84 @@ export function EventEditPanel({
             </p>
           )}
 
+          {canMoveOne && (
+            <fieldset className="edit-scope">
+              <legend>Change</legend>
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="edit-scope"
+                  checked={scope === "series"}
+                  onChange={() => setScope("series")}
+                />
+                Every occurrence
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="edit-scope"
+                  checked={scope === "occurrence"}
+                  onChange={() => setScope("occurrence")}
+                />
+                Only this one ({formatDate.format(occurrence)})
+              </label>
+            </fieldset>
+          )}
+
           <fieldset disabled={readOnly} className="edit-fields">
             <label>
               Title
-              <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input
+                ref={titleRef}
+                // Shows the series' own title while it can't be changed, so
+                // an unsaved edit doesn't look as if it will be saved.
+                value={onlyThisOne ? event.title : title}
+                disabled={onlyThisOne}
+                onChange={(e) => setTitle(e.target.value)}
+              />
             </label>
 
-            <label>
-              Starts
-              <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
-            </label>
+            {onlyThisOne ? (
+              <>
+                <p className="field-hint">
+                  Only this occurrence&rsquo;s times change. Everything else belongs to the series.
+                </p>
+                <label>
+                  Starts
+                  <input
+                    type="datetime-local"
+                    value={occurrenceStart}
+                    onChange={(e) => setOccurrenceStart(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Ends <span className="field-hint">(leave empty for open-ended)</span>
+                  <input
+                    type="datetime-local"
+                    value={occurrenceEnd}
+                    onChange={(e) => setOccurrenceEnd(e.target.value)}
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  Starts
+                  <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+                </label>
 
-            <label>
-              Ends <span className="field-hint">(leave empty for open-ended)</span>
-              <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-            </label>
+                <label>
+                  Ends <span className="field-hint">(leave empty for open-ended)</span>
+                  <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+                </label>
+              </>
+            )}
 
             <label className="checkbox-label">
               <input
                 type="checkbox"
-                checked={important}
+                checked={onlyThisOne ? Boolean(event.important) : important}
+                disabled={onlyThisOne}
                 onChange={(e) => setImportant(e.target.checked)}
               />
               Mark as important
@@ -165,9 +307,46 @@ export function EventEditPanel({
             {readOnly ? (
               event.recurrence && <p className="event-recurrence">{describeRecurrence(event.recurrence)}</p>
             ) : (
-              <RecurrenceFields value={recurrence} onChange={setRecurrence} start={startDate} />
+              !onlyThisOne && <RecurrenceFields value={recurrence} onChange={setRecurrence} start={startDate} />
             )}
           </fieldset>
+
+          {moved.length > 0 && (
+            <section className="skipped-occurrences" aria-label="Moved occurrences">
+              <h3>Moved</h3>
+              <ul>
+                {moved.map((override) => {
+                  const from = formatDate.format(new Date(override.occurrence));
+                  const to = formatDate.format(new Date(override.startTime));
+                  return (
+                    <li key={override.occurrence}>
+                      <span>
+                        {from} &rarr; {to}
+                      </span>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          className="header-link"
+                          disabled={busy}
+                          onClick={() =>
+                            save(
+                              {
+                                occurrenceOverrides: withoutOverride(moved, new Date(override.occurrence)),
+                              },
+                              false
+                            )
+                          }
+                          aria-label={`Put ${from} back`}
+                        >
+                          Put back
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
 
           {skipped.length > 0 && (
             <section className="skipped-occurrences" aria-label="Skipped occurrences">

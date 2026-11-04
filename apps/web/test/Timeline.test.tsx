@@ -1126,5 +1126,61 @@ describe("Timeline", () => {
       fireEvent.blur(button);
       expect(onChange).not.toHaveBeenCalled();
     });
+
+    it("carries a daily series' skips and moves along when it moves", async () => {
+      // Otherwise they stay keyed to times the series no longer has, and
+      // quietly stop applying.
+      const base = makeEvent();
+      const at = (ms: number) => new Date(new Date(base.startTime).getTime() + ms).toISOString();
+      const DAY = 24 * 60 * MINUTE;
+      const event = {
+        ...base,
+        recurrence: { freq: "DAILY" as const, interval: 1 },
+        skippedOccurrences: [at(2 * DAY)],
+        occurrenceOverrides: [{ occurrence: at(DAY), startTime: at(DAY + 60 * MINUTE) }],
+      };
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.blur(button);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes.skippedOccurrences).toEqual([at(2 * DAY + STEP)]);
+      // Still moved to where it was moved to.
+      expect(changes.occurrenceOverrides).toEqual([{ occurrence: at(DAY + STEP), startTime: at(DAY + 60 * MINUTE) }]);
+    });
+  });
+
+  describe("moved occurrences", () => {
+    it("are drawn where they were moved to, without drag handles or arrow keys", () => {
+      // Dragging changes the whole series, which a moved occurrence doesn't
+      // follow; it is changed from its edit panel instead.
+      const base = makeEvent();
+      const start = new Date(base.startTime).getTime();
+      const event = {
+        ...base,
+        recurrence: { freq: "DAILY" as const, interval: 1 },
+        occurrenceOverrides: [
+          {
+            occurrence: base.startTime,
+            startTime: new Date(start + 2 * 3_600_000).toISOString(),
+            endTime: new Date(start + 2.5 * 3_600_000).toISOString(),
+          },
+        ],
+      };
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const series = screen.getByTestId("event-series-e1");
+      expect(series.getAttribute("data-occurrences")).toBe("1");
+      expect(series.querySelectorAll(".resize-handle")).toHaveLength(0);
+      const button = screen.getByRole("button", { name: /Standup/ });
+      expect(button).not.toHaveAccessibleDescription(/arrow/i);
+      expect(fireEvent.keyDown(button, { key: "ArrowRight" })).toBe(true);
+      fireEvent.blur(button);
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 });

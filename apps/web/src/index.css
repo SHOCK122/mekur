@@ -838,6 +838,23 @@ button:disabled {
   min-width: 0;
 }
 
+/* Whether a change applies to the whole series or one occurrence. */
+.edit-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.edit-scope legend {
+  font-size: 0.85rem;
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+
 .skipped-occurrences h3 {
   font-size: 0.85rem;
   margin: 0 0 0.25rem;

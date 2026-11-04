@@ -235,7 +235,7 @@ storage; that is fixed together with key storage in Phase 11.
   fractional ranks); `hooks/useEvents` for loading and mutations;
   components that only decide what to show.
 - The timeline is the only view. Every event action -- edit, repeat,
-  skip/restore an occurrence, share, delete, or remove a view-only event
+  skip/restore or move one occurrence, share, delete, or remove a view-only event
   from your own schedule -- is reachable from the event's edit panel.
 - Native iOS/Android would start as the same PWA in Capacitor, with a
   native rewrite only if real usage shows it's needed.
