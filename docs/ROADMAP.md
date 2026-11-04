@@ -479,26 +479,37 @@ worth of dead code and fixes what the model switch broke.
       - A moved occurrence is shown wherever it was moved to (also into a
         window its original slot isn't in), and only while the series
         still occurs at its original start -- checked against the rule,
-        remembered per rule/start/instant -- so an entry left behind by a
-        change to the series is ignored rather than resurrected. A skip
-        wins over a move; restoring the skip brings the move back.
-        Decrypted content isn't schema-checked, so expansion takes at most
-        `MAX_OCCURRENCE_OVERRIDES` (200, also the schema's cap) and drops
+        remembered alongside the list for as long as the rule, start and
+        zone stay the same -- so an entry left behind by a change to the
+        series is ignored rather than resurrected, and isn't listed (saving
+        another move drops it). A skip wins over a move; restoring the skip
+        brings the move back. Decrypted content isn't schema-checked, so
+        expansion and the panel take at most `MAX_OCCURRENCE_OVERRIDES`
+        (200, also the schema's cap; the panel refuses a 201st) and drop
         entries with unreadable or backwards times.
+      - **Moving a series now carries its skips and moves along** (editor,
+        drag and keyboard alike) where that is exact: fixed-length repeats
+        in UTC with no day filter. Before, any change to a series' start
+        left its skips keyed to times it no longer had, so they silently
+        stopped applying. Moved occurrences keep the times they were moved
+        to.
+      - A moved occurrence on the timeline has no drag handles or arrow
+        keys: those change the whole series, which the moved occurrence
+        doesn't follow. It is changed from its edit panel.
       - Found while doing it: the timeline handed the panel the clicked
         occurrence's *displayed* start, which for a moved one is not the
         occurrence it is -- "Skip this one" would have recorded a time the
         series never occurs at. It now passes the occurrence's identity
         (`recurrenceId`).
-      - Known gaps, now listed below: changing the series' start (in the
-        editor, or by dragging/keyboard-moving it on the timeline) leaves
-        its skips and moves keyed to times it no longer occurs at, so they
-        silently stop applying -- true of skips before this too; and
-        dragging a moved occurrence on the timeline moves the whole series,
-        not just that occurrence.
-- [ ] Keep a series' skips and moves attached when its start moves (shift
-      them with it where the rule allows it, e.g. fixed-period rules), and
-      let dragging a moved occurrence move only that occurrence.
+      - Known gaps, listed below: skips and moves of weekday, calendar
+        pattern and zoned rules are still left behind when the series'
+        start moves; a moved occurrence can't be dragged on its own; and a
+        moved occurrence shares its series' single row, so one moved onto
+        a sibling covers it.
+- [ ] Keep skips and moves attached when the start of a weekday, calendar
+      pattern or zoned series moves (map each to the occurrence in the same
+      position), and let dragging a moved occurrence move only that
+      occurrence.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.

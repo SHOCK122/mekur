@@ -11,6 +11,8 @@ import {
   withOverride,
   withoutOverride,
   findOverride,
+  activeOverrides,
+  exceptionsFollowingStart,
 } from "../src/lib/recurrence.js";
 
 describe("expandOccurrences", () => {
@@ -838,6 +840,77 @@ describe("moved occurrences (occurrenceOverrides)", () => {
     const lots = { ...daily, occurrenceOverrides: many };
     const late = expandOccurrences(lots, new Date("2029-01-01T00:00:00.000Z"), new Date("2029-01-02T00:00:00.000Z"));
     expect(late.map((o) => [iso(o.start), o.moved])).toEqual([["2029-01-01T09:00:00.000Z", false]]);
+  });
+});
+
+describe("activeOverrides", () => {
+  const daily = {
+    startTime: "2026-08-03T09:00:00.000Z",
+    endTime: "2026-08-03T09:30:00.000Z",
+    recurrence: { freq: "DAILY" as const, interval: 1 },
+  };
+
+  it("keeps the moves that apply, and drops left-behind and unreadable ones", () => {
+    const applies = { occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" };
+    const event = {
+      ...daily,
+      occurrenceOverrides: [
+        applies,
+        { occurrence: "2026-08-05T10:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" },
+        { occurrence: "garbage", startTime: "2026-08-05T15:00:00.000Z" },
+        null,
+      ] as never,
+    };
+    expect(activeOverrides(event)).toEqual([applies]);
+  });
+
+  it("is empty for a non-list or a one-off", () => {
+    expect(activeOverrides({ ...daily, occurrenceOverrides: "nope" as never })).toEqual([]);
+    const { recurrence: _r, ...once } = daily;
+    expect(
+      activeOverrides({ ...once, occurrenceOverrides: [{ occurrence: daily.startTime, startTime: daily.endTime }] })
+    ).toEqual([]);
+  });
+
+  it("doesn't reuse an answer for a series read in a different time zone", () => {
+    // Same list, same wall-clock start (09:00), different zones: 09:00 UTC
+    // is an occurrence of the UTC series but not of the London one.
+    const occurrenceOverrides = [{ occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" }];
+    expect(activeOverrides({ ...daily, occurrenceOverrides })).toHaveLength(1);
+    const london = {
+      startTime: "2026-08-03T08:00:00.000Z",
+      recurrence: { freq: "DAILY" as const, interval: 1, tzid: "Europe/London" },
+      occurrenceOverrides,
+    };
+    expect(activeOverrides(london)).toEqual([]);
+  });
+});
+
+describe("exceptionsFollowingStart", () => {
+  const series = {
+    startTime: "2026-08-03T09:00:00.000Z",
+    recurrence: { freq: "DAILY" as const, interval: 1 },
+    skippedOccurrences: ["2026-08-04T09:00:00.000Z"],
+    occurrenceOverrides: [{ occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" }],
+  };
+
+  it("moves a fixed-length series' skips and moves by as much as its start", () => {
+    expect(exceptionsFollowingStart(series, "2026-08-03T09:30:00.000Z")).toEqual({
+      skippedOccurrences: ["2026-08-04T09:30:00.000Z"],
+      occurrenceOverrides: [{ occurrence: "2026-08-05T09:30:00.000Z", startTime: "2026-08-05T15:00:00.000Z" }],
+    });
+  });
+
+  it("changes nothing where moving the start doesn't move every occurrence alike", () => {
+    const weekdays = { ...series, recurrence: { freq: "WEEKLY" as const, interval: 1, byDay: ["MO" as const, "WE" as const] } };
+    expect(exceptionsFollowingStart(weekdays, "2026-08-04T09:00:00.000Z")).toEqual({});
+    const zoned = { ...series, recurrence: { ...series.recurrence, tzid: "Europe/London" } };
+    expect(exceptionsFollowingStart(zoned, "2026-08-03T09:30:00.000Z")).toEqual({});
+  });
+
+  it("changes nothing when the rule changes too, or the start doesn't", () => {
+    expect(exceptionsFollowingStart(series, "2026-08-03T09:30:00.000Z", { freq: "HOURLY", interval: 1 })).toEqual({});
+    expect(exceptionsFollowingStart(series, series.startTime)).toEqual({});
   });
 });
 

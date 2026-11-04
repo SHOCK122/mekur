@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { EventContent, RecurrenceRule } from "@schedule-app/shared";
+import { MAX_OCCURRENCE_OVERRIDES, type EventContent, type RecurrenceRule } from "@schedule-app/shared";
 import type { DecryptedEvent } from "../lib/events.js";
 import { RecurrenceFields } from "./RecurrenceFields.js";
 import {
+  activeOverrides,
   describeRecurrence,
+  exceptionsFollowingStart,
   findOverride,
   withOverride,
   withoutOverride,
@@ -58,6 +60,10 @@ export function EventEditPanel({
   const [end, setEnd] = useState(initialEnd);
   const [important, setImportant] = useState(Boolean(event.important));
   const [recurrence, setRecurrence] = useState<RecurrenceRule | undefined>(event.recurrence);
+  // The moves that apply. Decrypted content is untrusted, and moves left
+  // behind by a change to the series no longer apply: neither is shown,
+  // and saving a move drops them.
+  const moved = activeOverrides(event);
 
   // Changing one occurrence of a series moves it (an override) and leaves
   // the rest; only its times can differ. Offered for an occurrence of a
@@ -73,8 +79,8 @@ export function EventEditPanel({
       ? new Date(occurrence.getTime() + new Date(event.endTime).getTime() - new Date(event.startTime).getTime())
       : null;
     const series = { startTime: occurrence.toISOString(), endTime: seriesEnd?.toISOString() };
-    const moved = findOverride(event.occurrenceOverrides, occurrence);
-    return { series, current: moved ? { startTime: moved.startTime, endTime: moved.endTime } : series };
+    const override = findOverride(moved, occurrence);
+    return { series, current: override ? { startTime: override.startTime, endTime: override.endTime } : series };
   });
   const [initialOccurrenceStart] = useState(() =>
     occurrenceTimes ? toLocalInput(new Date(occurrenceTimes.current.startTime)) : ""
@@ -144,8 +150,19 @@ export function EventEditPanel({
       return;
     }
     // Clearing the end makes the event open-ended again rather than being
-    // an error; clearing the repeat makes it a one-off.
-    await save({ title: title.trim(), startTime, endTime, important, recurrence }, true);
+    // an error; clearing the repeat makes it a one-off. Skips and moves
+    // follow a moved start where the rule allows it.
+    await save(
+      {
+        title: title.trim(),
+        startTime,
+        endTime,
+        important,
+        recurrence,
+        ...(startTime ? exceptionsFollowingStart(event, startTime, recurrence) : {}),
+      },
+      true
+    );
   }
 
   async function saveOccurrence(
@@ -166,13 +183,16 @@ export function EventEditPanel({
     const backInPlace =
       sameInstant(startTime, times.series.startTime) && sameInstant(endTime, times.series.endTime);
     const occurrenceOverrides = backInPlace
-      ? withoutOverride(event.occurrenceOverrides, which)
-      : withOverride(event.occurrenceOverrides, which, { startTime, endTime });
+      ? withoutOverride(moved, which)
+      : withOverride(moved, which, { startTime, endTime });
+    if (occurrenceOverrides.length > MAX_OCCURRENCE_OVERRIDES) {
+      setError(`At most ${MAX_OCCURRENCE_OVERRIDES} occurrences can be moved. Put some back first.`);
+      return;
+    }
     await save({ occurrenceOverrides }, true);
   }
 
   const skipped = event.skippedOccurrences ?? [];
-  const moved = event.occurrenceOverrides ?? [];
 
   // Animate outward from where the event sits, so it's obvious which one
   // is being edited without pinning the panel to the timeline.
@@ -230,7 +250,9 @@ export function EventEditPanel({
               Title
               <input
                 ref={titleRef}
-                value={title}
+                // Shows the series' own title while it can't be changed, so
+                // an unsaved edit doesn't look as if it will be saved.
+                value={onlyThisOne ? event.title : title}
                 disabled={onlyThisOne}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -275,7 +297,7 @@ export function EventEditPanel({
             <label className="checkbox-label">
               <input
                 type="checkbox"
-                checked={important}
+                checked={onlyThisOne ? Boolean(event.important) : important}
                 disabled={onlyThisOne}
                 onChange={(e) => setImportant(e.target.checked)}
               />

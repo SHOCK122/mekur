@@ -456,6 +456,100 @@ describe("EventEditPanel", () => {
       expect(onSave.mock.calls[0]![0]).toEqual({ occurrenceOverrides: [] });
     });
 
+    it("lists only moves that apply, and survives unreadable ones", () => {
+      const event = {
+        ...series,
+        occurrenceOverrides: [
+          ...moved.occurrenceOverrides,
+          // Left behind by a change to the series: it no longer occurs at 10:00.
+          { occurrence: "2026-08-06T10:00:00.000Z", startTime: "2026-08-06T15:00:00.000Z" },
+          { occurrence: "not a date", startTime: "also not" },
+        ],
+      } as DecryptedEvent;
+      render(<EventEditPanel {...handlers()} event={event} occurrence={wednesday} />);
+      expect(screen.getAllByRole("button", { name: /^put .* back$/i })).toHaveLength(1);
+    });
+
+    it("drops moves that no longer apply when saving another", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      const stale = { occurrence: "2026-08-06T10:00:00.000Z", startTime: "2026-08-06T15:00:00.000Z" };
+      render(
+        <EventEditPanel
+          {...handlers()}
+          event={{ ...series, occurrenceOverrides: [stale] }}
+          occurrence={wednesday}
+          onSave={onSave}
+        />
+      );
+      await user.click(screen.getByRole("radio", { name: /only this one/i }));
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: local("2026-08-05T15:00:00.000Z") } });
+      fireEvent.change(screen.getByLabelText(/ends/i), { target: { value: "" } });
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave.mock.calls[0]![0].occurrenceOverrides).toEqual([
+        { occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" },
+      ]);
+    });
+
+    it("refuses to move more occurrences than the schema allows", async () => {
+      const onSave = vi.fn();
+      const user = userEvent.setup();
+      // 200 moves of the occurrences after Wednesday.
+      const full = Array.from({ length: 200 }, (_, i) => {
+        const iso = new Date(Date.UTC(2026, 7, 6 + i, 9)).toISOString();
+        return { occurrence: iso, startTime: new Date(Date.UTC(2026, 7, 6 + i, 15)).toISOString() };
+      });
+      render(
+        <EventEditPanel
+          {...handlers()}
+          event={{ ...series, occurrenceOverrides: full }}
+          occurrence={wednesday}
+          onSave={onSave}
+        />
+      );
+      await user.click(screen.getByRole("radio", { name: /only this one/i }));
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: local("2026-08-05T15:00:00.000Z") } });
+      fireEvent.change(screen.getByLabelText(/ends/i), { target: { value: "" } });
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(/at most 200/i);
+      expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it("shows the series' saved title while only times can change", async () => {
+      const user = userEvent.setup();
+      render(<EventEditPanel {...handlers()} event={series} occurrence={wednesday} />);
+      const title = screen.getByLabelText(/title/i);
+      await user.clear(title);
+      await user.type(title, "Retro");
+      await user.click(screen.getByRole("radio", { name: /only this one/i }));
+      expect(screen.getByLabelText(/title/i)).toHaveValue("Standup");
+      await user.click(screen.getByRole("radio", { name: /every occurrence/i }));
+      expect(screen.getByLabelText(/title/i)).toHaveValue("Retro");
+    });
+
+    it("carries skips and moves along when the series' start moves", async () => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const user = userEvent.setup();
+      render(
+        <EventEditPanel
+          {...handlers()}
+          event={{ ...moved, skippedOccurrences: ["2026-08-04T09:00:00.000Z"] }}
+          occurrence={wednesday}
+          onSave={onSave}
+        />
+      );
+      fireEvent.change(screen.getByLabelText(/starts/i), { target: { value: local("2026-08-01T10:00:00.000Z") } });
+      fireEvent.change(screen.getByLabelText(/ends/i), { target: { value: local("2026-08-01T10:30:00.000Z") } });
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      const saved = onSave.mock.calls[0]![0];
+      expect(saved.skippedOccurrences).toEqual(["2026-08-04T10:00:00.000Z"]);
+      expect(saved.occurrenceOverrides).toEqual([
+        { occurrence: "2026-08-05T10:00:00.000Z", startTime: "2026-08-05T15:00:30.000Z" },
+      ]);
+    });
+
     it("shows moved occurrences to a view-only holder without offering to put them back", () => {
       render(<EventEditPanel {...handlers()} event={{ ...moved, canEdit: false }} />);
       expect(screen.getByRole("region", { name: /moved occurrences/i })).toBeInTheDocument();

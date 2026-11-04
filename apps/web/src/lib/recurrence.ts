@@ -81,15 +81,18 @@ const IN_PROGRESS_LOOKBACK_PERIODS = 100;
  * only while their start is in the window -- otherwise every open-ended
  * repeat that ever began would count as "in progress" forever.
  */
+/** What expansion reads from an event. */
+export interface SeriesFields {
+  startTime: string;
+  /** Absent for open-ended events. */
+  endTime?: string;
+  recurrence?: RecurrenceRule;
+  skippedOccurrences?: string[];
+  occurrenceOverrides?: OccurrenceOverride[];
+}
+
 export function expandOccurrences(
-  event: {
-    startTime: string;
-    /** Absent for open-ended events. */
-    endTime?: string;
-    recurrence?: RecurrenceRule;
-    skippedOccurrences?: string[];
-    occurrenceOverrides?: OccurrenceOverride[];
-  },
+  event: SeriesFields,
   rangeStart: Date,
   rangeEnd: Date,
   options: { includeSkipped?: boolean } = {}
@@ -109,9 +112,7 @@ export function expandOccurrences(
     options.includeSkipped ? true : !occurrence.skipped;
 
   if (!event.recurrence) {
-    const startsInside = start >= rangeStart && start <= rangeEnd;
-    const inProgress = start < rangeStart && end !== null && end > rangeStart;
-    if (!startsInside && !inProgress) return [];
+    if (!overlapsWindow(start, end, rangeStart, rangeEnd)) return [];
     return [{ start, end, skipped: isSkipped(start), recurrenceId: start, moved: false }].filter(keep);
   }
 
@@ -119,7 +120,74 @@ export function expandOccurrences(
   // progress at its start.
   const lookbackMs = durationMs !== null && durationMs > 0 ? durationMs : 0;
 
-  const recurrence = usableRule(event.recurrence);
+  const series = seriesRule(event.recurrence, start);
+  if (!series) return [];
+  const { recurrence, ruleOptions, toRule, fromRule } = series;
+
+  const rule = new RRule({
+    ...ruleOptions,
+    // Start the rule near the window instead of at the series' real
+    // beginning. Without this, viewing an hour of a minutely series that
+    // began years ago walks every intervening occurrence -- measured at
+    // over two minutes for a single expansion.
+    dtstart: advancedStart(series.dtstart, recurrence, toRule(rangeStart), lookbackMs),
+  });
+
+  // Skipped occurrences stay where the rule puts them (so they can be
+  // shown dimmed there), even if they were also moved.
+  const moves = new Map([...usableOverrides(event.occurrenceOverrides)].filter(([id]) => !skipped.has(id)));
+  const isMoved = (date: Date) => moves.has(date.getTime());
+
+  const { inProgress, inside } = collectBounded(rule, rangeStart, rangeEnd, lookbackMs, isSkipped, isMoved, fromRule);
+  const before = [inProgress.latest, options.includeSkipped ? inProgress.latestSkipped : null].filter(
+    (d): d is Date => d !== null
+  );
+
+  const fromRuleOccurrences = [...before, ...inside].map((occurrenceStart) => ({
+    start: occurrenceStart,
+    end: durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs),
+    skipped: isSkipped(occurrenceStart),
+    recurrenceId: occurrenceStart,
+    moved: false,
+  }));
+
+  const moved: Occurrence[] = [];
+  for (const [id, move] of moves) {
+    if (!overlapsWindow(move.start, move.end, rangeStart, rangeEnd)) continue;
+    if (!seriesOccursAt(series, id, event.occurrenceOverrides)) continue;
+    moved.push({ start: move.start, end: move.end, skipped: false, recurrenceId: new Date(id), moved: true });
+  }
+
+  return [...fromRuleOccurrences, ...moved]
+    .filter(keep)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .slice(0, MAX_OCCURRENCES_PER_EVENT);
+}
+
+/** Whether something from `start` to `end` belongs in the window: it
+ * starts inside it, or is in progress at its start. Open-ended ones only
+ * while starting inside, or every one that ever began would count. */
+function overlapsWindow(start: Date, end: Date | null, rangeStart: Date, rangeEnd: Date): boolean {
+  const startsInside = start >= rangeStart && start <= rangeEnd;
+  const inProgress = start < rangeStart && end !== null && end > rangeStart;
+  return startsInside || inProgress;
+}
+
+/** A series' rule, ready to run. */
+interface SeriesRule {
+  recurrence: RecurrenceRule;
+  ruleOptions: Partial<ConstructorParameters<typeof RRule>[0]>;
+  /** The series' start, as the rule sees it. */
+  dtstart: Date;
+  /** Maps an instant to the rule's clock, and back. */
+  toRule: (date: Date) => Date;
+  fromRule: (date: Date) => Date;
+}
+
+/** The rule for a series starting at `start`, or null when it never
+ * occurs. */
+function seriesRule(rule: RecurrenceRule, start: Date): SeriesRule | null {
+  const recurrence = usableRule(rule);
   // A rule with a time zone is evaluated on that zone's wall clock: rrule
   // only knows UTC, so it is handed wall-clock readings dressed as UTC
   // ("floating" times) and each result is mapped back to a real instant.
@@ -138,110 +206,80 @@ export function expandOccurrences(
     count: recurrence.count,
     until: recurrence.until ? toRule(new Date(recurrence.until)) : undefined,
   };
-  if (!everOccurs(ruleOptions, toRule(start))) return [];
-
-  const rule = new RRule({
-    ...ruleOptions,
-    // Start the rule near the window instead of at the series' real
-    // beginning. Without this, viewing an hour of a minutely series that
-    // began years ago walks every intervening occurrence -- measured at
-    // over two minutes for a single expansion.
-    dtstart: advancedStart(toRule(start), recurrence, toRule(rangeStart), lookbackMs),
-  });
-
-  // Skipped occurrences stay where the rule puts them (so they can be
-  // shown dimmed there), even if they were also moved.
-  const moves = usableOverrides(event.occurrenceOverrides, isSkipped);
-  const isMoved = (date: Date) => moves.has(date.getTime());
-
-  const { inProgress, inside } = collectBounded(rule, rangeStart, rangeEnd, lookbackMs, isSkipped, isMoved, fromRule);
-  const before = [inProgress.latest, options.includeSkipped ? inProgress.latestSkipped : null].filter(
-    (d): d is Date => d !== null
-  );
-
-  const fromRuleOccurrences = [...before, ...inside].map((occurrenceStart) => ({
-    start: occurrenceStart,
-    end: durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs),
-    skipped: isSkipped(occurrenceStart),
-    recurrenceId: occurrenceStart,
-    moved: false,
-  }));
-
-  const moved: Occurrence[] = [];
-  for (const [id, move] of moves) {
-    // Same window test as a one-off event's: starting inside, or in
-    // progress at its start (open-ended ones only while starting inside).
-    const startsInside = move.start >= rangeStart && move.start <= rangeEnd;
-    const inProgressAtStart = move.start < rangeStart && move.end !== null && move.end > rangeStart;
-    if (!startsInside && !inProgressAtStart) continue;
-    const recurrenceId = new Date(id);
-    if (!occursAt(ruleOptions, toRule(start), recurrence, recurrenceId, toRule, fromRule)) continue;
-    moved.push({ start: move.start, end: move.end, skipped: false, recurrenceId, moved: true });
-  }
-
-  return [...fromRuleOccurrences, ...moved]
-    .filter(keep)
-    .sort((a, b) => a.start.getTime() - b.start.getTime())
-    .slice(0, MAX_OCCURRENCES_PER_EVENT);
+  const dtstart = toRule(start);
+  if (!everOccurs(ruleOptions, dtstart)) return null;
+  return { recurrence, ruleOptions, dtstart, toRule, fromRule };
 }
 
 /** An override's times, parsed. */
 interface Move {
   start: Date;
   end: Date | null;
+  override: OccurrenceOverride;
 }
 
-/** The overrides that can be applied, keyed by the occurrence they move:
- * at most MAX_OCCURRENCE_OVERRIDES, with readable times that end after
- * they start, and not skipped. Decrypted content isn't schema-checked, so
- * it is checked here instead of trusted. The first override of an
- * occurrence wins. */
-function usableOverrides(
-  overrides: OccurrenceOverride[] | undefined,
-  isSkipped: (date: Date) => boolean
-): Map<number, Move> {
+/** The overrides that can be read, keyed by the occurrence they move: at
+ * most MAX_OCCURRENCE_OVERRIDES, with readable times that end after they
+ * start. Decrypted content isn't schema-checked, so it is checked here
+ * instead of trusted. The first override of an occurrence wins. */
+function usableOverrides(overrides: OccurrenceOverride[] | undefined): Map<number, Move> {
   const moves = new Map<number, Move>();
   if (!Array.isArray(overrides)) return moves;
   for (const override of overrides.slice(0, MAX_OCCURRENCE_OVERRIDES)) {
-    const id = new Date(override?.occurrence).getTime();
-    const start = new Date(override?.startTime);
-    const end = override?.endTime === undefined ? null : new Date(override.endTime);
+    if (typeof override !== "object" || override === null) continue;
+    const id = new Date(override.occurrence).getTime();
+    const start = new Date(override.startTime);
+    const end = override.endTime === undefined ? null : new Date(override.endTime);
     if (Number.isNaN(id) || Number.isNaN(start.getTime())) continue;
     if (end !== null && !(end > start)) continue;
-    if (moves.has(id) || isSkipped(new Date(id))) continue;
-    moves.set(id, { start, end });
+    if (moves.has(id)) continue;
+    moves.set(id, { start, end, override });
   }
   return moves;
 }
 
-/** Whether the series occurs at exactly `at`, remembered per rule, start
- * and instant: it is asked on every pan frame for each moved occurrence
- * in view. The walk starts a period before `at` where the frequency
- * allows (see advancedStart), as expansion's does. */
-const occursAtCache = new Map<string, boolean>();
+/** The overrides that move an occurrence the series actually has: those
+ * expansion applies (a skip aside). Readable ones that a change to the
+ * series has left behind, and unreadable ones, are left out. */
+export function activeOverrides(event: SeriesFields): OccurrenceOverride[] {
+  if (!event.recurrence) return [];
+  const series = seriesRule(event.recurrence, new Date(event.startTime));
+  if (!series) return [];
+  return [...usableOverrides(event.occurrenceOverrides)]
+    .filter(([id]) => seriesOccursAt(series, id, event.occurrenceOverrides))
+    .map(([, move]) => move.override);
+}
 
-function occursAt(
-  options: Partial<ConstructorParameters<typeof RRule>[0]>,
-  dtstart: Date,
-  recurrence: RecurrenceRule,
-  at: Date,
-  toRule: (date: Date) => Date,
-  fromRule: (date: Date) => Date
-): boolean {
-  const key = JSON.stringify([options, dtstart.toISOString(), at.toISOString()]);
-  const cached = occursAtCache.get(key);
+/** Whether the series occurs at exactly `at` (ms). Asked on every pan
+ * frame for each moved occurrence in view, so the answers are remembered
+ * alongside the overrides list they were asked for, for as long as the
+ * series' rule and start stay the same. The walk starts a period before
+ * `at` where the frequency allows (see advancedStart), as expansion's
+ * does. */
+const occursAtCache = new WeakMap<object, { key: string; known: Map<number, boolean> }>();
+
+function seriesOccursAt(series: SeriesRule, at: number, cacheOwner: object | undefined): boolean {
+  const { ruleOptions, dtstart, recurrence, toRule, fromRule } = series;
+  // The zone is part of the key: dtstart is a wall-clock reading, the same
+  // for 09:00 in any zone.
+  const key = JSON.stringify([ruleOptions, dtstart.toISOString(), recurrence.tzid ?? null]);
+  let entry = cacheOwner ? occursAtCache.get(cacheOwner) : undefined;
+  if (!entry || entry.key !== key) {
+    entry = { key, known: new Map() };
+    if (cacheOwner) occursAtCache.set(cacheOwner, entry);
+  }
+  const cached = entry.known.get(at);
   if (cached !== undefined) return cached;
-  const target = at.getTime();
   let found = false;
-  if (target >= fromRule(dtstart).getTime()) {
-    new RRule({ ...options, dtstart: advancedStart(dtstart, recurrence, toRule(at), 0) }).all((ruleDate) => {
+  if (at >= fromRule(dtstart).getTime()) {
+    const target = new Date(at);
+    new RRule({ ...ruleOptions, dtstart: advancedStart(dtstart, recurrence, toRule(target), 0) }).all((ruleDate) => {
       const time = fromRule(ruleDate).getTime();
-      if (time === target) found = true;
-      return time < target;
+      if (time === at) found = true;
+      return time < at;
     });
   }
-  if (occursAtCache.size >= OCCURS_CACHE_LIMIT) occursAtCache.clear();
-  occursAtCache.set(key, found);
+  entry.known.set(at, found);
   return found;
 }
 
@@ -316,6 +354,57 @@ export function withSkippedOccurrence(
   return existing.some((s) => new Date(s).getTime() === occurrenceStart.getTime())
     ? existing
     : [...existing, iso];
+}
+
+/**
+ * A series' skips and moves, carried along when its start moves to
+ * `startTime` and its rule stays `recurrence`: every occurrence moves by
+ * the same amount, so the exceptions recorded against them follow, and a
+ * skipped or moved occurrence stays skipped or moved. Moved occurrences
+ * keep the times they were moved to.
+ *
+ * Only for rules where that is exact -- a fixed-length repeat in UTC with
+ * no day filter. Elsewhere (weekdays, calendar patterns, time zones) a
+ * moved start doesn't move every occurrence by the same amount, and
+ * nothing is changed: the exceptions are left keyed to where the
+ * occurrences were. Returns only the fields that change.
+ */
+export function exceptionsFollowingStart(
+  event: SeriesFields,
+  startTime: string,
+  recurrence: RecurrenceRule | undefined = event.recurrence
+): Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides"> {
+  const rule = event.recurrence;
+  if (!rule || !recurrence || JSON.stringify(rule) !== JSON.stringify(recurrence) || !shiftsRigidly(rule)) {
+    return {};
+  }
+  const delta = new Date(startTime).getTime() - new Date(event.startTime).getTime();
+  if (!delta || Number.isNaN(delta)) return {};
+  const shift = (iso: string) => {
+    const time = new Date(iso).getTime();
+    return Number.isNaN(time) ? iso : new Date(time + delta).toISOString();
+  };
+  const changes: Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides"> = {};
+  if (Array.isArray(event.skippedOccurrences) && event.skippedOccurrences.length > 0) {
+    changes.skippedOccurrences = event.skippedOccurrences.map(shift);
+  }
+  if (Array.isArray(event.occurrenceOverrides) && event.occurrenceOverrides.length > 0) {
+    changes.occurrenceOverrides = event.occurrenceOverrides.map((o) => ({ ...o, occurrence: shift(o.occurrence) }));
+  }
+  return changes;
+}
+
+/** Whether moving a series' start moves every occurrence by exactly as
+ * much: a fixed-length repeat, in UTC, with no day filter. */
+function shiftsRigidly(rule: RecurrenceRule): boolean {
+  return (
+    fixedPeriodMs(rule) !== undefined &&
+    !rule.tzid &&
+    !rule.byDay?.length &&
+    rule.byMonthDay === undefined &&
+    rule.byMonth === undefined &&
+    rule.bySetPos === undefined
+  );
 }
 
 /** The override moving the occurrence the series rule starts at

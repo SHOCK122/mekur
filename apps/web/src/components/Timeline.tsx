@@ -23,7 +23,7 @@ import {
   type Orientation,
   type Viewport,
 } from "../lib/timeline.js";
-import { expandOccurrences, followStart } from "../lib/recurrence.js";
+import { exceptionsFollowingStart, expandOccurrences, followStart } from "../lib/recurrence.js";
 import { rankAtEnd } from "../lib/fractionalRank.js";
 import {
   timeDeltaFromDrag,
@@ -101,7 +101,9 @@ interface EventPreview {
  * follows a moved start ("the third Tuesday", dragged a day later, becomes
  * "the third Wednesday"), exactly as in the editor; otherwise the moved
  * start wouldn't be an occurrence of its own series and would vanish
- * mid-drag. Always derived from the saved event, so repeated previews and
+ * mid-drag. Skips and moves follow too, where the rule allows it
+ * (exceptionsFollowingStart), so moving a series doesn't quietly undo
+ * them. Always derived from the saved event, so repeated previews and
  * merged saves agree.
  */
 function withChange<T extends DecryptedEvent>(saved: T, change: EventPreview): T {
@@ -109,6 +111,7 @@ function withChange<T extends DecryptedEvent>(saved: T, change: EventPreview): T
   if (!saved.recurrence || change.startTime === saved.startTime) return moved;
   return {
     ...moved,
+    ...exceptionsFollowingStart(saved, change.startTime),
     recurrence: followStart(saved.recurrence, new Date(saved.startTime), new Date(change.startTime)),
   };
 }
@@ -610,11 +613,18 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const merged = { ...savingRef.current.get(eventId)?.preview, ...preview };
     const token = {};
     updateSaving(new Map(savingRef.current).set(eventId, { preview: merged, token }));
-    // A moved start carries its monthly/yearly pattern along (withChange).
+    // A moved start carries its monthly/yearly pattern, skips and moves
+    // along (withChange).
     const saved = events.find((e) => e.id === eventId);
-    const recurrence = saved ? withChange(saved, merged).recurrence : undefined;
-    const changes: Partial<EventContent> =
-      saved && recurrence !== saved.recurrence ? { ...merged, recurrence } : merged;
+    const changes: Partial<EventContent> = { ...merged };
+    if (saved) {
+      const next = withChange(saved, merged);
+      if (next.recurrence !== saved.recurrence) changes.recurrence = next.recurrence;
+      if (next.skippedOccurrences !== saved.skippedOccurrences) changes.skippedOccurrences = next.skippedOccurrences;
+      if (next.occurrenceOverrides !== saved.occurrenceOverrides) {
+        changes.occurrenceOverrides = next.occurrenceOverrides;
+      }
+    }
     const done = saveChain.current
       .then(() => onChangeRef.current?.(eventId, changes))
       .then(
@@ -1062,6 +1072,11 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                     // The name belongs to the series, not to each repeat, so
                     // only the first visible occurrence carries it.
                     const isFirst = index === 0;
+                    // Dragging, resizing and arrow keys change the whole
+                    // series. A moved occurrence isn't where the series puts
+                    // it and wouldn't follow, so it doesn't offer them; it
+                    // is changed from its edit panel.
+                    const adjustable = event.canEdit && !occurrence.moved;
 
                     return (
                       <div
@@ -1089,7 +1104,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                           aria-hidden="true"
                         />
 
-                        {event.canEdit && (
+                        {adjustable && (
                           <>
                             <span
                               className="resize-handle resize-start"
@@ -1116,10 +1131,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                             className="event-modal-label"
                             data-label-key={labelKey(event)}
                             aria-describedby={
-                              event.canEdit && onChangeEvent ? keysHelpId : undefined
+                              adjustable && onChangeEvent ? keysHelpId : undefined
                             }
-                            onPointerDown={(e) => beginDrag(e, event, { kind: "move" })}
-                            onKeyDown={(e) => handleEventKeyDown(e, event)}
+                            onPointerDown={(e) => adjustable && beginDrag(e, event, { kind: "move" })}
+                            onKeyDown={(e) => adjustable && handleEventKeyDown(e, event)}
                             onBlur={commitNudge}
                             onClick={(e) =>
                               void openEvent(
