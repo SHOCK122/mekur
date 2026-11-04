@@ -464,8 +464,41 @@ worth of dead code and fixes what the model switch broke.
         frame), so it is memoised per rule object; zoned expansion
         confirms each occurrence's offset with the previous one's instead
         of a full search, halving the `Intl` work.
-- [ ] Single-occurrence overrides (iCalendar `RECURRENCE-ID`): edit one
-      occurrence without splitting the series by hand.
+- [x] **Single-occurrence overrides** (iCalendar `RECURRENCE-ID`): move
+      one occurrence without splitting the series by hand. Opening an
+      occurrence of a series you can edit offers "Change: every occurrence
+      / only this one"; "only this one" edits that occurrence's start and
+      end and records an `occurrenceOverrides` entry inside the encrypted
+      content (`{ occurrence, startTime, endTime? }`, keyed by the start
+      the rule gives it, like skips). The panel lists moved occurrences
+      with "Put back"; moving one back to the series' times removes the
+      entry. Nothing changes server-side.
+      - Simplification: only times can differ. Title, importance and the
+        rest belong to the series, so the timeline keeps one name per
+        series.
+      - A moved occurrence is shown wherever it was moved to (also into a
+        window its original slot isn't in), and only while the series
+        still occurs at its original start -- checked against the rule,
+        remembered per rule/start/instant -- so an entry left behind by a
+        change to the series is ignored rather than resurrected. A skip
+        wins over a move; restoring the skip brings the move back.
+        Decrypted content isn't schema-checked, so expansion takes at most
+        `MAX_OCCURRENCE_OVERRIDES` (200, also the schema's cap) and drops
+        entries with unreadable or backwards times.
+      - Found while doing it: the timeline handed the panel the clicked
+        occurrence's *displayed* start, which for a moved one is not the
+        occurrence it is -- "Skip this one" would have recorded a time the
+        series never occurs at. It now passes the occurrence's identity
+        (`recurrenceId`).
+      - Known gaps, now listed below: changing the series' start (in the
+        editor, or by dragging/keyboard-moving it on the timeline) leaves
+        its skips and moves keyed to times it no longer occurs at, so they
+        silently stop applying -- true of skips before this too; and
+        dragging a moved occurrence on the timeline moves the whole series,
+        not just that occurrence.
+- [ ] Keep a series' skips and moves attached when its start moves (shift
+      them with it where the rule allows it, e.g. fixed-period rules), and
+      let dragging a moved occurrence move only that occurrence.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.

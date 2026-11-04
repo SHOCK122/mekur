@@ -124,6 +124,33 @@ export const RecurrenceRuleSchema = z
   });
 export type RecurrenceRule = z.infer<typeof RecurrenceRuleSchema>;
 
+/** Most occurrences one series can have moved. Like everything else in an
+ * event, overrides are rendered on every pan frame, so the list is
+ * bounded rather than left to the ciphertext cap. */
+export const MAX_OCCURRENCE_OVERRIDES = 200;
+
+/**
+ * One occurrence of a series moved to other times without touching the
+ * rest -- the iCalendar RECURRENCE-ID concept. `occurrence` is the start
+ * the series rule gives it (which identifies it, and stays fixed however
+ * often it is moved); `startTime`/`endTime` are where it actually takes
+ * place. No end makes that occurrence open-ended.
+ *
+ * Only times can differ: title, importance and the rest belong to the
+ * series.
+ */
+export const OccurrenceOverrideSchema = z
+  .object({
+    occurrence: z.string().datetime(),
+    startTime: z.string().datetime(),
+    endTime: z.string().datetime().optional(),
+  })
+  .refine((o) => o.endTime === undefined || new Date(o.endTime) > new Date(o.startTime), {
+    message: "endTime must be after startTime",
+    path: ["endTime"],
+  });
+export type OccurrenceOverride = z.infer<typeof OccurrenceOverrideSchema>;
+
 /**
  * The plaintext shape of an event, as it exists only on the client after
  * decryption. This is what gets encrypted into an EncryptedEnvelope before
@@ -160,6 +187,18 @@ export const EventContentSchema = z
      * cheaper but would let two people disagree about when a shared
      * meeting is. */
     skippedOccurrences: z.array(z.string().datetime()).optional(),
+    /** Occurrences moved to other times (see OccurrenceOverrideSchema).
+     * Encrypted with the rest, for the same reason as skips: everyone
+     * sharing the series must agree when each meeting is. */
+    occurrenceOverrides: z
+      .array(OccurrenceOverrideSchema)
+      .max(MAX_OCCURRENCE_OVERRIDES)
+      .refine(
+        // Compared by instant, as in expansion.
+        (list) => new Set(list.map((o) => new Date(o.occurrence).getTime())).size === list.length,
+        "an occurrence can only be moved once"
+      )
+      .optional(),
   })
   .refine(
     // Only meaningful when an end exists; an open-ended event cannot end

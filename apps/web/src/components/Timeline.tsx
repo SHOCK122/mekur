@@ -1125,7 +1125,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                               void openEvent(
                                 event,
                                 (e.currentTarget as Element).getBoundingClientRect(),
-                                occurrence.start
+                                // Which occurrence it is, not where it is now:
+                                // a moved one is skipped or moved again by
+                                // the start the series gives it.
+                                occurrence.recurrenceId
                               )
                             }
                           >

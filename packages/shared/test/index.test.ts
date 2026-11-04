@@ -5,6 +5,7 @@ import {
   SealedEnvelopeSchema,
   KeyringEnvelopeSchema,
   RecurrenceRuleSchema,
+  MAX_OCCURRENCE_OVERRIDES,
 } from "../src/index.js";
 
 describe("EncryptedEnvelopeSchema", () => {
@@ -224,5 +225,69 @@ describe("RecurrenceRuleSchema calendar parts", () => {
 
   it("rejects an unknown time zone", () => {
     expect(ok({ freq: "MONTHLY", byMonthDay: [1], tzid: "Mars/Olympus_Mons" })).toBe(false);
+  });
+});
+
+describe("occurrenceOverrides", () => {
+  const series = {
+    title: "Standup",
+    startTime: "2026-08-03T09:00:00.000Z",
+    endTime: "2026-08-03T09:30:00.000Z",
+    recurrence: { freq: "DAILY", interval: 1 },
+  };
+
+  it("accepts an occurrence moved to another time", () => {
+    const override = {
+      occurrence: "2026-08-05T09:00:00.000Z",
+      startTime: "2026-08-05T15:00:00.000Z",
+      endTime: "2026-08-05T16:00:00.000Z",
+    };
+    const parsed = EventContentSchema.parse({ ...series, occurrenceOverrides: [override] });
+    expect(parsed.occurrenceOverrides).toEqual([override]);
+  });
+
+  it("accepts an open-ended override", () => {
+    expect(() =>
+      EventContentSchema.parse({
+        ...series,
+        occurrenceOverrides: [{ occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" }],
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects an override that ends before it starts", () => {
+    expect(() =>
+      EventContentSchema.parse({
+        ...series,
+        occurrenceOverrides: [
+          {
+            occurrence: "2026-08-05T09:00:00.000Z",
+            startTime: "2026-08-05T15:00:00.000Z",
+            endTime: "2026-08-05T14:00:00.000Z",
+          },
+        ],
+      })
+    ).toThrow();
+  });
+
+  it("rejects two overrides of the same occurrence", () => {
+    const override = { occurrence: "2026-08-05T09:00:00.000Z", startTime: "2026-08-05T15:00:00.000Z" };
+    expect(() =>
+      EventContentSchema.parse({
+        ...series,
+        occurrenceOverrides: [override, { ...override, startTime: "2026-08-05T16:00:00.000Z" }],
+      })
+    ).toThrow();
+  });
+
+  it("is bounded", () => {
+    const many = Array.from({ length: MAX_OCCURRENCE_OVERRIDES + 1 }, (_, i) => {
+      const iso = new Date(Date.UTC(2026, 7, 3 + i, 9)).toISOString();
+      return { occurrence: iso, startTime: iso };
+    });
+    expect(() => EventContentSchema.parse({ ...series, occurrenceOverrides: many })).toThrow();
+    expect(() =>
+      EventContentSchema.parse({ ...series, occurrenceOverrides: many.slice(0, MAX_OCCURRENCE_OVERRIDES) })
+    ).not.toThrow();
   });
 });

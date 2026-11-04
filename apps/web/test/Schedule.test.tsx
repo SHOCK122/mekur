@@ -87,6 +87,43 @@ describe("Schedule", () => {
     expect(Math.abs(new Date(skipped!).getTime() - Date.now())).toBeLessThan(24 * HOUR);
   });
 
+  it("skips a moved occurrence by the start the series gives it, not where it was moved to", async () => {
+    const seriesStart = new Date(Date.now() - 10 * 24 * HOUR - HOUR);
+    // Every occurrence near now moved half an hour later, so whichever one
+    // the timeline labels is a moved one.
+    const occurrenceOverrides = Array.from({ length: 21 }, (_, i) => {
+      const occurrence = new Date(seriesStart.getTime() + i * 24 * HOUR);
+      return {
+        occurrence: occurrence.toISOString(),
+        startTime: new Date(occurrence.getTime() + HOUR / 2).toISOString(),
+        endTime: new Date(occurrence.getTime() + HOUR).toISOString(),
+      };
+    });
+    const events: MockEvent[] = [
+      {
+        id: "daily",
+        content: {
+          title: "Standup",
+          startTime: seriesStart.toISOString(),
+          endTime: new Date(seriesStart.getTime() + HOUR / 4).toISOString(),
+          recurrence: { freq: "DAILY", interval: 1 },
+          occurrenceOverrides,
+        },
+      },
+    ];
+    const fetchMock = stubCapabilityServer(session, events);
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(await screen.findByRole("button", { name: "Standup" }));
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await user.click(await screen.findByRole("button", { name: /skip this one/i }));
+
+    await waitFor(() => expect(lastEventUpdate(fetchMock, session.encryptionKey)).not.toBeNull());
+    const [skipped] = lastEventUpdate(fetchMock, session.encryptionKey)!.skippedOccurrences!;
+    expect(occurrenceOverrides.map((o) => o.occurrence)).toContain(skipped);
+  });
+
   it("removes a view-only event from this schedule without deleting it for anyone else", async () => {
     const events: MockEvent[] = [
       {

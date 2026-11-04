@@ -17,8 +17,9 @@ interface ScheduleProps {
 interface Editing {
   eventId: string;
   origin: DOMRect | null;
-  /** The occurrence that was clicked, so "skip this one" skips that one
-   * rather than the start of the series. */
+  /** The occurrence that was clicked, by the start the series gives it,
+   * so "skip this one" and "only this one" act on that one rather than on
+   * the start of the series. */
   occurrenceStart: Date;
 }
 
@@ -134,6 +135,7 @@ export function Schedule({ session, data }: ScheduleProps) {
           key={editingEvent.id}
           event={editingEvent}
           origin={editing.origin}
+          occurrence={editing.occurrenceStart}
           saveError={error}
           onSave={(changes) => data.change(editingEvent.id, changes)}
           onDelete={() => requestDelete(editingEvent, editing.occurrenceStart)}
