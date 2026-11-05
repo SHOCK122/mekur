@@ -356,42 +356,194 @@ export function withSkippedOccurrence(
     : [...existing, iso];
 }
 
+/** How many occurrences, from the start of a series, positional mapping
+ * (see exceptionsFollowingStart) walks to find where a skip or move sits.
+ * A daily series reaches 27 years; a weekday series 38. Exceptions past
+ * it are left where they are. */
+export const MAX_POSITIONAL_WALK = 10_000;
+
+type Exceptions = Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides">;
+
 /**
  * A series' skips and moves, carried along when its start moves to
- * `startTime` and its rule stays `recurrence`: every occurrence moves by
- * the same amount, so the exceptions recorded against them follow, and a
- * skipped or moved occurrence stays skipped or moved. Moved occurrences
- * keep the times they were moved to.
+ * `startTime`, so a skipped or moved occurrence stays skipped or moved.
+ * Moved occurrences keep the times they were moved to. Returns only the
+ * fields that change.
  *
- * Only for rules where that is exact -- a fixed-length repeat in UTC with
- * no day filter. Elsewhere (weekdays, calendar patterns, time zones) a
- * moved start doesn't move every occurrence by the same amount, and
- * nothing is changed: the exceptions are left keyed to where the
- * occurrences were. Returns only the fields that change.
+ * `recurrence` is the series' rule after the move. It must be the rule as
+ * it was, or that rule following the start (see followStart: "the third
+ * Tuesday", moved a day, becomes "the third Wednesday"). If the rule was
+ * changed in any other way, nothing is changed: which occurrence an
+ * exception meant is then anyone's guess.
+ *
+ * - A fixed-length repeat in UTC with no day filter moves every occurrence
+ *   by the same amount, so each exception moves by as much as the start.
+ * - Elsewhere (weekdays, calendar patterns, time zones) occurrences don't
+ *   all move alike, so each exception goes to the occurrence in the same
+ *   **position**: the series' fifth occurrence before is its fifth after.
+ *   Exceptions for occurrences the series doesn't have (left behind by an
+ *   earlier change, so already ignored) are dropped rather than carried,
+ *   as are those whose position the moved series no longer reaches (an
+ *   `until` now passed). Positions are counted up to MAX_POSITIONAL_WALK
+ *   occurrences in; exceptions further out are left as they are.
  */
 export function exceptionsFollowingStart(
   event: SeriesFields,
   startTime: string,
   recurrence: RecurrenceRule | undefined = event.recurrence
-): Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides"> {
+): Exceptions {
   const rule = event.recurrence;
-  if (!rule || !recurrence || JSON.stringify(rule) !== JSON.stringify(recurrence) || !shiftsRigidly(rule)) {
-    return {};
-  }
-  const delta = new Date(startTime).getTime() - new Date(event.startTime).getTime();
+  if (!rule || !recurrence) return {};
+  const from = new Date(event.startTime);
+  const to = new Date(startTime);
+  const delta = to.getTime() - from.getTime();
   if (!delta || Number.isNaN(delta)) return {};
-  const shift = (iso: string) => {
-    const time = new Date(iso).getTime();
-    return Number.isNaN(time) ? iso : new Date(time + delta).toISOString();
-  };
-  const changes: Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides"> = {};
-  if (Array.isArray(event.skippedOccurrences) && event.skippedOccurrences.length > 0) {
-    changes.skippedOccurrences = event.skippedOccurrences.map(shift);
+  const sameRule = JSON.stringify(rule) === JSON.stringify(recurrence);
+  if (!sameRule && JSON.stringify(followStart(rule, from, to)) !== JSON.stringify(recurrence)) return {};
+
+  const skips = Array.isArray(event.skippedOccurrences) ? event.skippedOccurrences : [];
+  const overrides = Array.isArray(event.occurrenceOverrides) ? event.occurrenceOverrides : [];
+  if (skips.length === 0 && overrides.length === 0) return {};
+
+  let move: (iso: string) => string | null;
+  if (sameRule && shiftsRigidly(rule)) {
+    move = (iso) => {
+      const time = new Date(iso).getTime();
+      return Number.isNaN(time) ? iso : new Date(time + delta).toISOString();
+    };
+  } else {
+    const ids = [...skips, ...overrides.map((o) => (typeof o === "object" && o !== null ? o.occurrence : ""))];
+    const mapped = positionalMapping(rule, from, recurrence, to, ids, event);
+    move = (iso) => {
+      const time = new Date(iso).getTime();
+      if (Number.isNaN(time)) return iso;
+      const target = mapped.get(time);
+      return target === undefined ? iso : target === null ? null : new Date(target).toISOString();
+    };
   }
-  if (Array.isArray(event.occurrenceOverrides) && event.occurrenceOverrides.length > 0) {
-    changes.occurrenceOverrides = event.occurrenceOverrides.map((o) => ({ ...o, occurrence: shift(o.occurrence) }));
+
+  const changes: Exceptions = {};
+  if (skips.length > 0) {
+    changes.skippedOccurrences = skips.flatMap((iso) => {
+      const moved = move(iso);
+      return moved === null ? [] : [moved];
+    });
+  }
+  if (overrides.length > 0) {
+    changes.occurrenceOverrides = overrides.flatMap((o) => {
+      if (typeof o !== "object" || o === null) return [o];
+      const moved = move(o.occurrence);
+      return moved === null ? [] : [{ ...o, occurrence: moved }];
+    });
   }
   return changes;
+}
+
+/**
+ * Where each of `ids` (occurrence starts of the series `before`, starting
+ * at `from`) goes in the series `after`, starting at `to`: the occurrence
+ * in the same position. Keyed by timestamp; null for ids that are not an
+ * occurrence of `before`, or whose position `after` doesn't reach. Ids
+ * beyond MAX_POSITIONAL_WALK occurrences are absent (left as they are).
+ */
+function positionalMapping(
+  before: RecurrenceRule,
+  from: Date,
+  after: RecurrenceRule,
+  to: Date,
+  ids: string[],
+  cacheOwner: object
+): Map<number, number | null> {
+  const old = oldPositions(before, from, ids, cacheOwner);
+  const result = new Map<number, number | null>(old.missing.map((time) => [time, null]));
+  if (old.positions.size === 0) return result;
+
+  // The occurrence at each needed position in the new series. Only the
+  // hits are converted back from the rule's clock.
+  const newSeries = seriesRule(after, to);
+  const needed = new Set(old.positions.values());
+  const atPosition = new Map<number, number>();
+  if (newSeries) {
+    const furthest = Math.max(...needed);
+    let index = 0;
+    new RRule({ ...newSeries.ruleOptions, dtstart: newSeries.dtstart }).all((ruleDate) => {
+      if (needed.has(index)) atPosition.set(index, newSeries.fromRule(ruleDate).getTime());
+      index++;
+      return index <= furthest;
+    });
+  }
+  for (const [time, position] of old.positions) result.set(time, atPosition.get(position) ?? null);
+  return result;
+}
+
+interface OldPositions {
+  /** Position in the series of each id that is one of its occurrences. */
+  positions: Map<number, number>;
+  /** Ids known not to be occurrences of the series. */
+  missing: number[];
+}
+
+/** Remembered per event for as long as its rule, start and exceptions stay
+ * the same: a drag asks on every frame, for the same saved event. */
+const oldPositionsCache = new WeakMap<object, { key: string; value: OldPositions }>();
+
+/** Where each of `ids` sits in the series `rule` starting at `start`.
+ * Ids further out than MAX_POSITIONAL_WALK occurrences are in neither
+ * list. */
+function oldPositions(rule: RecurrenceRule, start: Date, ids: string[], cacheOwner: object): OldPositions {
+  const key = JSON.stringify([rule, start.toISOString(), ids]);
+  const cached = oldPositionsCache.get(cacheOwner);
+  if (cached?.key === key) return cached.value;
+
+  const value: OldPositions = { positions: new Map(), missing: [] };
+  oldPositionsCache.set(cacheOwner, { key, value });
+  const wanted = new Set(ids.map((iso) => new Date(iso).getTime()).filter((t) => !Number.isNaN(t)));
+  const series = seriesRule(rule, start);
+  if (!series) {
+    value.missing.push(...wanted);
+    return value;
+  }
+
+  // The walk compares on the rule's own clock: converting every
+  // occurrence back to an instant costs an Intl lookup each, several
+  // times the walk itself. Ids are converted instead, once; an id that
+  // doesn't survive the round trip (the second pass of a repeated hour)
+  // is never an occurrence.
+  const byRuleTime = new Map<number, number>();
+  for (const time of wanted) {
+    const ruleTime = series.toRule(new Date(time));
+    if (series.fromRule(ruleTime).getTime() === time) byRuleTime.set(ruleTime.getTime(), time);
+    else value.missing.push(time);
+  }
+  if (byRuleTime.size === 0) return value;
+  const last = Math.max(...byRuleTime.keys());
+
+  // Walks no further than the latest id (or the cap). `complete` once
+  // every id has been passed or the series has run out; until then, ids
+  // after the last occurrence walked are unknown rather than missing.
+  let walked = 0;
+  let lastWalked = -Infinity;
+  let complete = false;
+  new RRule({ ...series.ruleOptions, dtstart: series.dtstart }).all((ruleDate) => {
+    const ruleTime = ruleDate.getTime();
+    if (ruleTime > last) {
+      complete = true;
+      return false;
+    }
+    const id = byRuleTime.get(ruleTime);
+    if (id !== undefined) value.positions.set(id, walked);
+    walked++;
+    lastWalked = ruleTime;
+    if (ruleTime === last) complete = true;
+    return !complete && walked < MAX_POSITIONAL_WALK;
+  });
+  if (walked < MAX_POSITIONAL_WALK) complete = true;
+
+  for (const [ruleTime, time] of byRuleTime) {
+    // Not an occurrence of the series: left behind by an earlier change.
+    if (!value.positions.has(time) && (complete || ruleTime <= lastWalked)) value.missing.push(time);
+  }
+  return value;
 }
 
 /** Whether moving a series' start moves every occurrence by exactly as

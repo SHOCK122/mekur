@@ -1152,6 +1152,35 @@ describe("Timeline", () => {
       // Still moved to where it was moved to.
       expect(changes.occurrenceOverrides).toEqual([{ occurrence: at(DAY + STEP), startTime: at(DAY + 60 * MINUTE) }]);
     });
+    it("carries a weekday series' skips and moves along to the same occurrences", async () => {
+      // Moving the start doesn't move every occurrence of a weekday series
+      // alike, so each exception goes to the occurrence in the same place.
+      const base = makeEvent();
+      const start = new Date(base.startTime);
+      const DAY = 24 * 60 * MINUTE;
+      const weekday = (["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const)[start.getUTCDay()]!;
+      const next = (["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const)[(start.getUTCDay() + 2) % 7]!;
+      const at = (ms: number) => new Date(start.getTime() + ms).toISOString();
+      const event = {
+        ...base,
+        recurrence: { freq: "WEEKLY" as const, interval: 1, byDay: [weekday, next] },
+        skippedOccurrences: [at(2 * DAY)],
+        occurrenceOverrides: [{ occurrence: at(7 * DAY), startTime: at(7 * DAY + 60 * MINUTE) }],
+      };
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = label("Standup");
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.blur(button);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes.skippedOccurrences).toEqual([at(2 * DAY + STEP)]);
+      expect(changes.occurrenceOverrides).toEqual([
+        { occurrence: at(7 * DAY + STEP), startTime: at(7 * DAY + 60 * MINUTE) },
+      ]);
+    });
   });
 
   describe("moved occurrences", () => {

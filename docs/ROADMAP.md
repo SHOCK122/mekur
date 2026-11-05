@@ -501,15 +501,41 @@ worth of dead code and fixes what the model switch broke.
         occurrence it is -- "Skip this one" would have recorded a time the
         series never occurs at. It now passes the occurrence's identity
         (`recurrenceId`).
-      - Known gaps, listed below: skips and moves of weekday, calendar
-        pattern and zoned rules are still left behind when the series'
-        start moves; a moved occurrence can't be dragged on its own; and a
-        moved occurrence shares its series' single row, so one moved onto
-        a sibling covers it.
-- [ ] Keep skips and moves attached when the start of a weekday, calendar
-      pattern or zoned series moves (map each to the occurrence in the same
-      position), and let dragging a moved occurrence move only that
-      occurrence.
+      - Known gaps: a moved occurrence can't be dragged on its own (listed
+        below); and a moved occurrence shares its series' single row, so
+        one moved onto a sibling covers it. (Skips and moves of weekday,
+        calendar pattern and zoned rules being left behind when the
+        series' start moves was fixed by the next item.)
+- [x] **Keep skips and moves attached when the start of a weekday,
+      calendar pattern or zoned series moves.** Each exception goes to the
+      occurrence in the same **position**: the series' fifth occurrence
+      before the move is its fifth after (`exceptionsFollowingStart`, pure;
+      editor, drag and keyboard alike). Fixed-length UTC repeats keep the
+      exact shift by the start's delta. A calendar pattern that follows the
+      start ("the third Tuesday" -> "the third Wednesday") counts as the
+      same rule; any other change to the rule still leaves exceptions where
+      they are, since which occurrence each meant is then a guess.
+      - Exceptions for occurrences the series doesn't have (left behind by
+        an earlier change, so already ignored) are dropped rather than
+        carried, and so are those whose position the moved series no
+        longer reaches (an `until` now passed). Before, they stayed keyed
+        to old times and could silently start matching a new occurrence.
+      - Positions are counted at most `MAX_POSITIONAL_WALK` (10,000)
+        occurrences in -- 27 years of a daily series, about a week of a
+        minutely one; exceptions further out are left where they were.
+      - Cost: this runs on every drag frame. The walk compares on the
+        rule's own (wall) clock and converts only the hits back to
+        instants: converting every occurrence through `Intl` made a zoned
+        daily series with a far-out skip take ~170ms per call. The old
+        series' positions are remembered per saved event, so a frame only
+        walks the new series. Measured: ~5ms for a zoned daily series with
+        a skip a year out; well under a frame in every case tried.
+      - Simplification: "the same position" is not always what a person
+        would pick. Moving "day 31" to the 30th maps the 31 May skip (the
+        third occurrence: Jan, Mar, May) to 30 April (Jan, Mar, Apr). A
+        nearest-occurrence rule handles that case better but makes large
+        moves ambiguous; position is predictable.
+- [ ] Let dragging a moved occurrence move only that occurrence.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
