@@ -901,16 +901,276 @@ describe("exceptionsFollowingStart", () => {
     });
   });
 
-  it("changes nothing where moving the start doesn't move every occurrence alike", () => {
-    const weekdays = { ...series, recurrence: { freq: "WEEKLY" as const, interval: 1, byDay: ["MO" as const, "WE" as const] } };
-    expect(exceptionsFollowingStart(weekdays, "2026-08-04T09:00:00.000Z")).toEqual({});
-    const zoned = { ...series, recurrence: { ...series.recurrence, tzid: "Europe/London" } };
-    expect(exceptionsFollowingStart(zoned, "2026-08-03T09:30:00.000Z")).toEqual({});
-  });
-
   it("changes nothing when the rule changes too, or the start doesn't", () => {
     expect(exceptionsFollowingStart(series, "2026-08-03T09:30:00.000Z", { freq: "HOURLY", interval: 1 })).toEqual({});
     expect(exceptionsFollowingStart(series, series.startTime)).toEqual({});
+    const weekdays = { ...series, recurrence: { freq: "WEEKLY" as const, interval: 1, byDay: ["MO" as const, "WE" as const] } };
+    expect(
+      exceptionsFollowingStart(weekdays, "2026-08-03T10:00:00.000Z", { ...weekdays.recurrence, byDay: ["MO", "FR"] })
+    ).toEqual({});
+  });
+
+  /** Which occurrences, by start, are skipped and moved. */
+  function exceptionsOf(event: Parameters<typeof expandOccurrences>[0], from: string, to: string) {
+    const all = expandOccurrences(event, new Date(from), new Date(to), { includeSkipped: true });
+    return {
+      skipped: all.filter((o) => o.skipped).map((o) => o.start.toISOString()),
+      moved: all.filter((o) => o.moved).map((o) => o.recurrenceId.toISOString()),
+    };
+  }
+
+  describe("where occurrences don't all move alike", () => {
+    // 2026-08-03 is a Monday.
+    const weekdays = {
+      startTime: "2026-08-03T09:00:00.000Z",
+      endTime: "2026-08-03T09:30:00.000Z",
+      recurrence: { freq: "WEEKLY" as const, interval: 1, byDay: ["MO" as const, "WE" as const] },
+      skippedOccurrences: ["2026-08-05T09:00:00.000Z"],
+      occurrenceOverrides: [{ occurrence: "2026-08-10T09:00:00.000Z", startTime: "2026-08-10T15:00:00.000Z" }],
+    };
+
+    it("carries a weekday series' exceptions along a change of time of day", () => {
+      const changes = exceptionsFollowingStart(weekdays, "2026-08-03T10:00:00.000Z");
+      expect(changes).toEqual({
+        skippedOccurrences: ["2026-08-05T10:00:00.000Z"],
+        occurrenceOverrides: [{ occurrence: "2026-08-10T10:00:00.000Z", startTime: "2026-08-10T15:00:00.000Z" }],
+      });
+      const moved = { ...weekdays, ...changes, startTime: "2026-08-03T10:00:00.000Z", endTime: "2026-08-03T10:30:00.000Z" };
+      expect(exceptionsOf(moved, "2026-08-01T00:00:00Z", "2026-08-20T00:00:00Z")).toEqual({
+        skipped: ["2026-08-05T10:00:00.000Z"],
+        moved: ["2026-08-10T10:00:00.000Z"],
+      });
+    });
+
+    it("carries them, and a moved occurrence's day, a week along when the series moves a week", () => {
+      expect(exceptionsFollowingStart(weekdays, "2026-08-10T09:00:00.000Z")).toEqual({
+        skippedOccurrences: ["2026-08-12T09:00:00.000Z"],
+        occurrenceOverrides: [{ occurrence: "2026-08-17T09:00:00.000Z", startTime: "2026-08-17T15:00:00.000Z" }],
+      });
+    });
+
+    it("leaves a weekday's exceptions on their weekday when the start moves to another day", () => {
+      // Found in review: counting positions, the start moved to a Tuesday
+      // (not one of the series' days) shifted every exception one along,
+      // so the next Monday was skipped instead of Wednesday.
+      expect(exceptionsFollowingStart(weekdays, "2026-08-04T09:00:00.000Z")).toEqual({
+        skippedOccurrences: ["2026-08-05T09:00:00.000Z"],
+        occurrenceOverrides: weekdays.occurrenceOverrides,
+      });
+    });
+
+    it("carries a zoned series' exceptions across a change of clocks", () => {
+      // 09:00 in London: 08:00 UTC in summer, 09:00 UTC after 25 October.
+      const zoned = {
+        startTime: "2026-10-20T08:00:00.000Z",
+        endTime: "2026-10-20T08:30:00.000Z",
+        recurrence: { freq: "DAILY" as const, interval: 1, tzid: "Europe/London" },
+        skippedOccurrences: ["2026-10-27T09:00:00.000Z"],
+      };
+      // Moved to 09:30 London time.
+      const changes = exceptionsFollowingStart(zoned, "2026-10-20T08:30:00.000Z");
+      expect(changes).toEqual({ skippedOccurrences: ["2026-10-27T09:30:00.000Z"] });
+      const moved = { ...zoned, ...changes, startTime: "2026-10-20T08:30:00.000Z", endTime: "2026-10-20T09:00:00.000Z" };
+      expect(exceptionsOf(moved, "2026-10-19T00:00:00Z", "2026-11-01T00:00:00Z").skipped).toEqual([
+        "2026-10-27T09:30:00.000Z",
+      ]);
+    });
+
+    it("carries a zoned series' exceptions however far out they are", () => {
+      // Found in review: a walk with a cap left the far ones behind.
+      const hourly = {
+        startTime: "2026-01-01T09:00:00.000Z",
+        recurrence: { freq: "HOURLY" as const, interval: 1, tzid: "Europe/London" },
+        skippedOccurrences: ["2046-01-01T09:00:00.000Z"],
+      };
+      expect(exceptionsFollowingStart(hourly, "2026-01-01T09:30:00.000Z")).toEqual({
+        skippedOccurrences: ["2046-01-01T09:30:00.000Z"],
+      });
+    });
+
+    it("carries a calendar pattern's exceptions to the pattern it becomes", () => {
+      // "The third Tuesday" (18 August), moved a day, is "the third
+      // Wednesday"; September's skip goes from the 15th to the 16th.
+      const start = new Date("2026-08-18T09:00:00.000Z");
+      const pattern = repeatPatterns("MONTHLY", start, "UTC").find((p) => p.key === "nth-weekday")!;
+      const thirdTuesday = {
+        startTime: start.toISOString(),
+        recurrence: withPattern({ freq: "MONTHLY", interval: 1 }, pattern.fields),
+        skippedOccurrences: ["2026-09-15T09:00:00.000Z"],
+      };
+      const to = new Date("2026-08-19T09:00:00.000Z");
+      const recurrence = followStart(thirdTuesday.recurrence, start, to);
+      expect(recurrence).not.toEqual(thirdTuesday.recurrence);
+      expect(exceptionsFollowingStart(thirdTuesday, to.toISOString(), recurrence)).toEqual({
+        skippedOccurrences: ["2026-09-16T09:00:00.000Z"],
+      });
+      // Not with a pattern the new start doesn't offer.
+      expect(exceptionsFollowingStart(thirdTuesday, to.toISOString(), { ...recurrence, bySetPos: [2] })).toEqual({});
+    });
+
+    it("accepts the pattern the editor reaches one edit at a time", () => {
+      // Found in review: "the last Tuesday" (25 August) edited to the 19th
+      // (third Wednesday) and then the 26th becomes "the fourth
+      // Wednesday", while one followStart from the original gives "the
+      // last Wednesday". Either is the start's own pattern.
+      const start = new Date("2026-08-25T09:00:00.000Z");
+      const last = repeatPatterns("MONTHLY", start, "UTC").find((p) => p.key === "last-weekday")!;
+      const series = {
+        startTime: start.toISOString(),
+        recurrence: withPattern({ freq: "MONTHLY", interval: 1 }, last.fields),
+        skippedOccurrences: ["2026-09-29T09:00:00.000Z"],
+      };
+      const mid = new Date("2026-08-19T09:00:00.000Z");
+      const to = new Date("2026-08-26T09:00:00.000Z");
+      const stepwise = followStart(followStart(series.recurrence, start, mid), mid, to);
+      expect(stepwise).not.toEqual(followStart(series.recurrence, start, to));
+      // September's fourth Wednesday.
+      expect(exceptionsFollowingStart(series, to.toISOString(), stepwise)).toEqual({
+        skippedOccurrences: ["2026-09-23T09:00:00.000Z"],
+      });
+    });
+
+    it("keeps a date pattern's exceptions in their month", () => {
+      // Found in review: counting positions, the 31st moved to the 30th
+      // sent May's skip to April (the 31st skips April; the 30th doesn't).
+      const start = new Date("2026-01-31T09:00:00.000Z");
+      const recurrence = withPattern({ freq: "MONTHLY", interval: 1 }, repeatPatterns("MONTHLY", start, "UTC")[0]!.fields);
+      const series = {
+        startTime: start.toISOString(),
+        recurrence,
+        skippedOccurrences: ["2026-05-31T09:00:00.000Z", "2026-07-31T09:00:00.000Z"],
+      };
+      const to = new Date("2026-01-30T09:00:00.000Z");
+      expect(exceptionsFollowingStart(series, to.toISOString(), followStart(recurrence, start, to))).toEqual({
+        skippedOccurrences: ["2026-05-30T09:00:00.000Z", "2026-07-30T09:00:00.000Z"],
+      });
+      // Moved two months on, they move two months on. September has no
+      // 31st, so July's skip has nowhere to go; left on 31 July it would
+      // skip what is now May's occurrence, so it goes.
+      const later = new Date("2026-03-31T09:00:00.000Z");
+      expect(exceptionsFollowingStart(series, later.toISOString(), followStart(recurrence, start, later))).toEqual({
+        skippedOccurrences: ["2026-07-31T09:00:00.000Z"],
+      });
+    });
+
+    it("keeps a leap day's exceptions in their year", () => {
+      const start = new Date("2024-02-29T09:00:00.000Z");
+      const recurrence = withPattern({ freq: "YEARLY", interval: 1 }, repeatPatterns("YEARLY", start, "UTC")[0]!.fields);
+      const series = { startTime: start.toISOString(), recurrence, skippedOccurrences: ["2032-02-29T09:00:00.000Z"] };
+      const to = new Date("2024-02-28T09:00:00.000Z");
+      expect(exceptionsFollowingStart(series, to.toISOString(), followStart(recurrence, start, to))).toEqual({
+        skippedOccurrences: ["2032-02-28T09:00:00.000Z"],
+      });
+    });
+
+    it("lines up the first months of series with several occurrences a month", () => {
+      // Found in review: counted from each series' own start, the 15th was
+      // January's second occurrence before the move and its first after,
+      // so its skip found no counterpart and was dropped.
+      const series = {
+        startTime: "2027-01-01T09:00:00.000Z",
+        recurrence: { freq: "MONTHLY" as const, interval: 1, byMonthDay: [1, 15] },
+        skippedOccurrences: ["2027-01-15T09:00:00.000Z", "2027-02-15T09:00:00.000Z"],
+      };
+      expect(exceptionsFollowingStart(series, "2027-01-08T10:00:00.000Z")).toEqual({
+        skippedOccurrences: ["2027-01-15T10:00:00.000Z", "2027-02-15T10:00:00.000Z"],
+      });
+    });
+
+    it("reads a faster rule's calendar filters as expansion does", () => {
+      // Raised in review: calendar filters on a daily rule don't move with
+      // the start. But expansion drops them (the schema allows them only
+      // on monthly and yearly rules), so the series is a plain daily one
+      // and its skips move with the start like any other.
+      const series = {
+        startTime: "2027-01-01T09:00:00.000Z",
+        recurrence: { freq: "DAILY" as const, interval: 1, byMonthDay: [1] },
+        skippedOccurrences: ["2027-02-01T09:00:00.000Z"],
+      };
+      const changes = exceptionsFollowingStart(series, "2027-01-02T09:00:00.000Z");
+      expect(changes).toEqual({ skippedOccurrences: ["2027-02-02T09:00:00.000Z"] });
+      const moved = { ...series, ...changes, startTime: "2027-01-02T09:00:00.000Z" };
+      expect(exceptionsOf(moved, "2027-01-31T00:00:00Z", "2027-02-04T00:00:00Z").skipped).toEqual([
+        "2027-02-02T09:00:00.000Z",
+      ]);
+    });
+
+    it("doesn't carry exceptions over a pattern deliberately changed to another kind", () => {
+      // Found in review: "day 15" changed to "the third Tuesday" with the
+      // start nudged a minute remapped every skip; without the nudge,
+      // none. Neither is a move of the same pattern.
+      const start = new Date("2026-09-15T09:00:00.000Z");
+      const [date, nth] = ["date", "nth-weekday"].map(
+        (key) => repeatPatterns("MONTHLY", start, "UTC").find((p) => p.key === key)!
+      );
+      const series = {
+        startTime: start.toISOString(),
+        recurrence: withPattern({ freq: "MONTHLY", interval: 1 }, date!.fields),
+        skippedOccurrences: ["2026-10-15T09:00:00.000Z"],
+      };
+      const to = "2026-09-15T09:01:00.000Z";
+      expect(exceptionsFollowingStart(series, to, withPattern(series.recurrence, nth!.fields))).toEqual({});
+    });
+
+    it("doesn't move a moved occurrence a day when the series is nudged across midnight", () => {
+      // Found in review.
+      const series = {
+        startTime: "2027-01-01T00:30:00.000Z",
+        recurrence: { freq: "DAILY" as const, interval: 1, tzid: "UTC" },
+        occurrenceOverrides: [{ occurrence: "2027-01-10T00:30:00.000Z", startTime: "2027-01-10T10:00:00.000Z" }],
+      };
+      expect(exceptionsFollowingStart(series, "2026-12-31T23:30:00.000Z")).toEqual({
+        occurrenceOverrides: [{ occurrence: "2027-01-09T23:30:00.000Z", startTime: "2027-01-10T10:00:00.000Z" }],
+      });
+    });
+
+    it("keeps a fortnightly weekday series' exceptions in its weeks", () => {
+      // Found in review: Friday 7 August moved to Monday the 10th puts the
+      // series in the other weeks, so exceptions move a week.
+      const series = {
+        startTime: "2026-08-07T09:00:00.000Z",
+        recurrence: { freq: "WEEKLY" as const, interval: 2, byDay: ["MO" as const, "FR" as const] },
+        skippedOccurrences: ["2026-08-21T09:00:00.000Z"],
+      };
+      const changes = exceptionsFollowingStart(series, "2026-08-10T09:00:00.000Z");
+      expect(changes).toEqual({ skippedOccurrences: ["2026-08-28T09:00:00.000Z"] });
+      const moved = { ...series, ...changes, startTime: "2026-08-10T09:00:00.000Z" };
+      expect(exceptionsOf(moved, "2026-08-01T00:00:00Z", "2026-09-10T00:00:00Z").skipped).toEqual([
+        "2026-08-28T09:00:00.000Z",
+      ]);
+    });
+
+    it("copes with an enormous skip list", () => {
+      // Found in review: decrypted lists are unbounded, and spreading one
+      // into Math.max overflows the stack.
+      const skips = Array.from({ length: 150_000 }, (_, i) => new Date(Date.UTC(2027, 0, 1, 9) + i * 60_000).toISOString());
+      const series = {
+        startTime: "2027-01-01T09:00:00.000Z",
+        recurrence: { freq: "MONTHLY" as const, interval: 1 },
+        skippedOccurrences: skips,
+      };
+      expect(() => exceptionsFollowingStart(series, "2027-01-01T10:00:00.000Z")).not.toThrow();
+    });
+
+    it("keeps an exception it can't place where it doesn't apply", () => {
+      // Found in review: dropping them lost the times a person chose for a
+      // moved occurrence. Left as they are, they simply don't apply.
+      const start = new Date("2026-01-31T09:00:00.000Z");
+      const recurrence = withPattern({ freq: "MONTHLY", interval: 1, until: "2026-04-01T00:00:00.000Z" }, repeatPatterns("MONTHLY", start, "UTC")[0]!.fields);
+      const series = {
+        startTime: start.toISOString(),
+        recurrence,
+        // 1 March is no occurrence of "the 31st"; nor is 31 December after
+        // the series ends.
+        skippedOccurrences: ["2026-03-01T09:00:00.000Z", "not a date", "2026-03-31T09:00:00.000Z"],
+        occurrenceOverrides: [{ occurrence: "2026-12-31T09:00:00.000Z", startTime: "2026-12-31T15:00:00.000Z" }],
+      };
+      const to = new Date("2026-01-30T09:00:00.000Z");
+      expect(exceptionsFollowingStart(series, to.toISOString(), followStart(recurrence, start, to))).toEqual({
+        skippedOccurrences: ["2026-03-01T09:00:00.000Z", "not a date", "2026-03-30T09:00:00.000Z"],
+        occurrenceOverrides: series.occurrenceOverrides,
+      });
+    });
   });
 });
 

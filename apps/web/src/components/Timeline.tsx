@@ -101,19 +101,15 @@ interface EventPreview {
  * follows a moved start ("the third Tuesday", dragged a day later, becomes
  * "the third Wednesday"), exactly as in the editor; otherwise the moved
  * start wouldn't be an occurrence of its own series and would vanish
- * mid-drag. Skips and moves follow too, where the rule allows it
- * (exceptionsFollowingStart), so moving a series doesn't quietly undo
- * them. Always derived from the saved event, so repeated previews and
- * merged saves agree.
+ * mid-drag. Skips and moves follow too (exceptionsFollowingStart), so
+ * moving a series doesn't quietly undo them. Always derived from the
+ * saved event, so repeated previews and merged saves agree.
  */
 function withChange<T extends DecryptedEvent>(saved: T, change: EventPreview): T {
   const moved = { ...saved, ...change };
   if (!saved.recurrence || change.startTime === saved.startTime) return moved;
-  return {
-    ...moved,
-    ...exceptionsFollowingStart(saved, change.startTime),
-    recurrence: followStart(saved.recurrence, new Date(saved.startTime), new Date(change.startTime)),
-  };
+  const recurrence = followStart(saved.recurrence, new Date(saved.startTime), new Date(change.startTime));
+  return { ...moved, ...exceptionsFollowingStart(saved, change.startTime, recurrence), recurrence };
 }
 
 /** Keyboard changes not yet saved. Shown exactly like a drag preview. */

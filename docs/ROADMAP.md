@@ -501,15 +501,74 @@ worth of dead code and fixes what the model switch broke.
         occurrence it is -- "Skip this one" would have recorded a time the
         series never occurs at. It now passes the occurrence's identity
         (`recurrenceId`).
-      - Known gaps, listed below: skips and moves of weekday, calendar
-        pattern and zoned rules are still left behind when the series'
-        start moves; a moved occurrence can't be dragged on its own; and a
-        moved occurrence shares its series' single row, so one moved onto
-        a sibling covers it.
-- [ ] Keep skips and moves attached when the start of a weekday, calendar
-      pattern or zoned series moves (map each to the occurrence in the same
-      position), and let dragging a moved occurrence move only that
-      occurrence.
+      - Known gaps: a moved occurrence can't be dragged on its own (listed
+        below); and a moved occurrence shares its series' single row, so
+        one moved onto a sibling covers it. (Skips and moves of weekday,
+        calendar pattern and zoned rules being left behind when the
+        series' start moves was fixed by the next item.)
+- [x] **Keep skips and moves attached when the start of a weekday,
+      calendar pattern or zoned series moves** (`exceptionsFollowingStart`,
+      pure; editor, drag and keyboard alike). Each exception goes to its
+      occurrence's counterpart, worked out on the rule's own wall clock:
+      - Fixed-length repeat, no day filter (zoned or not): moved by as much
+        as the start. Exact, O(1), also across a change of clocks.
+      - Chosen weekdays: moved by the whole weeks the start moved plus the
+        change in its time of day. The days are the rule's, not the
+        start's, so moving Monday's start to Tuesday leaves Wednesday's
+        skip on Wednesday. Fortnightly (and slower) ones move by the
+        calendar weeks between the starts, which decide which weeks the
+        series falls in.
+      - Monthly/yearly: the same occurrence (by rank) of the corresponding
+        month or year -- September's third Tuesday to September's third
+        Wednesday, 31 May to 30 May, 29 Feb 2032 to 28 Feb 2032. Moving
+        the start into another month moves them as many months. In the
+        series' first period, which its start may cut short, ranks count
+        back from the period's end, so the first months of two series
+        starting on different days still line up.
+      - A moved occurrence keeps the time of day it was moved to and
+        follows its occurrence by whole days, rounded (a series moved a
+        week takes its moved occurrences with it; one nudged across
+        midnight doesn't move them a day).
+      - The rule after the move must be the same, or -- monthly/yearly --
+        its pattern following the start: the same kind, or one
+        `followStart` falls back to. That is checked by kind rather than
+        against one `followStart`, because the editor follows the start
+        one edit at a time and its fallbacks depend on the route. Any
+        other change to the rule, a deliberate switch to another kind of
+        pattern included, leaves exceptions where they are.
+      - An exception that can't be placed (not an occurrence; no
+        counterpart, e.g. the 31st moved into September; past the
+        10,000-occurrence calendar walk, centuries of any offered pattern)
+        is kept as it is, so a chosen time isn't lost -- unless the moved
+        series has an occurrence at that instant, which it would wrongly
+        start to apply to. Then it is dropped.
+      - Cost: it runs on every drag frame. Calendar rules walk once per
+        series on the rule's clock, converting only hits through `Intl`,
+        and the old series' slots are remembered per saved event. Measured:
+        a London-zoned monthly series with 100 skips over a century, ~9ms
+        per frame; every other kind is O(1) per exception.
+      - Found in review (of a first version that counted positions from
+        the start): positions shifted May's skip of "the 31st" to April
+        when moved to the 30th, and shifted every weekday exception one
+        along when the start moved to a day the rule doesn't include; it
+        deleted exceptions it couldn't place, chosen times included; the
+        editor's step-by-step pattern was rejected; a capped walk silently
+        undid far-out exceptions of zoned hourly series; and walking the
+        new series through `Intl` cost ~170ms per frame.
+      - Found in the second review and fixed: first-period ranks were
+        counted from each series' own start (the 15th of a 1st-and-15th
+        series lost its skip); a deliberate pattern change plus a nudge
+        remapped exceptions; moved occurrences jumped a day when a nudge
+        crossed midnight; fortnightly weekday series moved across a week
+        boundary landed their exceptions in the wrong weeks; and an
+        enormous decrypted skip list overflowed the stack via `Math.max`
+        spreading. Raised but not a bug: calendar filters on a daily rule
+        are dropped by expansion, so such a series moves like a plain
+        daily one.
+      - Known limitation: a daily, hourly or minutely series with chosen
+        weekdays that repeats every few units leaves its exceptions where
+        they are, since its phase doesn't follow weeks.
+- [ ] Let dragging a moved occurrence move only that occurrence.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
