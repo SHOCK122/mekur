@@ -507,34 +507,50 @@ worth of dead code and fixes what the model switch broke.
         calendar pattern and zoned rules being left behind when the
         series' start moves was fixed by the next item.)
 - [x] **Keep skips and moves attached when the start of a weekday,
-      calendar pattern or zoned series moves.** Each exception goes to the
-      occurrence in the same **position**: the series' fifth occurrence
-      before the move is its fifth after (`exceptionsFollowingStart`, pure;
-      editor, drag and keyboard alike). Fixed-length UTC repeats keep the
-      exact shift by the start's delta. A calendar pattern that follows the
-      start ("the third Tuesday" -> "the third Wednesday") counts as the
-      same rule; any other change to the rule still leaves exceptions where
-      they are, since which occurrence each meant is then a guess.
-      - Exceptions for occurrences the series doesn't have (left behind by
-        an earlier change, so already ignored) are dropped rather than
-        carried, and so are those whose position the moved series no
-        longer reaches (an `until` now passed). Before, they stayed keyed
-        to old times and could silently start matching a new occurrence.
-      - Positions are counted at most `MAX_POSITIONAL_WALK` (10,000)
-        occurrences in -- 27 years of a daily series, about a week of a
-        minutely one; exceptions further out are left where they were.
-      - Cost: this runs on every drag frame. The walk compares on the
-        rule's own (wall) clock and converts only the hits back to
-        instants: converting every occurrence through `Intl` made a zoned
-        daily series with a far-out skip take ~170ms per call. The old
-        series' positions are remembered per saved event, so a frame only
-        walks the new series. Measured: ~5ms for a zoned daily series with
-        a skip a year out; well under a frame in every case tried.
-      - Simplification: "the same position" is not always what a person
-        would pick. Moving "day 31" to the 30th maps the 31 May skip (the
-        third occurrence: Jan, Mar, May) to 30 April (Jan, Mar, Apr). A
-        nearest-occurrence rule handles that case better but makes large
-        moves ambiguous; position is predictable.
+      calendar pattern or zoned series moves** (`exceptionsFollowingStart`,
+      pure; editor, drag and keyboard alike). Each exception goes to its
+      occurrence's counterpart, worked out on the rule's own wall clock:
+      - Fixed-length repeat, no day filter (zoned or not): moved by as much
+        as the start. Exact, O(1), also across a change of clocks.
+      - Chosen weekdays: moved by the whole weeks the start moved plus the
+        change in its time of day. The days are the rule's, not the
+        start's, so moving Monday's start to Tuesday leaves Wednesday's
+        skip on Wednesday.
+      - Monthly/yearly: the same occurrence (by rank) of the corresponding
+        month or year -- September's third Tuesday to September's third
+        Wednesday, 31 May to 30 May, 29 Feb 2032 to 28 Feb 2032. Moving
+        the start into another month moves them as many months.
+      - A moved occurrence keeps the time of day it was moved to and
+        follows its occurrence by whole days (a series moved a week takes
+        its moved occurrences with it).
+      - The rule after the move must be the same, or -- monthly/yearly --
+        differ only in the pattern, to one the new start offers. That is
+        checked against the offered patterns rather than one
+        `followStart`, because the editor follows the start one edit at a
+        time and its fallbacks depend on the route. Any other change to the
+        rule leaves exceptions where they are.
+      - An exception that can't be placed (not an occurrence; no
+        counterpart, e.g. the 31st moved into September; past the
+        10,000-occurrence calendar walk, centuries of any offered pattern)
+        is kept as it is, so a chosen time isn't lost -- unless the moved
+        series has an occurrence at that instant, which it would wrongly
+        start to apply to. Then it is dropped.
+      - Cost: it runs on every drag frame. Calendar rules walk once per
+        series on the rule's clock, converting only hits through `Intl`,
+        and the old series' slots are remembered per saved event. Measured:
+        a London-zoned monthly series with 100 skips over a century, ~6ms
+        per frame; every other kind is O(1) per exception.
+      - Found in review (of a first version that counted positions from
+        the start): positions shifted May's skip of "the 31st" to April
+        when moved to the 30th, and shifted every weekday exception one
+        along when the start moved to a day the rule doesn't include; it
+        deleted exceptions it couldn't place, chosen times included; the
+        editor's step-by-step pattern was rejected; a capped walk silently
+        undid far-out exceptions of zoned hourly series; and walking the
+        new series through `Intl` cost ~170ms per frame.
+      - Known limitation: a biweekly weekday series moved across a week
+        boundary by less than a week changes which weeks it falls in, so
+        its exceptions may no longer match.
 - [ ] Let dragging a moved occurrence move only that occurrence.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
