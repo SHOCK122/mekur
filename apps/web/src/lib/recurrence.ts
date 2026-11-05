@@ -373,11 +373,11 @@ type Exceptions = Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides
  * Returns only the fields that change.
  *
  * `recurrence` is the series' rule after the move. It must be the rule as
- * it was, or -- for a monthly or yearly series -- differ only in the
- * pattern, to one the new start offers (see followStart: "the third
- * Tuesday", moved a day, becomes "the third Wednesday"). If the rule was
- * changed in any other way, nothing is changed: which occurrence each
- * exception meant is then a guess.
+ * it was, or -- for a monthly or yearly series -- its pattern following
+ * the start (see followStart: "the third Tuesday", moved a day, becomes
+ * "the third Wednesday"; see followsStart). If the rule was changed in
+ * any other way, nothing is changed: which occurrence each exception
+ * meant is then a guess.
  *
  * Where each exception goes, all on the rule's own (wall) clock:
  * - A fixed-length repeat with no day filter: moved by as much as the
@@ -385,9 +385,10 @@ type Exceptions = Pick<SeriesFields, "skippedOccurrences" | "occurrenceOverrides
  * - A repeat on chosen weekdays: moved by the whole weeks the start moved
  *   plus the change in its time of day. The weekdays are the rule's, not
  *   the start's, so moving Monday's start to Tuesday leaves Wednesday's
- *   skip on Wednesday.
- * - Monthly and yearly: to the same occurrence of the corresponding month
- *   or year -- September's third Tuesday to September's third Wednesday,
+ *   skip on Wednesday. Every few weeks, by the calendar weeks between the
+ *   starts, which decide which weeks it falls in.
+ * - Monthly and yearly: to the same occurrence (see Slot) of the
+ *   corresponding month or year -- September's third Tuesday to September's third Wednesday,
  *   the 31st of May to the 30th of May. Moving the start into another
  *   month moves them by as many months.
  *
@@ -410,7 +411,7 @@ export function exceptionsFollowingStart(
   const to = new Date(startTime);
   const delta = to.getTime() - from.getTime();
   if (!delta || Number.isNaN(delta)) return {};
-  if (!followsStart(rule, recurrence, to)) return {};
+  if (!followsStart(rule, from, recurrence, to)) return {};
 
   const skips = Array.isArray(event.skippedOccurrences) ? event.skippedOccurrences : [];
   const overrides = Array.isArray(event.occurrenceOverrides) ? event.occurrenceOverrides : [];
@@ -441,7 +442,10 @@ export function exceptionsFollowingStart(
       if (typeof o !== "object" || o === null) return [o];
       const target = place(o.occurrence);
       if (target === undefined) return misplaced(o.occurrence) ? [] : [o];
-      const days = wallDays(newSeries, new Date(target)) - wallDays(oldSeries, new Date(o.occurrence));
+      // Whole days the occurrence moved, rounded: a series nudged across
+      // midnight hasn't moved its occurrences a day.
+      const wallMove = newSeries.toRule(new Date(target)).getTime() - oldSeries.toRule(new Date(o.occurrence)).getTime();
+      const days = Math.round(wallMove / DAY_MS);
       const moved: OccurrenceOverride = { ...o, occurrence: new Date(target).toISOString() };
       if (days) {
         moved.startTime = shiftWallDays(newSeries, o.startTime, days);
@@ -453,12 +457,16 @@ export function exceptionsFollowingStart(
   return changes;
 }
 
-/** Whether `after` is `before` carried to a start at `to`: the same rule,
- * or a monthly/yearly one with only its pattern changed, to one `to`
- * offers. Checked against the patterns rather than a single followStart
- * so that the editor, which follows the start one edit at a time, agrees. */
-function followsStart(before: RecurrenceRule, after: RecurrenceRule, to: Date): boolean {
+/** Whether `after` is `before` carried from a start at `from` to one at
+ * `to`: the same rule, or a monthly/yearly one whose pattern followed the
+ * start -- to the same kind ("the third Tuesday" to "the third
+ * Wednesday") or one followStart falls back to. Checked by kind rather
+ * than against a single followStart so that the editor, which follows the
+ * start one edit at a time (its fallbacks depend on the route), agrees; a
+ * pattern deliberately changed to another kind is not carried over. */
+function followsStart(before: RecurrenceRule, from: Date, after: RecurrenceRule, to: Date): boolean {
   if (JSON.stringify(before) === JSON.stringify(after)) return true;
+  if (JSON.stringify(followStart(before, from, to)) === JSON.stringify(after)) return true;
   if (after.freq !== "MONTHLY" && after.freq !== "YEARLY") return false;
   const rest = (rule: RecurrenceRule) => {
     const copy: Partial<RecurrenceRule> = { ...rule };
@@ -466,12 +474,10 @@ function followsStart(before: RecurrenceRule, after: RecurrenceRule, to: Date): 
     return JSON.stringify(copy);
   };
   if (rest(before) !== rest(after)) return false;
-  return repeatPatterns(after.freq, to, patternZone(after)).some((pattern) => usesPattern(after, pattern));
-}
-
-/** Whole days since the epoch on the series' clock. */
-function wallDays(series: SeriesRule, at: Date): number {
-  return Math.floor(series.toRule(at).getTime() / DAY_MS);
+  const kind = repeatPatterns(before.freq, from, patternZone(before)).find((p) => usesPattern(before, p))?.key;
+  if (!kind) return false;
+  const next = repeatPatterns(after.freq, to, patternZone(after)).find((p) => usesPattern(after, p))?.key;
+  return next !== undefined && [kind, ...FALLBACK[kind]].includes(next);
 }
 
 /** `iso` moved by `days` on the series' clock, keeping its time of day.
@@ -480,6 +486,77 @@ function shiftWallDays(series: SeriesRule, iso: string, days: number): string {
   const time = new Date(iso);
   if (Number.isNaN(time.getTime())) return iso;
   return series.fromRule(new Date(series.toRule(time).getTime() + days * DAY_MS)).toISOString();
+}
+
+/** Largest of `values`, without spreading them into arguments (lists
+ * come from decrypted content and are unbounded). */
+function maxOf(values: Iterable<number>): number {
+  let max = -Infinity;
+  for (const value of values) if (value > max) max = value;
+  return max;
+}
+
+/** The ids that are readable and survive the round trip to the series'
+ * clock and back, keyed by their reading on that clock. One that doesn't
+ * survive (the second pass of a repeated hour) is never an occurrence.
+ * Comparing on the rule's clock means only hits need converting back
+ * through `Intl`, which costs several times the walk itself. */
+function onRuleClock(series: SeriesRule, ids: Iterable<string>): Map<number, number> {
+  const byRuleTime = new Map<number, number>();
+  for (const iso of ids) {
+    const time = new Date(iso).getTime();
+    if (Number.isNaN(time)) continue;
+    const ruleTime = series.toRule(new Date(time));
+    if (series.fromRule(ruleTime).getTime() === time) byRuleTime.set(ruleTime.getTime(), time);
+  }
+  return byRuleTime;
+}
+
+/** Which of a period's occurrences one is: counted from the period's
+ * start, except in the series' first period, which its start may cut
+ * short; there, counted back from the period's end (-1 = the last). That
+ * way the first periods of two series starting on different days still
+ * line up ("the 15th" is the last of January's 1st-and-15th either way). */
+interface Slot {
+  period: number;
+  rank: number;
+}
+
+/** Walks a monthly/yearly series from its start, handing each occurrence
+ * (on the rule's clock) and its slot to `visit`, until `stop` says so or
+ * MAX_CALENDAR_WALK occurrences have been seen. The first period is
+ * always walked to its end, so its ranks can be counted back. */
+function walkSlots(
+  series: SeriesRule,
+  period: (wall: number) => number,
+  stop: (ruleTime: number, period: number) => boolean,
+  visit: (ruleDate: Date, slot: Slot) => void
+): void {
+  let first: Date[] = [];
+  let firstPeriod = Number.NaN;
+  let current = Number.NaN;
+  let rank = 0;
+  let walked = 0;
+  const flush = () => {
+    first.forEach((date, i) => visit(date, { period: firstPeriod, rank: i - first.length }));
+    first = [];
+  };
+  new RRule({ ...series.ruleOptions, dtstart: series.dtstart }).all((ruleDate) => {
+    const ruleTime = ruleDate.getTime();
+    const p = period(ruleTime);
+    if (Number.isNaN(firstPeriod)) firstPeriod = p;
+    if (p === firstPeriod) {
+      first.push(ruleDate);
+      return ++walked < MAX_CALENDAR_WALK;
+    }
+    flush();
+    if (stop(ruleTime, p)) return false;
+    rank = p === current ? rank + 1 : 0;
+    current = p;
+    visit(ruleDate, { period: p, rank });
+    return ++walked < MAX_CALENDAR_WALK;
+  });
+  flush();
 }
 
 /** Where each exception goes (see exceptionsFollowingStart): `place`
@@ -494,23 +571,33 @@ function placement(
   const { recurrence } = newSeries;
   const fromWall = oldSeries.dtstart.getTime();
   const toWall = newSeries.dtstart.getTime();
-  const parse = (iso: string) => {
-    const time = new Date(iso).getTime();
-    return Number.isNaN(time) ? undefined : time;
-  };
+  const leave = { place: () => undefined, occurs: () => false };
 
   if (recurrence.freq !== "MONTHLY" && recurrence.freq !== "YEARLY") {
+    // Calendar filters on a faster rule wouldn't move with the start, but
+    // the usable rule never has them (the schema allows them only on
+    // monthly and yearly rules); kept as a guard. Nor does a day-filtered
+    // rule's phase when it repeats every few days. Both left alone.
+    if (recurrence.byMonthDay !== undefined || recurrence.byMonth !== undefined || recurrence.bySetPos !== undefined) {
+      return leave;
+    }
     let shift = toWall - fromWall;
     if (recurrence.byDay?.length) {
-      // Whole weeks, plus the change in time of day.
+      if (recurrence.freq !== "WEEKLY" && recurrence.interval > 1) return leave;
       const fromDay = Math.floor(fromWall / DAY_MS);
       const toDay = Math.floor(toWall / DAY_MS);
-      shift = Math.trunc((toDay - fromDay) / 7) * 7 * DAY_MS + (toWall - toDay * DAY_MS) - (fromWall - fromDay * DAY_MS);
+      // Whole weeks, plus the change in time of day. Every few weeks, the
+      // calendar weeks (from Monday, rrule's default) between the starts,
+      // since those decide which weeks the series falls in.
+      const mondayWeek = (day: number) => Math.floor((day + 3) / 7); // 1970-01-01 was a Thursday.
+      const weeks =
+        recurrence.interval > 1 ? mondayWeek(toDay) - mondayWeek(fromDay) : Math.trunc((toDay - fromDay) / 7);
+      shift = weeks * 7 * DAY_MS + (toWall - toDay * DAY_MS) - (fromWall - fromDay * DAY_MS);
     }
     // Every readable id is placed, so `occurs` is never asked.
     const place = (iso: string) => {
-      const time = parse(iso);
-      if (time === undefined) return undefined;
+      const time = new Date(iso).getTime();
+      if (Number.isNaN(time)) return undefined;
       return newSeries.fromRule(new Date(oldSeries.toRule(new Date(time)).getTime() + shift)).getTime();
     };
     return { place, occurs: () => false };
@@ -524,47 +611,38 @@ function placement(
   const periodShift = period(toWall) - period(fromWall);
   const old = calendarSlots(oldSeries, ids, period, cacheOwner);
 
-  // The new series' occurrences in the periods wanted, by rank.
-  const wanted = new Map<number, Set<number>>();
+  // The new series' occurrences wanted, by period and rank.
+  const wanted = new Set<string>();
+  const wantedPeriods: number[] = [];
   for (const { period: p, rank } of old.values()) {
-    const ranks = wanted.get(p + periodShift) ?? new Set<number>();
-    ranks.add(rank);
-    wanted.set(p + periodShift, ranks);
+    wanted.add(`${p + periodShift}:${rank}`);
+    wantedPeriods.push(p + periodShift);
   }
-  // Every id, on the new series' clock, to check whether the new series
-  // occurs there should it not be placed (its period may have no
-  // counterpart). One that doesn't survive the round trip never matches.
-  const unplaced = new Set<number>();
-  for (const iso of ids) {
-    const time = parse(iso);
-    if (time === undefined) continue;
-    const ruleTime = newSeries.toRule(new Date(time));
-    if (newSeries.fromRule(ruleTime).getTime() === time) unplaced.add(ruleTime.getTime());
-  }
-  // One walk of the new series answers both: the occurrences wanted by
-  // period and rank, and which unplaced ids it has.
+  // Any id may go unplaced (its period may have no counterpart), so the
+  // walk also notes which of them the new series occurs at. It must reach
+  // the ones the old series doesn't have; those it has lie in periods no
+  // later than their targets unless the start moved earlier.
+  const unplaced = onRuleClock(newSeries, ids);
+  const lastPeriod = maxOf(wantedPeriods);
+  const lastUnplaced = maxOf(
+    [...unplaced].filter(([, time]) => periodShift < 0 || !old.has(time)).map(([ruleTime]) => ruleTime)
+  );
+
+  // One walk answers both.
   const found = new Map<string, number>();
   const occurring = new Set<number>();
-  if (wanted.size > 0 || unplaced.size > 0) {
-    const lastPeriod = wanted.size > 0 ? Math.max(...wanted.keys()) : -Infinity;
-    const lastUnplaced = unplaced.size > 0 ? Math.max(...unplaced) : -Infinity;
-    let walked = 0;
-    let current = Number.NaN;
-    let rank = 0;
-    new RRule({ ...newSeries.ruleOptions, dtstart: newSeries.dtstart }).all((ruleDate) => {
-      const ruleTime = ruleDate.getTime();
-      const p = period(ruleTime);
-      if (p > lastPeriod && ruleTime > lastUnplaced) return false;
-      rank = p === current ? rank + 1 : 0;
-      current = p;
-      if (wanted.get(p)?.has(rank)) found.set(`${p}:${rank}`, newSeries.fromRule(ruleDate).getTime());
-      if (unplaced.has(ruleTime)) occurring.add(ruleTime);
-      return ++walked < MAX_CALENDAR_WALK;
-    });
-  }
+  walkSlots(
+    newSeries,
+    period,
+    (ruleTime, p) => p > lastPeriod && ruleTime > lastUnplaced,
+    (ruleDate, slot) => {
+      const key = `${slot.period}:${slot.rank}`;
+      if (wanted.has(key)) found.set(key, newSeries.fromRule(ruleDate).getTime());
+      if (unplaced.has(ruleDate.getTime())) occurring.add(ruleDate.getTime());
+    }
+  );
   const place = (iso: string) => {
-    const time = parse(iso);
-    const slot = time === undefined ? undefined : old.get(time);
+    const slot = old.get(new Date(iso).getTime());
     return slot ? found.get(`${slot.period + periodShift}:${slot.rank}`) : undefined;
   };
   // Past the walk, an id is assumed not to be an occurrence: kept.
@@ -572,50 +650,36 @@ function placement(
   return { place, occurs };
 }
 
-/** Which period (month or year) each id falls in, and which of that
- * period's occurrences it is, for the ids that are occurrences of the
- * series within MAX_CALENDAR_WALK. Remembered per event for as long as
- * its rule, start and exceptions stay the same: a drag asks on every
- * frame, for the same saved event. */
-const calendarSlotsCache = new WeakMap<object, { key: string; value: Map<number, { period: number; rank: number }> }>();
+/** The slot (see Slot) of each id that is an occurrence of the series
+ * within MAX_CALENDAR_WALK. Remembered per event for as long as its rule,
+ * start and exceptions stay the same: a drag asks on every frame, for the
+ * same saved event. */
+const calendarSlotsCache = new WeakMap<object, { key: string; value: Map<number, Slot> }>();
 
 function calendarSlots(
   series: SeriesRule,
   ids: string[],
   period: (wall: number) => number,
   cacheOwner: object
-): Map<number, { period: number; rank: number }> {
+): Map<number, Slot> {
   const key = JSON.stringify([series.ruleOptions, series.dtstart.toISOString(), series.recurrence.tzid ?? null, ids]);
   const cached = calendarSlotsCache.get(cacheOwner);
   if (cached?.key === key) return cached.value;
-  const value = new Map<number, { period: number; rank: number }>();
+  const value = new Map<number, Slot>();
   calendarSlotsCache.set(cacheOwner, { key, value });
 
-  // Compared on the rule's clock: converting every occurrence back to an
-  // instant costs an Intl lookup each. An id that doesn't survive the
-  // round trip (the second pass of a repeated hour) is never one.
-  const byRuleTime = new Map<number, number>();
-  for (const iso of ids) {
-    const time = new Date(iso).getTime();
-    if (Number.isNaN(time)) continue;
-    const ruleTime = series.toRule(new Date(time));
-    if (series.fromRule(ruleTime).getTime() === time) byRuleTime.set(ruleTime.getTime(), time);
-  }
+  const byRuleTime = onRuleClock(series, ids);
   if (byRuleTime.size === 0) return value;
-  const last = Math.max(...byRuleTime.keys());
-  let walked = 0;
-  let current = Number.NaN;
-  let rank = 0;
-  new RRule({ ...series.ruleOptions, dtstart: series.dtstart }).all((ruleDate) => {
-    const ruleTime = ruleDate.getTime();
-    if (ruleTime > last) return false;
-    const p = period(ruleTime);
-    rank = p === current ? rank + 1 : 0;
-    current = p;
-    const id = byRuleTime.get(ruleTime);
-    if (id !== undefined) value.set(id, { period: p, rank });
-    return ++walked < MAX_CALENDAR_WALK;
-  });
+  const last = maxOf(byRuleTime.keys());
+  walkSlots(
+    series,
+    period,
+    (ruleTime) => ruleTime > last,
+    (ruleDate, slot) => {
+      const id = byRuleTime.get(ruleDate.getTime());
+      if (id !== undefined) value.set(id, slot);
+    }
+  );
   return value;
 }
 
@@ -663,8 +727,8 @@ export function withoutSkippedOccurrence(
 const FIXED_PERIOD_MS: Partial<Record<RecurrenceRule["freq"], number>> = {
   MINUTELY: 60_000,
   HOURLY: 3_600_000,
-  DAILY: 86_400_000,
-  WEEKLY: 604_800_000,
+  DAILY: DAY_MS,
+  WEEKLY: 7 * DAY_MS,
 };
 
 /** Length of one repetition (interval included), for frequencies of fixed
