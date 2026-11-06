@@ -593,6 +593,15 @@ worth of dead code and fixes what the model switch broke.
         couldn't express a series move and an occurrence move in sequence:
         a series move remaps overrides, so the order they happen in
         matters.
+      - Found in review and fixed: the keys' target outlived its label
+        when the label scrolled away while focused (no blur fires), so a
+        later press could write an override for an occurrence the series
+        no longer has -- now reset on focus too, and dropped once that
+        occurrence is off screen; the key help followed the occurrence
+        carrying the label rather than what the keys would change; a series
+        nudge panned to follow a moved occurrence that doesn't move with
+        it; and failure announcements named the series for an occurrence
+        drag.
       - Simplification: only the first visible occurrence has a label, so
         only that one can be moved (rather than resized) by dragging, or
         nudged with the keys -- exactly as for any series occurrence. Any

@@ -411,7 +411,8 @@ export function applyTimelineChange<T extends TimelineFields>(
 }
 
 /** The times one occurrence has: where it was moved to, or else where the
- * series puts it (its recurrenceId, lasting as long as the series). */
+ * series puts it (its recurrenceId, lasting as long as the series -- the
+ * same fixed duration expandOccurrences gives every occurrence). */
 export function occurrenceTimes(
   event: TimelineFields,
   occurrence: Date

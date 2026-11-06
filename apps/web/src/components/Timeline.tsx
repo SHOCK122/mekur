@@ -94,10 +94,8 @@ interface DragState {
   original: { startTime: string; endTime?: string };
   /** Preview of the change, applied visually before it is saved so the
    * drag feels immediate rather than waiting on a round trip. */
-  preview: EventPreview | null;
+  preview: TimelineChange | null;
 }
-
-type EventPreview = TimelineChange;
 
 /** Keyboard changes not yet saved. Shown exactly like a drag preview. */
 interface Nudge {
@@ -105,8 +103,14 @@ interface Nudge {
   /** As in DragState: a moved occurrence on its own, or the series. */
   occurrence: Date | null;
   original: { startTime: string; endTime?: string };
-  preview: EventPreview;
+  preview: TimelineChange;
   name: string;
+}
+
+/** What the arrow keys change: an event, or one moved occurrence of it. */
+interface KeyTarget {
+  eventId: string;
+  occurrence: Date | null;
 }
 
 /** A change sent to the server but not yet confirmed. It stays on screen
@@ -117,6 +121,23 @@ interface Nudge {
 interface Saving {
   fields: Partial<EventContent>;
   token: object;
+}
+
+/** An event including any change still being saved. */
+function withInFlight<T extends DecryptedEvent>(event: T, saving: ReadonlyMap<string, Saving>): T {
+  const inFlight = saving.get(event.id)?.fields;
+  return inFlight ? { ...event, ...inFlight } : event;
+}
+
+/** What a change applies to, in words, for labels and announcements:
+ * the event, or one moved occurrence of it. */
+function targetName(event: DecryptedEvent, occurrence: Date | null): string {
+  const title = event.title?.trim() || "untitled event";
+  return occurrence ? `this occurrence of ${title}` : title;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Labels showing the same thing measure the same, so sizes are keyed by
@@ -165,7 +186,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * the first press, cleared on blur. Kept across saves so a moved
    * occurrence nudged past a sibling (which then carries the label) is
    * still the one that moves. */
-  const keyTargetRef = useRef<{ eventId: string; occurrence: Date | null } | null>(null);
+  const keyTargetRef = useRef<KeyTarget | null>(null);
+  // Mirrored in state for the label's key help, which describes it.
+  const [keyTarget, setKeyTarget] = useState<KeyTarget | null>(null);
   const [saving, setSaving] = useState<ReadonlyMap<string, Saving>>(new Map());
   const savingRef = useRef<ReadonlyMap<string, Saving>>(saving);
   // Saves run one at a time, so an older write can never land after a
@@ -247,8 +270,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
 
   const placements = useMemo(() => {
     const withPreview = events.map((saved) => {
-      const inFlight = saving.get(saved.id)?.fields;
-      const base = inFlight ? { ...saved, ...inFlight } : saved;
+      const base = withInFlight(saved, saving);
       const active =
         drag?.preview && drag.eventId === saved.id
           ? { preview: drag.preview, occurrence: drag.occurrence }
@@ -579,7 +601,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       return;
     }
     const event = events.find((e) => e.id === eventId);
-    await enqueueSave(eventId, preview, occurrence, event?.title?.trim() || "Untitled event");
+    if (!event) return;
+    await enqueueSave(eventId, preview, occurrence, targetName(event, occurrence));
+  }
+
+  function updateKeyTarget(next: KeyTarget | null) {
+    keyTargetRef.current = next;
+    setKeyTarget(next);
   }
 
   function updateNudge(next: Nudge | null) {
@@ -592,19 +620,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     setSaving(next);
   }
 
-  /** An event including any change still being saved. */
-  function latestEvent(event: DecryptedEvent): DecryptedEvent {
-    const inFlight = savingRef.current.get(event.id)?.fields;
-    return inFlight ? { ...event, ...inFlight } : event;
-  }
-
   /** The times a drag or nudge starts from: the series', or one
    * occurrence's, including any change still being saved. */
   function latestTimes(
     event: DecryptedEvent,
     occurrence: Date | null
   ): { startTime: string; endTime?: string } {
-    const latest = latestEvent(event);
+    const latest = withInFlight(event, savingRef.current);
     if (occurrence) return occurrenceTimes(latest, occurrence);
     return { startTime: latest.startTime, endTime: latest.endTime };
   }
@@ -617,14 +639,14 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    */
   function enqueueSave(
     eventId: string,
-    preview: EventPreview,
+    preview: TimelineChange,
     occurrence: Date | null,
     name: string
   ): Promise<unknown> {
     const saved = events.find((e) => e.id === eventId);
     if (!saved) return Promise.resolve();
     const inFlight = savingRef.current.get(eventId)?.fields;
-    const base = latestEvent(saved);
+    const base = withInFlight(saved, savingRef.current);
     // A moved start carries its monthly/yearly pattern, skips and moves
     // along; a moved occurrence changes only its own override
     // (applyTimelineChange).
@@ -693,22 +715,28 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     e.preventDefault();
 
     if (nudgeRef.current && nudgeRef.current.eventId !== event.id) commitNudge();
-    if (keyTargetRef.current?.eventId !== event.id) {
-      keyTargetRef.current = {
-        eventId: event.id,
-        occurrence: labelled.moved ? labelled.recurrenceId : null,
-      };
-    }
-    const { occurrence } = keyTargetRef.current;
+    // The target lasts while the label keeps focus (it's reset on focus
+    // and blur), and only while that occurrence is still on screen, which
+    // keepInView sees to; anything else starts from the label's own.
+    const kept = keyTargetRef.current;
+    const placed = placements.find((p) => p.item.id === event.id)?.item;
+    const stillThere =
+      kept?.eventId === event.id &&
+      (kept.occurrence === null ||
+        placed?.occurrences.some((o) => o.recurrenceId.getTime() === kept.occurrence!.getTime()));
+    const target: KeyTarget = stillThere
+      ? kept!
+      : { eventId: event.id, occurrence: labelled.moved ? labelled.recurrenceId : null };
+    if (target !== kept) updateKeyTarget(target);
+    const { occurrence } = target;
     // Any other event's change has been sent, so this is either our own
     // unsaved change or nothing.
     const pending = nudgeRef.current;
     const original = pending?.original ?? latestTimes(event, occurrence);
-    const current: EventPreview = pending?.preview ?? { ...original };
-    const title = event.title?.trim() || "Untitled event";
-    const name = occurrence ? `This occurrence of ${title}` : title;
+    const current: TimelineChange = pending?.preview ?? { ...original };
+    const name = targetName(event, occurrence);
 
-    const next = applyAdjustment(adjustment, event, name, title, current);
+    const next = applyAdjustment(adjustment, event, name, targetName(event, null), current);
     if (!next) return;
     if (adjustment.kind !== "rank") keepInView(event.id, occurrence, adjustment, current, next);
 
@@ -722,21 +750,23 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
    * would unmount its label and drop keyboard focus. The label sits on the
    * first visible occurrence (pinned to the view's start while that one is
    * already in progress), and a change shifts every occurrence of a series
-   * alike, so that occurrence is the one followed. A moved occurrence
-   * changed on its own is followed itself: the series stays on screen
-   * while it does, so the label does too.
+   * alike, so that occurrence is the one followed -- the first one that
+   * isn't moved, since moved ones don't shift with the series. A moved
+   * occurrence changed on its own is followed itself. Either way the
+   * series stays on screen, so the label (on whichever occurrence is
+   * first) does too.
    */
   function keepInView(
     eventId: string,
     occurrence: Date | null,
     adjustment: Exclude<KeyboardAdjustment, { kind: "rank" }>,
-    current: EventPreview,
-    next: EventPreview
+    current: TimelineChange,
+    next: TimelineChange
   ) {
     const placed = placements.find((p) => p.item.id === eventId)?.item;
     const labelled = occurrence
       ? placed?.occurrences.find((o) => o.recurrenceId.getTime() === occurrence.getTime())
-      : placed?.occurrences[0];
+      : placed?.occurrences.find((o) => !o.moved);
     if (!placed || !labelled) return;
     const shift = (from?: string, to?: string) =>
       from && to ? new Date(to).getTime() - new Date(from).getTime() : 0;
@@ -777,8 +807,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     event: DecryptedEvent,
     name: string,
     seriesName: string,
-    current: EventPreview
-  ): EventPreview | null {
+    current: TimelineChange
+  ): TimelineChange | null {
     const stepMs = keyboardStepMs(spanSeconds * 1000);
     const format = (iso: string) =>
       new Date(iso).toLocaleString(undefined, {
@@ -802,13 +832,13 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       const raising = adjustment.direction === 1;
       if (!step) {
         setAnnouncement(
-          `${seriesName} is already ${raising ? "above" : "below"} every event it overlaps.`
+          `${capitalise(seriesName)} is already ${raising ? "above" : "below"} every event it overlaps.`
         );
         return null;
       }
       // Priority belongs to the series, which shares one row.
       const other = step.past.event.title?.trim() || "untitled event";
-      setAnnouncement(`${seriesName} ${raising ? "raised above" : "lowered below"} ${other}.`);
+      setAnnouncement(`${capitalise(seriesName)} ${raising ? "raised above" : "lowered below"} ${other}.`);
       return { ...current, rank: step.rank };
     }
 
@@ -816,7 +846,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     if (adjustment.kind === "move") {
       const moved = moveEvent(current, delta);
       setAnnouncement(
-        `${name} moved to ${format(moved.startTime)}${
+        `${capitalise(name)} moved to ${format(moved.startTime)}${
           moved.endTime ? ` until ${format(moved.endTime)}` : ""
         }.`
       );
@@ -826,8 +856,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const resized = resizeEvent(current, adjustment.edge, delta);
     setAnnouncement(
       adjustment.edge === "start"
-        ? `${name} starts ${format(resized.startTime)}.`
-        : `${name} ends ${format(resized.endTime!)}.`
+        ? `${capitalise(name)} starts ${format(resized.startTime)}.`
+        : `${capitalise(name)} ends ${format(resized.endTime!)}.`
     );
     return { ...current, startTime: resized.startTime, endTime: resized.endTime ?? undefined };
   }
@@ -1107,11 +1137,15 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                     // series -- except on a moved occurrence, which isn't
                     // where the series puts it and wouldn't follow: there
                     // they change only that occurrence.
-                    const adjustable = event.canEdit;
                     const target = occurrence.moved ? occurrence.recurrenceId : null;
-                    const what = `${occurrence.moved ? "this occurrence of " : ""}${
-                      event.title || "untitled event"
-                    }`;
+                    const what = targetName(event, target);
+                    // The key help describes what the arrow keys will
+                    // change, which is kept while the label has focus even
+                    // if the label passes to another occurrence.
+                    const keysMoveOccurrence =
+                      keyTarget?.eventId === event.id
+                        ? keyTarget.occurrence !== null
+                        : occurrence.moved;
 
                     return (
                       <div
@@ -1139,7 +1173,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                           aria-hidden="true"
                         />
 
-                        {adjustable && (
+                        {event.canEdit && (
                           <>
                             <span
                               className="resize-handle resize-start"
@@ -1166,18 +1200,20 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
                             className="event-modal-label"
                             data-label-key={labelKey(event)}
                             aria-describedby={
-                              adjustable && onChangeEvent
-                                ? occurrence.moved
+                              event.canEdit && onChangeEvent
+                                ? keysMoveOccurrence
                                   ? movedKeysHelpId
                                   : keysHelpId
                                 : undefined
                             }
-                            onPointerDown={(e) =>
-                              adjustable && beginDrag(e, event, { kind: "move" }, target)
-                            }
-                            onKeyDown={(e) => adjustable && handleEventKeyDown(e, event, occurrence)}
+                            onPointerDown={(e) => beginDrag(e, event, { kind: "move" }, target)}
+                            onKeyDown={(e) => handleEventKeyDown(e, event, occurrence)}
+                            // Each focus starts afresh from the occurrence the
+                            // label is on (a label unmounted while focused
+                            // never blurs).
+                            onFocus={() => updateKeyTarget(null)}
                             onBlur={() => {
-                              keyTargetRef.current = null;
+                              updateKeyTarget(null);
                               commitNudge();
                             }}
                             onClick={(e) =>

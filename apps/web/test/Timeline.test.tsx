@@ -1306,14 +1306,18 @@ describe("Timeline", () => {
         occurrenceOverrides: [{ occurrence: base.startTime, startTime: at(STEP), endTime: at(STEP + 30 * MINUTE) }],
       };
       const onChange = vi.fn();
-      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const { rerender } = render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
       const button = screen.getByRole("button", { name: /Standup/ });
       button.focus();
       // 20 presses: from 1:15 past the series' start to 6:15, past the
       // second occurrence at 4:00.
       for (let i = 0; i < 20; i++) fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: /Standup/ }));
-      fireEvent.blur(document.activeElement!);
+      const label = screen.getByRole("button", { name: /Standup/ });
+      expect(document.activeElement).toBe(label);
+      // The help describes what the keys still do, not the occurrence the
+      // label now sits on.
+      expect(label).toHaveAccessibleDescription(/only this occurrence/i);
+      fireEvent.blur(label);
 
       await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
       const [, changes] = onChange.mock.calls[0]!;
@@ -1321,6 +1325,16 @@ describe("Timeline", () => {
       expect(changes.occurrenceOverrides).toEqual([
         { occurrence: base.startTime, startTime: at(21 * STEP), endTime: at(21 * STEP + 30 * MINUTE) },
       ]);
+
+      // Focused again (once saved), the keys start from the occurrence the
+      // label is on: the series' own, so they move the series.
+      rerender(<Timeline events={[{ ...event, ...changes }]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      expect(label).not.toHaveAccessibleDescription(/only this occurrence/i);
+      label.focus();
+      fireEvent.keyDown(label, { key: "ArrowRight" });
+      fireEvent.blur(label);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+      expect(onChange.mock.calls[1]![1].startTime).toBe(at(STEP));
     });
 
     it("still moves the whole series from an occurrence that wasn't moved", async () => {
