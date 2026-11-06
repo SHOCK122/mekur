@@ -1184,32 +1184,161 @@ describe("Timeline", () => {
   });
 
   describe("moved occurrences", () => {
-    it("are drawn where they were moved to, without drag handles or arrow keys", () => {
-      // Dragging changes the whole series, which a moved occurrence doesn't
-      // follow; it is changed from its edit panel instead.
+    const MINUTE = 60_000;
+    const HOUR = 60 * MINUTE;
+    // A day view steps by 15 minutes per press, and is 800px wide in jsdom.
+    const STEP = 15 * MINUTE;
+
+    /** A daily series whose occurrence in view was moved two hours later. */
+    function movedSeries() {
       const base = makeEvent();
       const start = new Date(base.startTime).getTime();
+      const at = (ms: number) => new Date(start + ms).toISOString();
+      return {
+        at,
+        event: {
+          ...base,
+          recurrence: { freq: "DAILY" as const, interval: 1 },
+          occurrenceOverrides: [{ occurrence: base.startTime, startTime: at(2 * HOUR), endTime: at(2.5 * HOUR) }],
+        },
+      };
+    }
+
+    function drag(element: Element, dx: number) {
+      fireEvent.pointerDown(element, { clientX: 400, clientY: 100 });
+      fireEvent.pointerMove(screen.getByLabelText("Timeline events"), { clientX: 400 + dx, clientY: 100 });
+      fireEvent.pointerUp(screen.getByLabelText("Timeline events"));
+    }
+
+    it("are drawn where they were moved to, with handles for that occurrence alone", () => {
+      const { event } = movedSeries();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={() => {}} />);
+      const series = screen.getByTestId("event-series-e1");
+      expect(series.getAttribute("data-occurrences")).toBe("1");
+      expect(screen.getByRole("separator", { name: "Adjust start of this occurrence of Standup" })).toBeInTheDocument();
+      expect(screen.getByRole("separator", { name: "Adjust end of this occurrence of Standup" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Standup/ })).toHaveAccessibleDescription(/only this occurrence/i);
+    });
+
+    it("moves only that occurrence when dragged", async () => {
+      const { event, at } = movedSeries();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      // 100px of an 800px day is three hours.
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes).not.toHaveProperty("startTime");
+      expect(changes).not.toHaveProperty("endTime");
+      expect(changes).not.toHaveProperty("recurrence");
+      expect(changes.occurrenceOverrides).toEqual([
+        { occurrence: event.startTime, startTime: at(5 * HOUR), endTime: at(5.5 * HOUR) },
+      ]);
+    });
+
+    it("resizes only that occurrence", async () => {
+      const { event, at } = movedSeries();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      drag(screen.getByRole("separator", { name: "Adjust end of this occurrence of Standup" }), 100);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes).not.toHaveProperty("endTime");
+      expect(changes.occurrenceOverrides).toEqual([
+        { occurrence: event.startTime, startTime: at(2 * HOUR), endTime: at(5.5 * HOUR) },
+      ]);
+    });
+
+    it("shows the drag on that occurrence alone before it is saved", () => {
+      const { event } = movedSeries();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={() => new Promise(() => {})} />);
+      const label = screen.getByRole("button", { name: /Standup/ });
+      const before = parseFloat(screen.getByTestId("event-modal-e1").style.left);
+      fireEvent.pointerDown(label, { clientX: 400, clientY: 100 });
+      fireEvent.pointerMove(screen.getByLabelText("Timeline events"), { clientX: 500, clientY: 100 });
+      expect(parseFloat(screen.getByTestId("event-modal-e1").style.left)).toBeCloseTo(before + 100);
+      expect(screen.getByTestId("event-series-e1").getAttribute("data-occurrences")).toBe("1");
+    });
+
+    it("moves only that occurrence with the arrow keys", async () => {
+      const { event, at } = movedSeries();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      const button = screen.getByRole("button", { name: /Standup/ });
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      expect(screen.getByTestId("timeline-announcer").textContent).toMatch(
+        /^This occurrence of Standup moved to/
+      );
+      fireEvent.blur(button);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes).not.toHaveProperty("startTime");
+      expect(changes.occurrenceOverrides).toEqual([
+        { occurrence: event.startTime, startTime: at(2 * HOUR + STEP), endTime: at(2.5 * HOUR + STEP) },
+      ]);
+    });
+
+    it("forgets the move once dragged back exactly where the series has it", async () => {
+      const { event } = movedSeries();
+      const onChange = vi.fn();
+      render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      // Two hours back: 800px is a day, so 2h is 66.67px.
+      drag(screen.getByRole("button", { name: /Standup/ }), -(800 * 2) / 24);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      expect(onChange.mock.calls[0]![1].occurrenceOverrides).toEqual([]);
+    });
+
+    it("keeps moving the same occurrence after it passes another one that takes the label", async () => {
+      // The label sits on the first visible occurrence. A moved one nudged
+      // past its sibling hands the label over; further presses must still
+      // move the occurrence they started on, not the series.
+      const base = makeEvent();
+      const start = new Date(base.startTime).getTime();
+      const at = (ms: number) => new Date(start + ms).toISOString();
       const event = {
         ...base,
-        recurrence: { freq: "DAILY" as const, interval: 1 },
-        occurrenceOverrides: [
-          {
-            occurrence: base.startTime,
-            startTime: new Date(start + 2 * 3_600_000).toISOString(),
-            endTime: new Date(start + 2.5 * 3_600_000).toISOString(),
-          },
-        ],
+        recurrence: { freq: "HOURLY" as const, interval: 4, count: 2 },
+        occurrenceOverrides: [{ occurrence: base.startTime, startTime: at(STEP), endTime: at(STEP + 30 * MINUTE) }],
       };
       const onChange = vi.fn();
       render(<Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />);
-      const series = screen.getByTestId("event-series-e1");
-      expect(series.getAttribute("data-occurrences")).toBe("1");
-      expect(series.querySelectorAll(".resize-handle")).toHaveLength(0);
       const button = screen.getByRole("button", { name: /Standup/ });
-      expect(button).not.toHaveAccessibleDescription(/arrow/i);
-      expect(fireEvent.keyDown(button, { key: "ArrowRight" })).toBe(true);
-      fireEvent.blur(button);
-      expect(onChange).not.toHaveBeenCalled();
+      button.focus();
+      // 20 presses: from 1:15 past the series' start to 6:15, past the
+      // second occurrence at 4:00.
+      for (let i = 0; i < 20; i++) fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: /Standup/ }));
+      fireEvent.blur(document.activeElement!);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes).not.toHaveProperty("startTime");
+      expect(changes.occurrenceOverrides).toEqual([
+        { occurrence: base.startTime, startTime: at(21 * STEP), endTime: at(21 * STEP + 30 * MINUTE) },
+      ]);
+    });
+
+    it("still moves the whole series from an occurrence that wasn't moved", async () => {
+      const { event, at } = movedSeries();
+      // Yesterday's occurrence was moved instead; today's is the series'.
+      const moved = {
+        ...event,
+        occurrenceOverrides: [
+          { occurrence: at(-24 * HOUR), startTime: at(-24 * HOUR + HOUR), endTime: at(-24 * HOUR + 1.5 * HOUR) },
+        ],
+      };
+      const onChange = vi.fn();
+      render(<Timeline events={[moved]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, changes] = onChange.mock.calls[0]!;
+      expect(changes.startTime).toBe(at(3 * HOUR));
     });
   });
 });

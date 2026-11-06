@@ -1,6 +1,14 @@
 import { rankBetween } from "./fractionalRank.js";
 import { occupiedUntil } from "./timeline.js";
 import type { Orientation, Viewport, Placement, Placeable } from "./timeline.js";
+import {
+  exceptionsFollowingStart,
+  findOverride,
+  followStart,
+  withOverride,
+  withoutOverride,
+  type SeriesFields,
+} from "./recurrence.js";
 
 /**
  * Pointer maths for the timeline, kept pure and separate from the
@@ -340,4 +348,102 @@ export function panToKeepInView(
   if (followed.after > followed.before && followed.after > high) pan = followed.after - high;
   if (followed.after < followed.before && followed.after < low) pan = followed.after - low;
   return pan;
+}
+
+/** New times (and optionally rank) from a drag or keyboard change. */
+export interface TimelineChange {
+  startTime: string;
+  /** Absent for open-ended. */
+  endTime?: string;
+  rank?: string;
+}
+
+/** The fields a timeline change can touch. */
+export type TimelineFields = SeriesFields & { rank?: string };
+
+const CHANGED_FIELDS = [
+  "startTime",
+  "endTime",
+  "rank",
+  "recurrence",
+  "skippedOccurrences",
+  "occurrenceOverrides",
+] as const;
+
+/**
+ * An event with a drag or keyboard change applied.
+ *
+ * With no `occurrence`, the change is to the whole series. A
+ * monthly/yearly pattern follows a moved start ("the third Tuesday",
+ * dragged a day later, becomes "the third Wednesday"), exactly as in the
+ * editor; otherwise the moved start wouldn't be an occurrence of its own
+ * series and would vanish mid-drag. Skips and moves follow too
+ * (exceptionsFollowingStart), so moving a series doesn't quietly undo
+ * them.
+ *
+ * With an `occurrence` (its recurrenceId), only that occurrence moves:
+ * the times become its override, and an override that lands back exactly
+ * where the series has it is removed rather than kept as a no-op move. A
+ * rank always belongs to the series, which shares one row.
+ *
+ * Changes compose: applying one to the result of another is how a drag
+ * builds on a change still being saved.
+ */
+export function applyTimelineChange<T extends TimelineFields>(
+  event: T,
+  change: TimelineChange,
+  occurrence: Date | null
+): T {
+  const ranked = change.rank ? { ...event, rank: change.rank } : event;
+  if (occurrence) {
+    const times = { startTime: change.startTime, endTime: change.endTime };
+    const current = occurrenceTimes(event, occurrence);
+    if (current.startTime === times.startTime && current.endTime === times.endTime) return ranked;
+    const occurrenceOverrides = isSeriesTimes(event, occurrence, times)
+      ? withoutOverride(event.occurrenceOverrides, occurrence)
+      : withOverride(event.occurrenceOverrides, occurrence, times);
+    return { ...ranked, occurrenceOverrides };
+  }
+  const moved = { ...ranked, startTime: change.startTime, endTime: change.endTime };
+  if (!event.recurrence || change.startTime === event.startTime) return moved;
+  const recurrence = followStart(event.recurrence, new Date(event.startTime), new Date(change.startTime));
+  return { ...moved, ...exceptionsFollowingStart(event, change.startTime, recurrence), recurrence };
+}
+
+/** The times one occurrence has: where it was moved to, or else where the
+ * series puts it (its recurrenceId, lasting as long as the series). */
+export function occurrenceTimes(
+  event: TimelineFields,
+  occurrence: Date
+): { startTime: string; endTime?: string } {
+  const override = findOverride(event.occurrenceOverrides, occurrence);
+  if (override) return { startTime: override.startTime, endTime: override.endTime };
+  const startTime = occurrence.toISOString();
+  if (event.endTime === undefined) return { startTime, endTime: undefined };
+  const durationMs = new Date(event.endTime).getTime() - new Date(event.startTime).getTime();
+  return { startTime, endTime: new Date(occurrence.getTime() + durationMs).toISOString() };
+}
+
+function isSeriesTimes(
+  event: TimelineFields,
+  occurrence: Date,
+  times: { startTime: string; endTime?: string }
+): boolean {
+  if (new Date(times.startTime).getTime() !== occurrence.getTime()) return false;
+  if (event.endTime === undefined || times.endTime === undefined) {
+    return event.endTime === undefined && times.endTime === undefined;
+  }
+  const seriesMs = new Date(event.endTime).getTime() - new Date(event.startTime).getTime();
+  const ms = new Date(times.endTime).getTime() - new Date(times.startTime).getTime();
+  return ms === seriesMs;
+}
+
+/** The fields `next` changed from `before`, as a save sends them. An end
+ * removed (open-ended) is kept as an explicit `undefined`. */
+export function changedFields<T extends TimelineFields>(before: T, next: T): Partial<TimelineFields> {
+  const changes: Partial<TimelineFields> = {};
+  for (const key of CHANGED_FIELDS) {
+    if (next[key] !== before[key]) (changes as Record<string, unknown>)[key] = next[key];
+  }
+  return changes;
 }

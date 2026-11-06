@@ -9,6 +9,10 @@ import {
   keyboardStepMs,
   rankStep,
   panToKeepInView,
+  applyTimelineChange,
+  changedFields,
+  occurrenceTimes,
+  type TimelineFields,
 } from "../src/lib/timelineInteraction.js";
 import type { Orientation, Viewport, Placement, Placeable } from "../src/lib/timeline.js";
 
@@ -346,5 +350,115 @@ describe("panToKeepInView", () => {
 
   it("caps the margin at a quarter of the view, so a wide label can't overshoot", () => {
     expect(panToKeepInView(view, moved(7000, 8000), null, 50_000)).toBe(500);
+  });
+});
+
+describe("applyTimelineChange", () => {
+  const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
+  const t0 = Date.UTC(2026, 10, 2, 9);
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const daily: TimelineFields = {
+    startTime: at(0),
+    endTime: at(HOUR / 2),
+    recurrence: { freq: "DAILY", interval: 1 },
+    skippedOccurrences: [at(3 * DAY)],
+    occurrenceOverrides: [{ occurrence: at(DAY), startTime: at(DAY + 2 * HOUR), endTime: at(DAY + 3 * HOUR) }],
+  };
+
+  it("moves the whole series, carrying its skips and moves along", () => {
+    const next = applyTimelineChange(daily, { startTime: at(HOUR), endTime: at(1.5 * HOUR) }, null);
+    expect(next.startTime).toBe(at(HOUR));
+    expect(next.skippedOccurrences).toEqual([at(3 * DAY + HOUR)]);
+    expect(next.occurrenceOverrides).toEqual([
+      { occurrence: at(DAY + HOUR), startTime: at(DAY + 2 * HOUR), endTime: at(DAY + 3 * HOUR) },
+    ]);
+  });
+
+  it("moves only one moved occurrence, leaving the series and its skips alone", () => {
+    const next = applyTimelineChange(
+      daily,
+      { startTime: at(DAY + 4 * HOUR), endTime: at(DAY + 6 * HOUR) },
+      new Date(at(DAY))
+    );
+    expect(next.startTime).toBe(daily.startTime);
+    expect(next.endTime).toBe(daily.endTime);
+    expect(next.recurrence).toBe(daily.recurrence);
+    expect(next.skippedOccurrences).toBe(daily.skippedOccurrences);
+    expect(next.occurrenceOverrides).toEqual([
+      { occurrence: at(DAY), startTime: at(DAY + 4 * HOUR), endTime: at(DAY + 6 * HOUR) },
+    ]);
+  });
+
+  it("gives a moved occurrence dragged to an open end no end", () => {
+    const next = applyTimelineChange(daily, { startTime: at(DAY + 4 * HOUR) }, new Date(at(DAY)));
+    expect(next.occurrenceOverrides).toEqual([{ occurrence: at(DAY), startTime: at(DAY + 4 * HOUR) }]);
+  });
+
+  it("drops the move of an occurrence dragged back exactly where the series has it", () => {
+    const next = applyTimelineChange(
+      daily,
+      { startTime: at(DAY), endTime: at(DAY + HOUR / 2) },
+      new Date(at(DAY))
+    );
+    expect(next.occurrenceOverrides).toEqual([]);
+  });
+
+  it("keeps the move of an occurrence back at its start but lasting longer", () => {
+    const next = applyTimelineChange(daily, { startTime: at(DAY), endTime: at(DAY + HOUR) }, new Date(at(DAY)));
+    expect(next.occurrenceOverrides).toEqual([{ occurrence: at(DAY), startTime: at(DAY), endTime: at(DAY + HOUR) }]);
+  });
+
+  it("gives an occurrence's rank to the series without touching its moves", () => {
+    const times = occurrenceTimes(daily, new Date(at(DAY)));
+    const next = applyTimelineChange({ ...daily, rank: "a" }, { ...times, rank: "b" }, new Date(at(DAY)));
+    expect(next.rank).toBe("b");
+    expect(next.occurrenceOverrides).toBe(daily.occurrenceOverrides);
+  });
+
+  it("composes: a series move after an occurrence move carries the new move along", () => {
+    const occurrence = new Date(at(DAY));
+    const first = applyTimelineChange(daily, { startTime: at(DAY + 5 * HOUR), endTime: at(DAY + 6 * HOUR) }, occurrence);
+    const second = applyTimelineChange(first, { startTime: at(HOUR), endTime: at(1.5 * HOUR) }, null);
+    expect(second.occurrenceOverrides).toEqual([
+      { occurrence: at(DAY + HOUR), startTime: at(DAY + 5 * HOUR), endTime: at(DAY + 6 * HOUR) },
+    ]);
+  });
+});
+
+describe("occurrenceTimes", () => {
+  const start = "2026-11-02T09:00:00.000Z";
+  const event: TimelineFields = {
+    startTime: start,
+    endTime: "2026-11-02T09:30:00.000Z",
+    recurrence: { freq: "DAILY", interval: 1 },
+    occurrenceOverrides: [{ occurrence: "2026-11-03T09:00:00.000Z", startTime: "2026-11-03T12:00:00.000Z" }],
+  };
+
+  it("gives a moved occurrence's times", () => {
+    expect(occurrenceTimes(event, new Date("2026-11-03T09:00:00Z"))).toEqual({
+      startTime: "2026-11-03T12:00:00.000Z",
+      endTime: undefined,
+    });
+  });
+
+  it("falls back to where the series has the occurrence", () => {
+    expect(occurrenceTimes(event, new Date("2026-11-04T09:00:00Z"))).toEqual({
+      startTime: "2026-11-04T09:00:00.000Z",
+      endTime: "2026-11-04T09:30:00.000Z",
+    });
+    expect(occurrenceTimes({ ...event, endTime: undefined }, new Date("2026-11-04T09:00:00Z"))).toEqual({
+      startTime: "2026-11-04T09:00:00.000Z",
+      endTime: undefined,
+    });
+  });
+});
+
+describe("changedFields", () => {
+  it("lists only what changed, keeping a removed end as undefined", () => {
+    const before: TimelineFields = { startTime: "a", endTime: "b", rank: "r" };
+    expect(changedFields(before, { ...before, endTime: undefined })).toEqual({ endTime: undefined });
+    expect("endTime" in changedFields(before, { ...before, endTime: undefined })).toBe(true);
+    expect(changedFields(before, { ...before })).toEqual({});
   });
 });

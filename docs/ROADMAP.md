@@ -495,14 +495,15 @@ worth of dead code and fixes what the model switch broke.
         to.
       - A moved occurrence on the timeline has no drag handles or arrow
         keys: those change the whole series, which the moved occurrence
-        doesn't follow. It is changed from its edit panel.
+        doesn't follow. It is changed from its edit panel. (Superseded:
+        they now change that occurrence alone -- see below.)
       - Found while doing it: the timeline handed the panel the clicked
         occurrence's *displayed* start, which for a moved one is not the
         occurrence it is -- "Skip this one" would have recorded a time the
         series never occurs at. It now passes the occurrence's identity
         (`recurrenceId`).
-      - Known gaps: a moved occurrence can't be dragged on its own (listed
-        below); and a moved occurrence shares its series' single row, so
+      - Known gaps: a moved occurrence couldn't be dragged on its own
+        (since fixed, below); and a moved occurrence shares its series' single row, so
         one moved onto a sibling covers it. (Skips and moves of weekday,
         calendar pattern and zoned rules being left behind when the
         series' start moves was fixed by the next item.)
@@ -568,7 +569,35 @@ worth of dead code and fixes what the model switch broke.
       - Known limitation: a daily, hourly or minutely series with chosen
         weekdays that repeats every few units leaves its exceptions where
         they are, since its phase doesn't follow weeks.
-- [ ] Let dragging a moved occurrence move only that occurrence.
+- [x] **Let dragging a moved occurrence move only that occurrence**
+      (`applyTimelineChange`, pure). Drags, resize handles and arrow keys
+      on a moved occurrence now change its override and nothing else; on
+      any other occurrence they change the series, as before.
+      - Its handles say so ("Adjust start of this occurrence of ..."), its
+        label is described by its own key help, and announcements say
+        "This occurrence of ... moved to ...". Priority stays the
+        series' -- one row -- so up/down and dragging across lanes re-rank
+        the series, announced under the series' name.
+      - Dragged back exactly onto its slot (same start, the series'
+        length), the override is removed rather than kept as a move to
+        where it already was.
+      - The arrow keys' target is fixed by the first press and kept until
+        the label loses focus. The label rides on the first visible
+        occurrence, so a moved occurrence nudged past a sibling hands the
+        label (the same button, which keeps focus) over to it; further
+        presses still move the occurrence they started on. Panning follows
+        that occurrence rather than whichever one has the label.
+      - Saves still in flight are now kept as the fields they change and
+        later changes are applied on top (changes compose), replacing
+        "merge the previews, re-derive from the saved event". The merge
+        couldn't express a series move and an occurrence move in sequence:
+        a series move remaps overrides, so the order they happen in
+        matters.
+      - Simplification: only the first visible occurrence has a label, so
+        only that one can be moved (rather than resized) by dragging, or
+        nudged with the keys -- exactly as for any series occurrence. Any
+        moved occurrence can be resized by its handles, and moved from its
+        edit panel.
 - [ ] Undo for timeline drags (one level is enough).
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
