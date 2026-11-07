@@ -40,6 +40,7 @@ import {
   stackAxisKeys,
   applyTimelineChange,
   changedFields,
+  timelineFields,
   occurrenceTimes,
   type ResizeEdge,
   type KeyboardAdjustment,
@@ -123,6 +124,54 @@ interface Saving {
   token: object;
 }
 
+/** The last change made on the timeline, which Undo puts back. One level:
+ * each new change replaces it, and undoing clears it. */
+interface UndoEntry {
+  eventId: string;
+  /** As in DragState: a moved occurrence on its own, or the series. */
+  occurrence: Date | null;
+  /** What the change replaced, for the fields it changed. */
+  before: Partial<EventContent>;
+  /** Every timeline field as the change left them, so undo can tell
+   * whether anything has changed them since (another device, the editor
+   * adding a skip keyed to the moved series' times) -- then it does
+   * nothing rather than overwrite that or strand it. */
+  after: Partial<EventContent>;
+}
+
+/** Whether `event` still has every field exactly as `fields` set it.
+ * Compared as JSON: recurrence and overrides are plain data that come
+ * back from decryption as fresh objects. */
+function hasFields(event: Partial<EventContent>, fields: Partial<EventContent>): boolean {
+  return Object.entries(fields).every(
+    ([key, value]) =>
+      JSON.stringify((event as Record<string, unknown>)[key]) === JSON.stringify(value)
+  );
+}
+
+/** Ctrl+Z (Cmd+Z on Apple), without Shift or Alt: no redo. The physical
+ * key counts too, so it works on non-Latin layouts (where `key` is e.g.
+ * "я"), as browsers' own undo does. */
+function isUndoKey(e: React.KeyboardEvent): boolean {
+  return (
+    (e.key === "z" || e.key === "Z" || e.code === "KeyZ") &&
+    (e.ctrlKey || e.metaKey) &&
+    !e.shiftKey &&
+    !e.altKey
+  );
+}
+
+/** Text fields keep their own undo. */
+function editsText(target: EventTarget): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  );
+}
+
 /** An event including any change still being saved. */
 function withInFlight<T extends DecryptedEvent>(event: T, saving: ReadonlyMap<string, Saving>): T {
   const inFlight = saving.get(event.id)?.fields;
@@ -198,6 +247,12 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   const onChangeRef = useRef(onChangeEvent);
   onChangeRef.current = onChangeEvent;
   const [announcement, setAnnouncement] = useState("");
+  const undoRef = useRef<UndoEntry | null>(null);
+  const [undo, setUndo] = useState<UndoEntry | null>(null);
+  /** The Undo button appears with the first change and then stays,
+   * disabled rather than removed when there's nothing to undo, so pressing
+   * it doesn't drop keyboard focus. */
+  const [undoShown, setUndoShown] = useState(false);
   const keysHelpId = useId();
   const movedKeysHelpId = useId();
   /** Labels' measured sizes, by `labelKey`. Labels not measured yet (not
@@ -631,11 +686,16 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     return { startTime: latest.startTime, endTime: latest.endTime };
   }
 
+  function updateUndo(next: UndoEntry | null) {
+    undoRef.current = next;
+    setUndo(next);
+    if (next) setUndoShown(true);
+  }
+
   /**
-   * Queues a save behind any earlier one and shows it until it lands. The
-   * change is applied on top of whatever is still in flight for the
-   * event, so a rank saved a moment ago isn't lost by a later move, and
-   * the save carries both.
+   * Saves a drag or keyboard change, and remembers it for Undo. A moved
+   * start carries its monthly/yearly pattern, skips and moves along; a
+   * moved occurrence changes only its own override (applyTimelineChange).
    */
   function enqueueSave(
     eventId: string,
@@ -645,25 +705,53 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   ): Promise<unknown> {
     const saved = events.find((e) => e.id === eventId);
     if (!saved) return Promise.resolve();
-    const inFlight = savingRef.current.get(eventId)?.fields;
     const base = withInFlight(saved, savingRef.current);
-    // A moved start carries its monthly/yearly pattern, skips and moves
-    // along; a moved occurrence changes only its own override
-    // (applyTimelineChange).
-    const changes: Partial<EventContent> = {
-      ...inFlight,
-      ...changedFields(base, applyTimelineChange(base, preview, occurrence)),
-    };
+    const next = applyTimelineChange(base, preview, occurrence);
+    const changed = changedFields(base, next);
+    const keys = Object.keys(changed) as (keyof typeof changed)[];
+    let entry: UndoEntry | null = null;
+    if (keys.length > 0) {
+      // Undo puts back what this change replaced -- on top of anything
+      // still in flight, which an earlier change (no longer undoable) set.
+      // An absent field is restored as an explicit `undefined`, which the
+      // save then omits (an end removed again, an override list emptied).
+      const before = Object.fromEntries(keys.map((key) => [key, base[key]])) as Partial<EventContent>;
+      entry = { eventId, occurrence, before, after: timelineFields(next) };
+      updateUndo(entry);
+    }
+    return sendFields(eventId, changed, `Couldn't save the change to ${name}.`, () => {
+      // A change that never landed has nothing to undo.
+      if (entry && undoRef.current === entry) updateUndo(null);
+    });
+  }
+
+  /**
+   * Queues a save behind any earlier one and shows it until it lands. The
+   * fields are applied on top of whatever is still in flight for the
+   * event, so a rank saved a moment ago isn't lost by a later move, and
+   * the save carries both.
+   */
+  function sendFields(
+    eventId: string,
+    fields: Partial<EventContent>,
+    failure: string,
+    onFailure?: () => void,
+    onSuccess?: () => void
+  ): Promise<unknown> {
+    const inFlight = savingRef.current.get(eventId)?.fields;
+    const changes: Partial<EventContent> = { ...inFlight, ...fields };
     const token = {};
     updateSaving(new Map(savingRef.current).set(eventId, { fields: changes, token }));
+    const fail = () => {
+      setAnnouncement(failure);
+      onFailure?.();
+    };
     const done = saveChain.current
       .then(() => onChangeRef.current?.(eventId, changes))
-      .then(
-        (result) => {
-          if (result === false) setAnnouncement(`Couldn't save the change to ${name}.`);
-        },
-        () => setAnnouncement(`Couldn't save the change to ${name}.`)
-      )
+      .then((result) => {
+        if (result === false) fail();
+        else onSuccess?.();
+      }, fail)
       .finally(() => {
         // A newer change for the same event replaced this one; it stays.
         if (savingRef.current.get(eventId)?.token !== token) return;
@@ -692,6 +780,57 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       !preview.rank;
     if (!onChangeRef.current || unchanged) return;
     void enqueueSave(pending.eventId, preview, pending.occurrence, pending.name);
+  }
+
+  /**
+   * Puts back the last timeline change (one level). Anything still being
+   * nudged is committed first, so Undo always means "the change I just
+   * made". If the fields it changed have changed again since, from
+   * another device or the editor, nothing is overwritten.
+   */
+  function undoLastChange() {
+    commitNudge();
+    const entry = undoRef.current;
+    if (!entry) {
+      setAnnouncement("Nothing to undo.");
+      return;
+    }
+    updateUndo(null);
+    const saved = events.find((e) => e.id === entry.eventId);
+    if (!saved) {
+      setAnnouncement("Can't undo: that event is no longer on your schedule.");
+      return;
+    }
+    const current = withInFlight(saved, savingRef.current);
+    // Named as it is now, in case it was renamed since.
+    const name = targetName(current, entry.occurrence);
+    if (!current.canEdit || !onChangeRef.current) {
+      setAnnouncement(`Can't undo: you can no longer edit ${name}.`);
+      return;
+    }
+    if (!hasFields(current, entry.after)) {
+      setAnnouncement(`Can't undo: ${name} has changed since.`);
+      return;
+    }
+    void sendFields(
+      entry.eventId,
+      entry.before,
+      `Couldn't undo the change to ${name}.`,
+      // Still undoable, so it can be retried -- unless a newer change has
+      // taken its place meanwhile.
+      () => {
+        if (!undoRef.current) updateUndo(entry);
+      },
+      () => setAnnouncement(`Undid the change to ${name}.`)
+    );
+  }
+
+  function handleUndoKey(e: React.KeyboardEvent) {
+    // Not gated on the button: the first change may still be a pending
+    // nudge, which undoing commits and then puts back.
+    if (!isUndoKey(e) || editsText(e.target) || !onChangeEvent) return;
+    e.preventDefault();
+    undoLastChange();
   }
 
   /** Opens an event, first waiting for any of its changes still being
@@ -862,6 +1001,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     return { ...current, startTime: resized.startTime, endTime: resized.endTime ?? undefined };
   }
 
+  const undoEvent = undo && events.find((e) => e.id === undo.eventId);
+  const undoLabel = undoEvent ? `Undo change to ${targetName(undoEvent, undo.occurrence)}` : "Undo";
+
   const [earlierKey, laterKey] = timeAxisKeys(orientation).map((k) => KEY_NAMES[k]);
   const [towardKey, awayKey] = stackAxisKeys(orientation).map((k) => KEY_NAMES[k]);
   const keysHelp =
@@ -905,7 +1047,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
   }
 
   return (
-    <section className="timeline" aria-label="Timeline">
+    <section className="timeline" aria-label="Timeline" onKeyDown={handleUndoKey}>
       <div className="timeline-controls">
         <div className="timeline-control-group" role="group" aria-label="Zoom">
           <button type="button" onClick={() => handleZoom(0.5)} aria-label="Zoom in">
@@ -930,6 +1072,18 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             &rarr;
           </button>
         </div>
+
+        {undoShown && (
+          <button
+            type="button"
+            className="header-link timeline-undo"
+            aria-disabled={!undo}
+            aria-keyshortcuts="Control+Z Meta+Z"
+            onClick={undoLastChange}
+          >
+            {undoLabel}
+          </button>
+        )}
 
         <button
           type="button"

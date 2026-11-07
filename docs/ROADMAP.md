@@ -607,7 +607,52 @@ worth of dead code and fixes what the model switch broke.
         nudged with the keys -- exactly as for any series occurrence. Any
         moved occurrence can be resized by its handles, and moved from its
         edit panel.
-- [ ] Undo for timeline drags (one level is enough).
+- [x] **Undo for timeline drags** (one level). The last drag, resize or
+      keyboard change on the timeline can be put back with an Undo button
+      in the toolbar or Ctrl/Cmd+Z while focus is in the timeline.
+      - Undo saves what the change replaced, only for the fields it
+        changed (times, rank, recurrence, skips, overrides), on top of
+        anything still in flight, queued like any other save. An end that
+        Shift+arrow added is removed again; a moved occurrence gets its old
+        override back and nothing else.
+      - One level: each change replaces the entry, and undoing clears it
+        (no redo; Shift+Ctrl+Z does nothing). A change that failed to save
+        leaves nothing to undo.
+      - Undo never overwrites a change made since: if the fields it would
+        restore no longer hold what the change set (another device, the
+        editor), it announces "Can't undo: ... has changed since" and does
+        nothing. Changes to other fields (a renamed title) don't block it.
+      - Pressed mid-nudge, the pending presses are saved first and then
+        undone, so Undo always means "the change I just made". It works
+        while that save is still in flight, queued behind it.
+      - The button appears with the first change and then stays, disabled
+        (`aria-disabled`) rather than removed, so pressing it doesn't drop
+        focus. Its name says what it undoes ("Undo change to Standup");
+        the outcome is announced in the timeline's live region.
+      - Ctrl+Z in a form control (the layout selects) is left alone.
+        Decision recorded: the Phase 8 note that Ctrl/Meta combinations
+        are left to the browser is relaxed for Z alone -- browsers have no
+        undo for a focused button, so nothing is taken away.
+      - Simplification: the entry lives in the timeline component, so it
+        is lost if the timeline unmounts (e.g. sign-out). Changes made in
+        the edit panel aren't undoable here; the panel has its own Cancel.
+      - Found while writing it: the first version only listened for
+        Ctrl+Z once the button existed, so undoing the very first change
+        while its presses were still pending did nothing.
+      - Found in PR review and fixed: undo checked only the fields the
+        change set, so a skip, moved occurrence or rule added after moving
+        a series (keyed to the moved times) was stranded when the start
+        went back -- it now checks every timeline field is still as the
+        change left it. Also: a failed undo couldn't be retried; "Undid"
+        was announced before the save landed; a deleted event or lost edit
+        rights were reported as "changed since"; the button named the
+        event as it was before a rename; Ctrl+Z did nothing on non-Latin
+        layouts (now also matched by physical key).
+      - Raised in review, kept as is: a nudge that nets out to no change
+        isn't a change, so Undo then reverts the change before it -- which
+        the button names. And if the refresh after a save fails, the
+        cached copy from before it is shown, so Undo reports "changed
+        since"; the screen shows the old times then too.
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
 
