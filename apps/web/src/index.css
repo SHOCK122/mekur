@@ -512,7 +512,8 @@ button:disabled {
   overflow-x: auto;
 }
 
-.stack-overflow-note .header-link[aria-disabled="true"] {
+.stack-overflow-note .header-link[aria-disabled="true"],
+.timeline-undo[aria-disabled="true"] {
   color: var(--text-muted);
   cursor: default;
   text-decoration: none;
