@@ -1407,7 +1407,94 @@ describe("Timeline", () => {
       const [id, changes] = onChange.mock.calls[1]!;
       expect(id).toBe("e1");
       expect(changes).toEqual({ startTime: event.startTime, endTime: event.endTime });
-      expect(announcer()).toBe("Undid the change to Standup.");
+      await waitFor(() => expect(announcer()).toBe("Undid the change to Standup."));
+    });
+
+    it("announces an undo only once it has been saved, and can retry one that wasn't", async () => {
+      const event = makeEvent();
+      const onChange = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      render(<Stored initial={[event]} onChange={onChange} />);
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+
+      const undo = screen.getByRole("button", { name: /^Undo/ });
+      fireEvent.click(undo);
+      await waitFor(() => expect(announcer()).toBe("Couldn't undo the change to Standup."));
+      expect(undo).toHaveAttribute("aria-disabled", "false");
+
+      fireEvent.click(undo);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(3));
+      expect(onChange.mock.calls[2]![1]).toEqual({ startTime: event.startTime, endTime: event.endTime });
+      await waitFor(() => expect(announcer()).toBe("Undid the change to Standup."));
+    });
+
+    it("works with Ctrl+Z on a non-Latin keyboard layout", async () => {
+      const onChange = vi.fn();
+      render(<Stored initial={[makeEvent()]} onChange={onChange} />);
+      const button = screen.getByRole("button", { name: /Standup/ });
+      fireEvent.keyDown(button, { key: "ArrowRight" });
+      fireEvent.blur(button);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      fireEvent.keyDown(button, { key: "я", code: "KeyZ", ctrlKey: true });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+    });
+
+    it("names the event as it is now, after a rename", async () => {
+      const event = makeEvent();
+      const onChange = vi.fn();
+      const { rerender } = render(
+        <Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />
+      );
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, moved] = onChange.mock.calls[0]!;
+      rerender(
+        <Timeline
+          events={[{ ...event, ...moved, title: "Daily sync" }]}
+          onEditEvent={() => {}}
+          onChangeEvent={onChange}
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Undo change to Daily sync" }));
+      await waitFor(() => expect(announcer()).toBe("Undid the change to Daily sync."));
+    });
+
+    it("refuses once a skip has been added to the moved series, rather than strand it", async () => {
+      const event = { ...makeEvent(), recurrence: { freq: "DAILY" as const, interval: 1 } };
+      const onChange = vi.fn();
+      const { rerender } = render(
+        <Timeline events={[event]} onEditEvent={() => {}} onChangeEvent={onChange} />
+      );
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      const [, moved] = onChange.mock.calls[0]!;
+      // Tomorrow's occurrence at the moved time skipped in the editor.
+      const tomorrow = new Date(new Date(moved.startTime).getTime() + 24 * HOUR).toISOString();
+      rerender(
+        <Timeline
+          events={[{ ...event, ...moved, skippedOccurrences: [tomorrow] }]}
+          onEditEvent={() => {}}
+          onChangeEvent={onChange}
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
+      await act(async () => {});
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(announcer()).toBe("Can't undo: Standup has changed since.");
+    });
+
+    it("says so when the event is gone", async () => {
+      const onChange = vi.fn();
+      const { rerender } = render(
+        <Timeline events={[makeEvent()]} onEditEvent={() => {}} onChangeEvent={onChange} />
+      );
+      drag(screen.getByRole("button", { name: /Standup/ }), 100);
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      rerender(<Timeline events={[]} onEditEvent={() => {}} onChangeEvent={onChange} />);
+      fireEvent.click(screen.getByRole("button", { name: /^Undo/ }));
+      await act(async () => {});
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(announcer()).toBe("Can't undo: that event is no longer on your schedule.");
     });
 
     it("is one level: a second undo does nothing, and the button keeps focus", async () => {

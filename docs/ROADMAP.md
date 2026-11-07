@@ -639,6 +639,20 @@ worth of dead code and fixes what the model switch broke.
       - Found while writing it: the first version only listened for
         Ctrl+Z once the button existed, so undoing the very first change
         while its presses were still pending did nothing.
+      - Found in PR review and fixed: undo checked only the fields the
+        change set, so a skip, moved occurrence or rule added after moving
+        a series (keyed to the moved times) was stranded when the start
+        went back -- it now checks every timeline field is still as the
+        change left it. Also: a failed undo couldn't be retried; "Undid"
+        was announced before the save landed; a deleted event or lost edit
+        rights were reported as "changed since"; the button named the
+        event as it was before a rename; Ctrl+Z did nothing on non-Latin
+        layouts (now also matched by physical key).
+      - Raised in review, kept as is: a nudge that nets out to no change
+        isn't a change, so Undo then reverts the change before it -- which
+        the button names. And if the refresh after a save fails, the
+        cached copy from before it is shown, so Undo reports "changed
+        since"; the screen shows the old times then too.
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
 

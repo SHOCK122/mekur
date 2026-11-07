@@ -40,6 +40,7 @@ import {
   stackAxisKeys,
   applyTimelineChange,
   changedFields,
+  timelineFields,
   occurrenceTimes,
   type ResizeEdge,
   type KeyboardAdjustment,
@@ -124,14 +125,17 @@ interface Saving {
 }
 
 /** The last change made on the timeline, which Undo puts back. One level:
- * each new change replaces it, and undoing clears it. `after` is what the
- * change set, so undo can tell whether something else (another device,
- * the editor) has changed those fields since -- then it does nothing
- * rather than overwrite that. */
+ * each new change replaces it, and undoing clears it. */
 interface UndoEntry {
   eventId: string;
-  name: string;
+  /** As in DragState: a moved occurrence on its own, or the series. */
+  occurrence: Date | null;
+  /** What the change replaced, for the fields it changed. */
   before: Partial<EventContent>;
+  /** Every timeline field as the change left them, so undo can tell
+   * whether anything has changed them since (another device, the editor
+   * adding a skip keyed to the moved series' times) -- then it does
+   * nothing rather than overwrite that or strand it. */
   after: Partial<EventContent>;
 }
 
@@ -145,10 +149,15 @@ function hasFields(event: Partial<EventContent>, fields: Partial<EventContent>):
   );
 }
 
-/** Ctrl+Z (Cmd+Z on Apple), without Shift or Alt: no redo. */
+/** Ctrl+Z (Cmd+Z on Apple), without Shift or Alt: no redo. The physical
+ * key counts too, so it works on non-Latin layouts (where `key` is e.g.
+ * "я"), as browsers' own undo does. */
 function isUndoKey(e: React.KeyboardEvent): boolean {
   return (
-    (e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
+    (e.key === "z" || e.key === "Z" || e.code === "KeyZ") &&
+    (e.ctrlKey || e.metaKey) &&
+    !e.shiftKey &&
+    !e.altKey
   );
 }
 
@@ -697,8 +706,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     const saved = events.find((e) => e.id === eventId);
     if (!saved) return Promise.resolve();
     const base = withInFlight(saved, savingRef.current);
-    const after = changedFields(base, applyTimelineChange(base, preview, occurrence));
-    const keys = Object.keys(after) as (keyof typeof after)[];
+    const next = applyTimelineChange(base, preview, occurrence);
+    const changed = changedFields(base, next);
+    const keys = Object.keys(changed) as (keyof typeof changed)[];
     let entry: UndoEntry | null = null;
     if (keys.length > 0) {
       // Undo puts back what this change replaced -- on top of anything
@@ -706,10 +716,10 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       // An absent field is restored as an explicit `undefined`, which the
       // save then omits (an end removed again, an override list emptied).
       const before = Object.fromEntries(keys.map((key) => [key, base[key]])) as Partial<EventContent>;
-      entry = { eventId, name, before, after };
+      entry = { eventId, occurrence, before, after: timelineFields(next) };
       updateUndo(entry);
     }
-    return sendFields(eventId, after, `Couldn't save the change to ${name}.`, () => {
+    return sendFields(eventId, changed, `Couldn't save the change to ${name}.`, () => {
       // A change that never landed has nothing to undo.
       if (entry && undoRef.current === entry) updateUndo(null);
     });
@@ -725,7 +735,8 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     eventId: string,
     fields: Partial<EventContent>,
     failure: string,
-    onFailure?: () => void
+    onFailure?: () => void,
+    onSuccess?: () => void
   ): Promise<unknown> {
     const inFlight = savingRef.current.get(eventId)?.fields;
     const changes: Partial<EventContent> = { ...inFlight, ...fields };
@@ -739,6 +750,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
       .then(() => onChangeRef.current?.(eventId, changes))
       .then((result) => {
         if (result === false) fail();
+        else onSuccess?.();
       }, fail)
       .finally(() => {
         // A newer change for the same event replaced this one; it stays.
@@ -785,13 +797,32 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     }
     updateUndo(null);
     const saved = events.find((e) => e.id === entry.eventId);
-    const current = saved && withInFlight(saved, savingRef.current);
-    if (!current || !current.canEdit || !onChangeRef.current || !hasFields(current, entry.after)) {
-      setAnnouncement(`Can't undo: ${entry.name} has changed since.`);
+    if (!saved) {
+      setAnnouncement("Can't undo: that event is no longer on your schedule.");
       return;
     }
-    setAnnouncement(`Undid the change to ${entry.name}.`);
-    void sendFields(entry.eventId, entry.before, `Couldn't undo the change to ${entry.name}.`);
+    const current = withInFlight(saved, savingRef.current);
+    // Named as it is now, in case it was renamed since.
+    const name = targetName(current, entry.occurrence);
+    if (!current.canEdit || !onChangeRef.current) {
+      setAnnouncement(`Can't undo: you can no longer edit ${name}.`);
+      return;
+    }
+    if (!hasFields(current, entry.after)) {
+      setAnnouncement(`Can't undo: ${name} has changed since.`);
+      return;
+    }
+    void sendFields(
+      entry.eventId,
+      entry.before,
+      `Couldn't undo the change to ${name}.`,
+      // Still undoable, so it can be retried -- unless a newer change has
+      // taken its place meanwhile.
+      () => {
+        if (!undoRef.current) updateUndo(entry);
+      },
+      () => setAnnouncement(`Undid the change to ${name}.`)
+    );
   }
 
   function handleUndoKey(e: React.KeyboardEvent) {
@@ -970,6 +1001,9 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
     return { ...current, startTime: resized.startTime, endTime: resized.endTime ?? undefined };
   }
 
+  const undoEvent = undo && events.find((e) => e.id === undo.eventId);
+  const undoLabel = undoEvent ? `Undo change to ${targetName(undoEvent, undo.occurrence)}` : "Undo";
+
   const [earlierKey, laterKey] = timeAxisKeys(orientation).map((k) => KEY_NAMES[k]);
   const [towardKey, awayKey] = stackAxisKeys(orientation).map((k) => KEY_NAMES[k]);
   const keysHelp =
@@ -1047,7 +1081,7 @@ export function Timeline({ events, onEditEvent, onChangeEvent }: TimelineProps) 
             aria-keyshortcuts="Control+Z Meta+Z"
             onClick={undoLastChange}
           >
-            {undo ? `Undo change to ${undo.name}` : "Undo"}
+            {undoLabel}
           </button>
         )}
 

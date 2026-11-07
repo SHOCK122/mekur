@@ -439,6 +439,14 @@ function isSeriesTimes(
   return ms === seriesMs;
 }
 
+/** Every field a timeline change can touch, as `event` has them (absent
+ * ones as `undefined`): what undo checks is still as the change left it. */
+export function timelineFields(event: TimelineFields): Required<{ [K in keyof TimelineFields]: TimelineFields[K] | undefined }> {
+  const fields = {} as Record<string, unknown>;
+  for (const key of CHANGED_FIELDS) fields[key] = event[key];
+  return fields as ReturnType<typeof timelineFields>;
+}
+
 /** The fields `next` changed from `before`, as a save sends them. An end
  * removed (open-ended) is kept as an explicit `undefined`. */
 export function changedFields<T extends TimelineFields>(before: T, next: T): Partial<TimelineFields> {
