@@ -1,0 +1,7 @@
+# Pinned so local `cargo fmt`/`cargo clippy` match CI exactly; a newer
+# clippy would otherwise turn green PRs red on its own schedule.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

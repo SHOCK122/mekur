@@ -89,6 +89,13 @@ cd apps/api && npm run dev    # API on :3000
 cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to :3000
 ```
 
+Rust crates (the toolchain is pinned in `rust-toolchain.toml`):
+
+```bash
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
 API tests run against a real PostgreSQL instance, not mocks (test files
 run one at a time, since they share the database):
 
@@ -114,9 +121,11 @@ packages/
   crypto/   Client-side encryption (X25519, XChaCha20-Poly1305, scrypt, HKDF)
 infra/
   Dockerfile.api, Dockerfile.web, nginx.conf
+crates/     Rust workspace replacing the TypeScript, module by module
 docs/
   ARCHITECTURE.md   threat model, keys, capability model, invitations, scaling
   ROADMAP.md        phase-by-phase status, decisions, known gaps
+  RUST_MIGRATION.md TypeScript -> Rust plan, port order, parity rules
 ```
 
 ## Security notes

@@ -1,0 +1,23 @@
+# Rust workspace for the TypeScript -> Rust migration.
+# Plan, port order and parity rules: docs/RUST_MIGRATION.md.
+[workspace]
+resolver = "3"
+members = ["crates/shared", "crates/crypto", "crates/api", "crates/client"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/SHOCK122/mekur"
+publish = false
+
+[workspace.lints.rust]
+# No `unsafe` anywhere in mekur's own code. If a port ever truly needs it,
+# relax this for that one crate with a justifying comment, and say why in
+# the PR description.
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"

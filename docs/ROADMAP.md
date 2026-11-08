@@ -34,6 +34,11 @@ available. It was part of the ACL model, and its capability-model
 replacement is Phase 10. The schema scaffolding for it was removed in
 Phase 7 because nothing used it; it will be re-added with the feature.
 
+**Language:** the codebase is being migrated from TypeScript to Rust, one
+module at a time; new code is written in Rust. Plan, port order and the
+parity rules every port follows are in `docs/RUST_MIGRATION.md`. A roadmap
+item that touches a not-yet-ported TS module waits for that module's port.
+
 ## Completed phases (summary)
 
 Kept short on purpose -- `git log` has the detail. What's recorded here is
