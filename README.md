@@ -92,8 +92,11 @@ cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to :3000
 Rust crates (the toolchain is pinned in `rust-toolchain.toml`):
 
 ```bash
-cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p mekur-client --target wasm32-unknown-unknown --locked -- -D warnings
+cargo test --workspace --locked
+cargo build -p mekur-client --target wasm32-unknown-unknown --locked
 ```
 
 API tests run against a real PostgreSQL instance, not mocks (test files

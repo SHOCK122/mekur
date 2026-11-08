@@ -104,8 +104,8 @@ with a line on anything simplified or discovered.
 - [x] This document; `Cargo.toml` workspace with empty `mekur-shared`,
   `mekur-crypto`, `mekur-api`, `mekur-client`; pinned toolchain;
   `unsafe_code = "forbid"`; CI job running fmt, clippy (native and
-  wasm32), tests and a wasm32 build, with its own Postgres database
-  (`scheduleapp_rust_test`).
+  wasm32), tests and a wasm32 build. (Postgres is added to that job in
+  3a, with its first consumer.)
 
 ### 1. `mekur-shared` <- `packages/shared`
 - [ ] Types and validation for every schema, `MAX_OCCURRENCE_OVERRIDES`,
@@ -140,7 +140,8 @@ routes, repository and tests for that group are deleted.
   guards), pool, migration runner, `GET /health`, `GET /openapi.json`,
   security headers, 256 KB body limit, empty JSON body as `{}`, 404 and
   parse-error bodies, rate limiting; Rust test harness (real Postgres,
-  truncate between tests, tests serialised); Docker image for the Rust
+  truncate between tests, tests serialised, `RUST_TEST_DATABASE_URL`);
+  a Postgres service in the `rust` CI job; Docker image for the Rust
   server; nginx + Vite proxy split. Port `health.test.ts`,
   `migrationConcurrency.test.ts` and the header/body-limit parts of
   `security.test.ts`.
@@ -149,9 +150,11 @@ routes, repository and tests for that group are deleted.
 - [ ] **3c. API keys**: repository + routes. Port `apiKeys.test.ts`.
 - [ ] **3d. Events & capabilities**: repository + routes incl. batch read
   (one query per request, max 500). Port `capabilities.test.ts`.
-- [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict).
+- [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict,
+  1.5 MB body limit on `PUT`).
 - [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
-- [ ] **3g. Inbox + push**: inbox repository/routes, push subscriptions,
+- [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
+  every list stays bounded), push subscriptions,
   notification service. Port `pushNotifications.test.ts` and the rest of
   `security.test.ts`. Then delete `apps/api` and the TS server from
   `docker-compose.yml`; the Rust server takes over running migrations.
@@ -185,8 +188,19 @@ tests are ported to Rust (`cargo test` for pure logic,
 **Validation (`mekur-shared`)**
 - Zod's `.max(n)` on strings counts **UTF-16 code units**, not bytes or
   chars: use `s.encode_utf16().count()`.
-- `z.string().datetime()` accepts ISO 8601 with a trailing `Z` only (no
-  `+02:00` offsets) and any number of fractional-second digits.
+- `z.string().datetime()` (Zod 3.25) accepts `YYYY-MM-DDTHH:MM[:SS[.f+]]Z`:
+  seconds are **optional** (`2024-01-01T10:00Z` is valid), any number of
+  fractional digits, a trailing `Z` only (no `+02:00` offsets, no space
+  separator), and real calendar dates only (`2024-02-29` yes, `2023-02-29`
+  and `02-30` no). chrono's RFC 3339 parser requires seconds and accepts
+  offsets, so it cannot be used as-is.
+- `isValidTimeZone` asks `Intl.DateTimeFormat`, which accepts zone names in
+  **any letter case** (`america/new_york`, `utc`), legacy aliases
+  (`US/Eastern`, `EST`) and **offset zones** (`+05:00`). `chrono_tz::Tz::
+  from_str` is case-sensitive and has no offset zones: match
+  case-insensitively and accept `±HH:MM` offsets, or stored rules start
+  failing validation. Recurrence expansion must then resolve the same
+  names the same way.
 - Instants are compared at **millisecond** precision (`new Date(x)
   .getTime()`): two override `occurrence`s differing only below a
   millisecond are duplicates; `endTime` must be strictly later at ms
@@ -211,9 +225,13 @@ tests are ported to Rust (`cargo test` for pure logic,
 - Envelope: `{ v: 1, algo: "xchacha20poly1305", keyId, nonce, ciphertext }`,
   24-byte nonce, standard base64 with padding; sealed adds `epk`, and a
   sealed envelope's `keyId` is the literal `"sealed"`.
-- Node's `Buffer.from(s, "base64")` silently accepts missing padding,
-  URL-safe characters and garbage. Rust decodes strictly; document any
-  input that only the TS side accepted rather than emulating garbage.
+- `fromBase64` is lenient on both TS paths, differently: Node's
+  `Buffer.from(s, "base64")` accepts missing padding, URL-safe characters
+  and skips garbage; the browser's `atob` accepts missing padding and ASCII
+  whitespace. Decryption runs in the browser, so `atob`'s rules are the ones
+  stored data has actually been decoded under. Accept missing padding and
+  whitespace in Rust (with tests); document anything else only the TS side
+  accepted rather than emulating garbage.
 - An all-zero X25519 shared secret is an error (noble checks it).
 
 **API (`mekur-api`)**
@@ -223,17 +241,24 @@ tests are ported to Rust (`cargo test` for pure logic,
   stored the same way. The voting pseudonym is
   base64(sha256(`schedule-app:pseudonym:v1:{eventId}:{token}`)).
 - JWT: HS256, payload `{ userId, iat, exp }`, 30-day lifetime.
-- Migrations: keep the `schema_migrations` table and advisory lock key
-  `7272774`; do **not** use `sqlx::migrate!` (its `_sqlx_migrations`
-  table would re-run every migration on an existing database). Until 3g
-  the TS server owns migrations; the Rust server only checks it is up to
-  date.
+- Migrations: the Rust runner is a compatible port -- same
+  `schema_migrations` table, same advisory lock key `7272774`, same SQL
+  files (read from `apps/api/src/db/migrations` until 3g moves them into
+  `crates/api`). Because of the shared lock and table, the TS and Rust
+  servers can both run it at startup during the side-by-side phase, and
+  the Rust test harness migrates its own database with it. Do **not** use
+  `sqlx::migrate!`: its `_sqlx_migrations` table would re-run every
+  migration on an existing database.
+- Body limits: 256 KB globally, but `PUT /keyring` raises its own to
+  1.5 MB (`1536 * 1024`). A global `RequestBodyLimitLayer` must be
+  overridden on that route.
 - During the side-by-side phase each server keeps its own rate-limit
   buckets, so the effective limit for a client is briefly the sum. Accepted
   for the transition; it ends at 3g.
-- Rust API tests use their own database (`scheduleapp_rust_test`) so they
-  can run at the same time as the TS API tests without truncating each
-  other's tables.
+- Rust API tests read `RUST_TEST_DATABASE_URL` (default
+  `postgres://postgres:postgres@localhost:5432/scheduleapp_rust_test`), not
+  the TS suite's `TEST_DATABASE_URL`, so the two suites can run at the same
+  time without truncating each other's tables, locally as well as in CI.
 
 ## Log
 
@@ -241,3 +266,9 @@ tests are ported to Rust (`cargo test` for pure logic,
   validation errors embed Zod's raw `issues`, which makes Zod's error
   shape part of the HTTP API -- recorded under step 1 rather than
   discovered mid-port.
+  Self-review corrected the first draft's parity notes: Zod's datetime
+  makes seconds optional and range-checks dates; `Intl` time-zone names
+  are case-insensitive and include offsets; the browser decodes base64
+  with `atob`; `PUT /keyring` has its own 1.5 MB body limit; and the Rust
+  tests get their own database variable rather than sharing
+  `TEST_DATABASE_URL`.

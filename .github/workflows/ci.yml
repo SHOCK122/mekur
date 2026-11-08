@@ -51,25 +51,9 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
-    # Its own database (and its own job), so the Rust API tests never
-    # truncate tables under the TypeScript API tests -- see
-    # docs/RUST_MIGRATION.md.
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: scheduleapp_rust_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No database yet: the Postgres service (with RUST_TEST_DATABASE_URL)
+    # arrives with the first Rust API tests -- see docs/RUST_MIGRATION.md.
     env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/scheduleapp_rust_test
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +82,7 @@ jobs:
 
   build-docker-images:
     runs-on: ubuntu-latest
-    needs: [test, rust]
+    needs: test
     steps:
       - uses: actions/checkout@v4
 
