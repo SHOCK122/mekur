@@ -1,0 +1,17 @@
+[package]
+name = "mekur-client"
+description = "Browser client logic compiled to WebAssembly (replaces apps/web/src/lib)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib for the browser (wasm32-unknown-unknown), rlib so native tests
+# and other crates can link it.
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
