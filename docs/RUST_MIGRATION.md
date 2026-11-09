@@ -108,15 +108,45 @@ with a line on anything simplified or discovered.
   3a, with its first consumer.)
 
 ### 1. `mekur-shared` <- `packages/shared`
-- [ ] Types and validation for every schema, `MAX_OCCURRENCE_OVERRIDES`,
+- [x] Types and validation for every schema, `MAX_OCCURRENCE_OVERRIDES`,
   time-zone check; port `packages/shared/test/index.test.ts`.
+  - Each schema is a type with `parse(&serde_json::Value) -> Result<T,
+    ValidationError>` and `Serialize` to the same JSON Zod's parsed output
+    has (unknown keys stripped, absent optionals omitted, `interval`
+    defaulted to 1). There is deliberately no `Deserialize` on them, so
+    nothing can skip validation.
+  - **Decided: issues reproduce Zod's exactly** -- same `code`, `path`,
+    `message` and every code-specific field (`expected`/`received`,
+    `minimum`/`maximum`, `type`, `inclusive`, `exact`, `validation`,
+    `options`), in Zod's order, including Zod's abort/dirty rules (a wrong
+    type stops the container's refinements; a failed check or refinement
+    does not). Only key order *within* an issue object may differ.
+  - **Zod parity fixture.** `packages/shared/test/zodParity.test.ts` runs
+    140 cases through the Zod schemas and checks the result against
+    `crates/shared/tests/fixtures/zod_parity.json`; the Rust test
+    `tests/zod_parity.rs` replays the same file. So the fixture is Zod's
+    real output, can't drift while the TS package exists, and stays behind
+    as the record once it's gone. It also holds Node's `Intl` verdict on
+    504 time-zone strings (every zone Node knows plus edge cases).
+    Regenerate with `UPDATE_ZOD_PARITY=1 npm run test
+    --workspace=@schedule-app/shared`.
+  - Time zones: IANA names from `chrono-tz` (tzdata 2025b; Node 22 here
+    ships 2026e, and no zone differs), matched case-insensitively; offsets
+    `±HH`, `±HHMM`, `±HH:MM` (also with U+2212); and the legacy ids ICU
+    keeps but IANA dropped (Java three-letter ids, `SystemV/*`,
+    `US/Pacific-New`, `Canada/East-Saskatchewan`), found by asking Node.
+  - Divergences, all limited to input that is already invalid or that no
+    client can produce:
+    - Instants for the end-after-start and moved-once refinements are
+      computed only for strings that pass Zod's datetime check. JavaScript's
+      `Date` also parses some strings Zod rejects (offsets, date-only,
+      legacy formats); Rust treats those as invalid dates. The value is
+      invalid either way; only whether an *extra* issue is listed can
+      differ.
+    - Integers past `u64::MAX` in `interval`/`count` (Zod accepts any JS
+      integer) get a `custom` "too large" issue.
 - The TS package keeps serving its TS consumers until step 4 / step 3
   remove them; it is deleted when its last importer is gone.
-- Decide (and record here) whether validation errors reproduce Zod's
-  `issues` array exactly. The API returns
-  `{ error: "Invalid request", details: issues }` and the web client's
-  `http.ts` formats `details` into user-visible messages, so at minimum
-  `path` and `message` must match.
 
 ### 2. `mekur-crypto` <- `packages/crypto`
 - [ ] `derive_auth_and_encryption_keys`, `encrypt_envelope` /
@@ -272,3 +302,12 @@ tests are ported to Rust (`cargo test` for pure logic,
   with `atob`; `PUT /keyring` has its own 1.5 MB body limit; and the Rust
   tests get their own database variable rather than sharing
   `TEST_DATABASE_URL`.
+- Step 1 (`mekur-shared`). The TS package stays: the API and web client
+  still import it. Found while porting: Zod echoes a wrong literal's
+  `received` value as JavaScript prints it (`2.0` comes back as `2`), and
+  `Math.max()` of an empty `byMonth` is `-Infinity`, which makes every
+  `byMonthDay` "never occur" -- both reproduced. Node's `Intl` accepts far
+  more than the IANA list (Java-style `PST`, `SystemV/EST5`); those are
+  listed explicitly rather than rejected, so a stored rule never stops
+  validating. CI now also lints `mekur-shared` for wasm32, since the
+  browser client will link it.

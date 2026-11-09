@@ -71,8 +71,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Clippy (client, wasm32)
-        run: cargo clippy -p mekur-client --target wasm32-unknown-unknown --locked -- -D warnings
+      # mekur-shared is also compiled into the browser client.
+      - name: Clippy (client and shared, wasm32)
+        run: cargo clippy -p mekur-client -p mekur-shared --target wasm32-unknown-unknown --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --locked
