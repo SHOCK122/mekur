@@ -7,14 +7,12 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::envelope::finish;
 use crate::issue::{IssueKind, PathSegment, ValidationError};
 use crate::time_zone::is_valid_time_zone;
-use crate::zod::{self, Ctx, NumCheck, StrChecks};
+use crate::zod::{self, Ctx, NumCheck, StrChecks, finish};
 
 /// How often a rule repeats (FREQ).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RecurrenceFrequency {
     Minutely,
     Hourly,
@@ -25,16 +23,24 @@ pub enum RecurrenceFrequency {
 }
 
 impl RecurrenceFrequency {
+    /// Every variant with its wire name: the one table both parsing and
+    /// serializing use. `NAMES` repeats the names for Zod's `options`; a
+    /// test checks the two agree.
+    const TABLE: [(&'static str, Self); 6] = [
+        ("MINUTELY", Self::Minutely),
+        ("HOURLY", Self::Hourly),
+        ("DAILY", Self::Daily),
+        ("WEEKLY", Self::Weekly),
+        ("MONTHLY", Self::Monthly),
+        ("YEARLY", Self::Yearly),
+    ];
     const NAMES: &'static [&'static str] =
         &["MINUTELY", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"];
-    const ALL: [Self; 6] = [
-        Self::Minutely,
-        Self::Hourly,
-        Self::Daily,
-        Self::Weekly,
-        Self::Monthly,
-        Self::Yearly,
-    ];
+
+    /// The iCalendar FREQ name, e.g. `"MONTHLY"`.
+    pub fn as_str(self) -> &'static str {
+        Self::TABLE[self as usize].0
+    }
 
     /// Monthly and yearly rules: the only ones that take the calendar
     /// parts (`by_month_day`, `by_month`, `by_set_pos`).
@@ -44,35 +50,46 @@ impl RecurrenceFrequency {
 }
 
 /// A day of the week (BYDAY), iCalendar's two-letter names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Weekday {
-    #[serde(rename = "MO")]
     Monday,
-    #[serde(rename = "TU")]
     Tuesday,
-    #[serde(rename = "WE")]
     Wednesday,
-    #[serde(rename = "TH")]
     Thursday,
-    #[serde(rename = "FR")]
     Friday,
-    #[serde(rename = "SA")]
     Saturday,
-    #[serde(rename = "SU")]
     Sunday,
 }
 
 impl Weekday {
-    const NAMES: &'static [&'static str] = &["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-    const ALL: [Self; 7] = [
-        Self::Monday,
-        Self::Tuesday,
-        Self::Wednesday,
-        Self::Thursday,
-        Self::Friday,
-        Self::Saturday,
-        Self::Sunday,
+    /// Every variant with its wire name; see `RecurrenceFrequency::TABLE`.
+    const TABLE: [(&'static str, Self); 7] = [
+        ("MO", Self::Monday),
+        ("TU", Self::Tuesday),
+        ("WE", Self::Wednesday),
+        ("TH", Self::Thursday),
+        ("FR", Self::Friday),
+        ("SA", Self::Saturday),
+        ("SU", Self::Sunday),
     ];
+    const NAMES: &'static [&'static str] = &["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+    /// The iCalendar two-letter name, e.g. `"MO"`.
+    pub fn as_str(self) -> &'static str {
+        Self::TABLE[self as usize].0
+    }
+}
+
+impl Serialize for RecurrenceFrequency {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl Serialize for Weekday {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
 }
 
 /// A validated recurrence rule. Serializes to the same JSON the TypeScript
@@ -156,19 +173,12 @@ fn non_zero_int(ctx: &mut Ctx, v: Option<&Value>, min: i64, max: i64) -> Option<
     Some(n)
 }
 
-fn datetime() -> StrChecks {
-    StrChecks {
-        datetime: true,
-        ..StrChecks::default()
-    }
-}
-
 impl RuleDraft {
     pub(crate) fn parse_in(ctx: &mut Ctx, input: Option<&Value>) -> Option<Self> {
         let obj = zod::object(ctx, input)?;
         let freq = zod::field(ctx, obj, "freq", |ctx, v| {
             zod::enumeration(ctx, v, RecurrenceFrequency::NAMES)
-                .map(|i| RecurrenceFrequency::ALL[i])
+                .map(|i| RecurrenceFrequency::TABLE[i].1)
         });
         let interval = zod::field(ctx, obj, "interval", |ctx, v| match v {
             None => Some(1.0),
@@ -177,7 +187,7 @@ impl RuleDraft {
         let by_day = zod::field(ctx, obj, "byDay", |ctx, v| {
             zod::optional(ctx, v, |ctx, v| {
                 zod::array(ctx, v, None, Some(7), |ctx, v| {
-                    zod::enumeration(ctx, v, Weekday::NAMES).map(|i| Weekday::ALL[i])
+                    zod::enumeration(ctx, v, Weekday::NAMES).map(|i| Weekday::TABLE[i].1)
                 })
             })
         });
@@ -212,15 +222,7 @@ impl RuleDraft {
         });
         let tzid = zod::field(ctx, obj, "tzid", |ctx, v| {
             zod::optional(ctx, v, |ctx, v| {
-                let s = zod::string(
-                    ctx,
-                    v,
-                    StrChecks {
-                        min: Some(1),
-                        max: Some(64),
-                        datetime: false,
-                    },
-                )?;
+                let s = zod::string(ctx, v, StrChecks::between(1, 64))?;
                 if !is_valid_time_zone(&s) {
                     ctx.custom("unknown time zone");
                 }
@@ -231,7 +233,7 @@ impl RuleDraft {
             zod::optional(ctx, v, positive_int)
         });
         let until = zod::field(ctx, obj, "until", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, datetime()))
+            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, StrChecks::DATETIME))
         });
 
         let rule = RuleDraft {
@@ -352,5 +354,27 @@ impl RecurrenceRule {
         let mut ctx = Ctx::new();
         let out = RuleDraft::parse_in(&mut ctx, Some(value));
         finish(ctx, out).map(RuleDraft::finish)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_tables_agree_and_follow_declaration_order() {
+        for (i, (name, variant)) in RecurrenceFrequency::TABLE.iter().enumerate() {
+            assert_eq!(RecurrenceFrequency::NAMES[i], *name);
+            assert_eq!(*variant as usize, i);
+        }
+        assert_eq!(
+            RecurrenceFrequency::NAMES.len(),
+            RecurrenceFrequency::TABLE.len()
+        );
+        for (i, (name, variant)) in Weekday::TABLE.iter().enumerate() {
+            assert_eq!(Weekday::NAMES[i], *name);
+            assert_eq!(*variant as usize, i);
+        }
+        assert_eq!(Weekday::NAMES.len(), Weekday::TABLE.len());
     }
 }

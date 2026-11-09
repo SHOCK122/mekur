@@ -16,7 +16,7 @@
 use serde_json::{Map, Value};
 
 use crate::datetime::is_zod_datetime;
-use crate::issue::{Issue, IssueKind, PathSegment, SizeType};
+use crate::issue::{Issue, IssueKind, PathSegment, SizeType, ValidationError};
 
 /// Collects issues while a value is parsed.
 #[derive(Debug, Default)]
@@ -72,6 +72,14 @@ impl Ctx {
             format!("Expected {expected}, received {received}")
         };
         self.add(IssueKind::InvalidType { expected, received }, message);
+    }
+}
+
+/// The result of a top-level parse: the value if nothing was reported.
+pub(crate) fn finish<T>(ctx: Ctx, value: Option<T>) -> Result<T, ValidationError> {
+    match value {
+        Some(v) if ctx.issues.is_empty() => Ok(v),
+        _ => Err(ValidationError { issues: ctx.issues }),
     }
 }
 
@@ -151,6 +159,42 @@ pub(crate) struct StrChecks {
     pub min: Option<usize>,
     pub max: Option<usize>,
     pub datetime: bool,
+}
+
+impl StrChecks {
+    /// `.datetime()`
+    pub const DATETIME: Self = Self {
+        min: None,
+        max: None,
+        datetime: true,
+    };
+
+    /// `.min(min).max(max)`
+    pub const fn between(min: usize, max: usize) -> Self {
+        Self {
+            min: Some(min),
+            max: Some(max),
+            datetime: false,
+        }
+    }
+
+    /// `.min(min)`
+    pub const fn at_least(min: usize) -> Self {
+        Self {
+            min: Some(min),
+            max: None,
+            datetime: false,
+        }
+    }
+
+    /// `.max(max)`
+    pub const fn at_most(max: usize) -> Self {
+        Self {
+            min: None,
+            max: Some(max),
+            datetime: false,
+        }
+    }
 }
 
 /// `z.string()` with its checks. Lengths count UTF-16 code units, as
@@ -314,13 +358,16 @@ pub(crate) fn enumeration(
     input: Option<&Value>,
     options: &'static [&'static str],
 ) -> Option<usize> {
-    let joined = options
-        .iter()
-        .map(|o| format!("'{o}'"))
-        .collect::<Vec<_>>()
-        .join(" | ");
+    // Only needed for an issue, so only built then.
+    let joined = || {
+        options
+            .iter()
+            .map(|o| format!("'{o}'"))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
     let Some(Value::String(s)) = input else {
-        ctx.invalid_type(joined, input);
+        ctx.invalid_type(joined(), input);
         return None;
     };
     if let Some(i) = options.iter().position(|o| o == s) {
@@ -331,7 +378,7 @@ pub(crate) fn enumeration(
             options,
             received: s.clone(),
         },
-        format!("Invalid enum value. Expected {joined}, received '{s}'"),
+        format!("Invalid enum value. Expected {}, received '{s}'", joined()),
     );
     None
 }

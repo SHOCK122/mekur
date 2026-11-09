@@ -8,10 +8,9 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::datetime::instant_millis;
-use crate::envelope::finish;
 use crate::issue::{IssueKind, PathSegment, ValidationError};
 use crate::recurrence::{RecurrenceRule, RuleDraft};
-use crate::zod::{self, Ctx, StrChecks};
+use crate::zod::{self, Ctx, StrChecks, finish};
 
 /// Most occurrences one series can have moved. Overrides are rendered on
 /// every pan frame, so the list is bounded rather than left to the
@@ -65,20 +64,6 @@ pub struct EventContent {
     pub occurrence_overrides: Option<Vec<OccurrenceOverride>>,
 }
 
-fn datetime() -> StrChecks {
-    StrChecks {
-        datetime: true,
-        ..StrChecks::default()
-    }
-}
-
-fn max_len(max: usize) -> StrChecks {
-    StrChecks {
-        max: Some(max),
-        ..StrChecks::default()
-    }
-}
-
 /// `endTime > startTime` as JavaScript compares two `Date`s: false when
 /// either is an invalid date.
 fn ends_after_start(start: &str, end: &str) -> bool {
@@ -102,13 +87,13 @@ impl OccurrenceOverride {
     fn parse_in(ctx: &mut Ctx, input: Option<&Value>) -> Option<Self> {
         let obj = zod::object(ctx, input)?;
         let occurrence = zod::field(ctx, obj, "occurrence", |ctx, v| {
-            zod::string(ctx, v, datetime())
+            zod::string(ctx, v, StrChecks::DATETIME)
         });
         let start_time = zod::field(ctx, obj, "startTime", |ctx, v| {
-            zod::string(ctx, v, datetime())
+            zod::string(ctx, v, StrChecks::DATETIME)
         });
         let end_time = zod::field(ctx, obj, "endTime", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, datetime()))
+            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, StrChecks::DATETIME))
         });
         let out = Self {
             occurrence: occurrence?,
@@ -153,39 +138,26 @@ impl EventContent {
     fn parse_in(ctx: &mut Ctx, input: Option<&Value>) -> Option<(Self, Option<RuleDraft>)> {
         let obj = zod::object(ctx, input)?;
         let title = zod::field(ctx, obj, "title", |ctx, v| {
-            zod::string(
-                ctx,
-                v,
-                StrChecks {
-                    min: Some(1),
-                    max: Some(500),
-                    datetime: false,
-                },
-            )
+            zod::string(ctx, v, StrChecks::between(1, 500))
         });
         let description = zod::field(ctx, obj, "description", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, max_len(10_000)))
+            zod::optional(ctx, v, |ctx, v| {
+                zod::string(ctx, v, StrChecks::at_most(10_000))
+            })
         });
         let location = zod::field(ctx, obj, "location", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, max_len(500)))
+            zod::optional(ctx, v, |ctx, v| {
+                zod::string(ctx, v, StrChecks::at_most(500))
+            })
         });
         let start_time = zod::field(ctx, obj, "startTime", |ctx, v| {
-            zod::string(ctx, v, datetime())
+            zod::string(ctx, v, StrChecks::DATETIME)
         });
         let end_time = zod::field(ctx, obj, "endTime", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, datetime()))
+            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, StrChecks::DATETIME))
         });
         let rank = zod::field(ctx, obj, "rank", |ctx, v| {
-            zod::optional(ctx, v, |ctx, v| {
-                zod::string(
-                    ctx,
-                    v,
-                    StrChecks {
-                        min: Some(1),
-                        ..StrChecks::default()
-                    },
-                )
-            })
+            zod::optional(ctx, v, |ctx, v| zod::string(ctx, v, StrChecks::at_least(1)))
         });
         let important = zod::field(ctx, obj, "important", |ctx, v| {
             zod::optional(ctx, v, zod::boolean)
@@ -195,7 +167,9 @@ impl EventContent {
         });
         let skipped = zod::field(ctx, obj, "skippedOccurrences", |ctx, v| {
             zod::optional(ctx, v, |ctx, v| {
-                zod::array(ctx, v, None, None, |ctx, v| zod::string(ctx, v, datetime()))
+                zod::array(ctx, v, None, None, |ctx, v| {
+                    zod::string(ctx, v, StrChecks::DATETIME)
+                })
             })
         });
         let overrides = zod::field(ctx, obj, "occurrenceOverrides", |ctx, v| {

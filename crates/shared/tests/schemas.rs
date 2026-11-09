@@ -206,7 +206,6 @@ fn allows_a_keyring_larger_than_a_single_events_cap() {
     assert_eq!(
         KeyringEnvelope::parse(&env)
             .expect("valid")
-            .0
             .ciphertext
             .len(),
         big.len()

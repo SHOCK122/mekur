@@ -64,3 +64,21 @@ fn every_time_zone_verdict_matches_intl() {
         .collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+#[test]
+fn the_fixture_has_intls_verdict_on_every_zone_name_rust_knows() {
+    // Aliases (Asia/Calcutta, US/Pacific) are not in Intl's canonical list,
+    // so they are recorded explicitly. A chrono-tz upgrade that adds a
+    // name fails here until the fixture records what Intl says about it.
+    let fixture = fixture();
+    let zones = fixture["timeZones"].as_object().expect("timeZones");
+    let missing: Vec<_> = chrono_tz::TZ_VARIANTS
+        .iter()
+        .map(|tz| tz.name())
+        .filter(|name| !zones.contains_key(*name))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "add to IANA_ALIASES in packages/shared/test/zodParity.test.ts and regenerate: {missing:?}"
+    );
+}

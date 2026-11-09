@@ -36,6 +36,8 @@ const SCHEMAS: Record<string, ZodTypeAny> = {
 
 type Case = { schema: keyof typeof SCHEMAS; name: string; input: unknown };
 
+// JSON can't tell 1.0 from 1 once JavaScript has parsed it, so float
+// spellings of integers are tested in crates/shared/tests/schemas.rs instead.
 const env = { v: 1, algo: "xchacha20poly1305", keyId: "user-key-1", nonce: "bm9uY2U=", ciphertext: "Y2lwaGVydGV4dA==" };
 const event = { title: "Team sync", startTime: "2026-08-01T10:00:00.000Z" };
 const series = { ...event, recurrence: { freq: "DAILY", interval: 1 } };
@@ -46,13 +48,12 @@ const cases: Case[] = [
   // --- envelopes ---
   { schema: "EncryptedEnvelope", name: "well-formed", input: env },
   { schema: "EncryptedEnvelope", name: "unknown keys are stripped", input: { ...env, extra: 1, epk: "x" } },
-  { schema: "EncryptedEnvelope", name: "v as 1.0", input: JSON.parse('{"v":1.0,"algo":"xchacha20poly1305","keyId":"k","nonce":"n","ciphertext":"c"}') },
   { schema: "EncryptedEnvelope", name: "missing ciphertext", input: { ...env, ciphertext: undefined } },
   { schema: "EncryptedEnvelope", name: "unknown algo", input: { ...env, algo: "aes-cbc" } },
   { schema: "EncryptedEnvelope", name: "wrong version", input: { ...env, v: 2 } },
   { schema: "EncryptedEnvelope", name: "version as string", input: { ...env, v: "1" } },
   { schema: "EncryptedEnvelope", name: "version as float", input: { ...env, v: 1.5 } },
-  { schema: "EncryptedEnvelope", name: "version as object", input: { ...env, v: { a: [1, 2.0] } } },
+  { schema: "EncryptedEnvelope", name: "version as object", input: { ...env, v: { a: [1, "2"] } } },
   { schema: "EncryptedEnvelope", name: "missing version and algo", input: { keyId: "k", nonce: "n", ciphertext: "c" } },
   { schema: "EncryptedEnvelope", name: "every field wrong", input: { v: 2, algo: "x", keyId: "", nonce: 5, ciphertext: null } },
   { schema: "EncryptedEnvelope", name: "empty object", input: {} },
@@ -79,7 +80,6 @@ const cases: Case[] = [
   // --- recurrence rules ---
   { schema: "RecurrenceRule", name: "every 37 minutes", input: { freq: "MINUTELY", interval: 37 } },
   { schema: "RecurrenceRule", name: "interval defaults to 1", input: { freq: "DAILY" } },
-  { schema: "RecurrenceRule", name: "interval 2.0", input: JSON.parse('{"freq":"DAILY","interval":2.0}') },
   { schema: "RecurrenceRule", name: "every weekday", input: { freq: "WEEKLY", interval: 1, byDay: ["MO", "TU", "WE", "TH", "FR"] } },
   { schema: "RecurrenceRule", name: "first Monday in Sydney", input: { freq: "MONTHLY", interval: 1, byDay: ["MO"], bySetPos: [1], tzid: "Australia/Sydney" } },
   { schema: "RecurrenceRule", name: "last day of the month", input: { freq: "MONTHLY", byMonthDay: [-1] } },
@@ -190,6 +190,39 @@ const cases: Case[] = [
   { schema: "EventContent", name: "string", input: "event" },
 ];
 
+// IANA aliases (tzdata "backward" links and the like): Intl accepts them but
+// leaves them out of supportedValuesOf, which lists canonical ids only.
+// Every name chrono-tz knows must be recorded; the Rust test checks that.
+const IANA_ALIASES = [
+  "Africa/Asmara", "Africa/Timbuktu", "America/Argentina/Buenos_Aires", "America/Argentina/Catamarca",
+  "America/Argentina/ComodRivadavia", "America/Argentina/Cordoba", "America/Argentina/Jujuy",
+  "America/Argentina/Mendoza", "America/Atikokan", "America/Atka", "America/Ensenada", "America/Fort_Wayne",
+  "America/Indiana/Indianapolis", "America/Kentucky/Louisville", "America/Knox_IN", "America/Montreal",
+  "America/Nipigon", "America/Nuuk", "America/Pangnirtung", "America/Porto_Acre", "America/Rainy_River",
+  "America/Rosario", "America/Santa_Isabel", "America/Shiprock", "America/Thunder_Bay", "America/Virgin",
+  "America/Yellowknife", "Antarctica/South_Pole", "Asia/Ashkhabad", "Asia/Choibalsan", "Asia/Chongqing",
+  "Asia/Chungking", "Asia/Dacca", "Asia/Harbin", "Asia/Ho_Chi_Minh", "Asia/Istanbul", "Asia/Kashgar",
+  "Asia/Kathmandu", "Asia/Kolkata", "Asia/Macao", "Asia/Tel_Aviv", "Asia/Thimbu", "Asia/Ujung_Pandang",
+  "Asia/Ulan_Bator", "Asia/Yangon", "Atlantic/Faroe", "Atlantic/Jan_Mayen", "Australia/ACT", "Australia/Canberra",
+  "Australia/Currie", "Australia/LHI", "Australia/NSW", "Australia/North", "Australia/Queensland", "Australia/South",
+  "Australia/Tasmania", "Australia/Victoria", "Australia/West", "Australia/Yancowinna", "Brazil/Acre",
+  "Brazil/DeNoronha", "Brazil/East", "Brazil/West", "CET", "CST6CDT", "Canada/Atlantic", "Canada/Central",
+  "Canada/Eastern", "Canada/Mountain", "Canada/Newfoundland", "Canada/Pacific", "Canada/Saskatchewan",
+  "Canada/Yukon", "Chile/Continental", "Chile/EasterIsland", "Cuba", "EET", "EST", "EST5EDT", "Egypt", "Eire",
+  "Etc/GMT", "Etc/GMT+0", "Etc/GMT+1", "Etc/GMT+10", "Etc/GMT+11", "Etc/GMT+12", "Etc/GMT+2", "Etc/GMT+3",
+  "Etc/GMT+4", "Etc/GMT+5", "Etc/GMT+6", "Etc/GMT+7", "Etc/GMT+8", "Etc/GMT+9", "Etc/GMT-0", "Etc/GMT-1",
+  "Etc/GMT-10", "Etc/GMT-11", "Etc/GMT-12", "Etc/GMT-13", "Etc/GMT-14", "Etc/GMT-2", "Etc/GMT-3", "Etc/GMT-4",
+  "Etc/GMT-5", "Etc/GMT-6", "Etc/GMT-7", "Etc/GMT-8", "Etc/GMT-9", "Etc/GMT0", "Etc/Greenwich", "Etc/UCT", "Etc/UTC",
+  "Etc/Universal", "Etc/Zulu", "Europe/Belfast", "Europe/Kyiv", "Europe/Nicosia", "Europe/Tiraspol",
+  "Europe/Uzhgorod", "Europe/Zaporozhye", "GB", "GB-Eire", "GMT", "GMT+0", "GMT-0", "GMT0", "Greenwich", "HST",
+  "Hongkong", "Iceland", "Iran", "Israel", "Jamaica", "Japan", "Kwajalein", "Libya", "MET", "MST", "MST7MDT",
+  "Mexico/BajaNorte", "Mexico/BajaSur", "Mexico/General", "NZ", "NZ-CHAT", "Navajo", "PRC", "PST8PDT",
+  "Pacific/Chuuk", "Pacific/Johnston", "Pacific/Kanton", "Pacific/Pohnpei", "Pacific/Samoa", "Pacific/Yap", "Poland",
+  "Portugal", "ROC", "ROK", "Singapore", "Turkey", "UCT", "US/Alaska", "US/Aleutian", "US/Arizona", "US/Central",
+  "US/East-Indiana", "US/Eastern", "US/Hawaii", "US/Indiana-Starke", "US/Michigan", "US/Mountain", "US/Pacific",
+  "US/Samoa", "UTC", "Universal", "W-SU", "WET", "Zulu",
+];
+
 // Strings Intl accepts or rejects that are worth pinning beyond the zone
 // list: case, offsets, legacy ICU ids, near misses.
 const EXTRA_TIME_ZONES = [
@@ -211,7 +244,7 @@ function zodResult(c: Case) {
 }
 
 function buildFixture() {
-  const zones = [...new Set([...Intl.supportedValuesOf("timeZone"), ...EXTRA_TIME_ZONES])];
+  const zones = [...new Set([...Intl.supportedValuesOf("timeZone"), ...IANA_ALIASES, ...EXTRA_TIME_ZONES])];
   return {
     generatedBy: "packages/shared/test/zodParity.test.ts",
     node: process.version,

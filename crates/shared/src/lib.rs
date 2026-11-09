@@ -8,7 +8,11 @@
 //! JSON Zod's parsed output has.
 //!
 //! There is deliberately no `Deserialize` on the schema types: the only way
-//! in is `parse`, so nothing can skip validation. Parity notes are in
+//! from JSON (a request body, decrypted content) to a typed value is
+//! `parse`, so untrusted input cannot skip validation. Values built
+//! directly in Rust are trusted code's responsibility, as constructing a
+//! TypeScript object of the inferred type was: to check one before it is
+//! encrypted or sent, `parse` its `serde_json::to_value`. Parity notes are in
 //! `docs/RUST_MIGRATION.md`; `tests/fixtures/zod_parity.json` holds Zod's
 //! own verdicts, which the tests replay.
 

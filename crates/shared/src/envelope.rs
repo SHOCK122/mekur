@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::issue::ValidationError;
-use crate::zod::{self, Ctx, StrChecks};
+use crate::zod::{self, Ctx, StrChecks, finish};
 
 /// The only envelope format version.
 pub const ENVELOPE_VERSION: u8 = 1;
@@ -49,10 +49,16 @@ pub struct SealedEnvelope {
     pub epk: String,
 }
 
-/// An account's keyring (`KeyringEnvelopeSchema`): an encrypted envelope
-/// whose ciphertext may reach [`MAX_KEYRING_CIPHERTEXT`].
+/// An account's keyring (`KeyringEnvelopeSchema`): the same wire shape as
+/// [`EncryptedEnvelope`], but its ciphertext may reach
+/// [`MAX_KEYRING_CIPHERTEXT`]. A separate type with no conversion, so a
+/// keyring-sized ciphertext can never pass for an event envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KeyringEnvelope(pub EncryptedEnvelope);
+pub struct KeyringEnvelope {
+    pub key_id: String,
+    pub nonce: String,
+    pub ciphertext: String,
+}
 
 #[derive(Serialize)]
 struct Wire<'a> {
@@ -96,7 +102,15 @@ impl Serialize for SealedEnvelope {
 
 impl Serialize for KeyringEnvelope {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(s)
+        Wire {
+            v: ENVELOPE_VERSION,
+            algo: ENVELOPE_ALGO,
+            key_id: &self.key_id,
+            nonce: &self.nonce,
+            ciphertext: &self.ciphertext,
+            epk: None,
+        }
+        .serialize(s)
     }
 }
 
@@ -113,45 +127,32 @@ fn base_fields(
     let algo = zod::field(ctx, obj, "algo", |ctx, v| {
         zod::literal(ctx, v, &Value::from(ENVELOPE_ALGO))
     });
-    let key_id = zod::field(ctx, obj, "keyId", |ctx, v| zod::string(ctx, v, bounded(64)));
+    let key_id = zod::field(ctx, obj, "keyId", |ctx, v| {
+        zod::string(ctx, v, StrChecks::between(1, 64))
+    });
     let nonce = zod::field(ctx, obj, "nonce", |ctx, v| {
-        zod::string(ctx, v, bounded(128))
+        zod::string(ctx, v, StrChecks::between(1, 128))
     });
     let ciphertext = zod::field(ctx, obj, "ciphertext", |ctx, v| {
-        zod::string(ctx, v, bounded(max_ciphertext))
+        zod::string(ctx, v, StrChecks::between(1, max_ciphertext))
     });
     v?;
     algo?;
     Some((key_id?, nonce?, ciphertext?))
 }
 
-fn bounded(max: usize) -> StrChecks {
-    StrChecks {
-        min: Some(1),
-        max: Some(max),
-        datetime: false,
-    }
-}
-
-pub(crate) fn finish<T>(ctx: Ctx, value: Option<T>) -> Result<T, ValidationError> {
-    match value {
-        Some(v) if ctx.issues.is_empty() => Ok(v),
-        _ => Err(ValidationError { issues: ctx.issues }),
-    }
+/// An unextended envelope object (no `epk`) with the given ciphertext cap.
+fn plain(ctx: &mut Ctx, input: Option<&Value>, max: usize) -> Option<(String, String, String)> {
+    let obj = zod::object(ctx, input)?;
+    base_fields(ctx, obj, max)
 }
 
 impl EncryptedEnvelope {
     /// Validates a JSON value. Unknown keys are ignored.
     pub fn parse(value: &Value) -> Result<Self, ValidationError> {
         let mut ctx = Ctx::new();
-        let out = Self::parse_in(&mut ctx, Some(value), MAX_EVENT_CIPHERTEXT);
-        finish(ctx, out)
-    }
-
-    pub(crate) fn parse_in(ctx: &mut Ctx, input: Option<&Value>, max: usize) -> Option<Self> {
-        let obj = zod::object(ctx, input)?;
-        let (key_id, nonce, ciphertext) = base_fields(ctx, obj, max)?;
-        Some(Self {
+        let out = plain(&mut ctx, Some(value), MAX_EVENT_CIPHERTEXT);
+        finish(ctx, out).map(|(key_id, nonce, ciphertext)| Self {
             key_id,
             nonce,
             ciphertext,
@@ -170,7 +171,9 @@ impl SealedEnvelope {
     pub(crate) fn parse_in(ctx: &mut Ctx, input: Option<&Value>) -> Option<Self> {
         let obj = zod::object(ctx, input)?;
         let base = base_fields(ctx, obj, MAX_EVENT_CIPHERTEXT);
-        let epk = zod::field(ctx, obj, "epk", |ctx, v| zod::string(ctx, v, bounded(64)));
+        let epk = zod::field(ctx, obj, "epk", |ctx, v| {
+            zod::string(ctx, v, StrChecks::between(1, 64))
+        });
         let (key_id, nonce, ciphertext) = base?;
         Some(Self {
             key_id,
@@ -185,7 +188,11 @@ impl KeyringEnvelope {
     /// Validates a JSON value. Unknown keys are ignored.
     pub fn parse(value: &Value) -> Result<Self, ValidationError> {
         let mut ctx = Ctx::new();
-        let out = EncryptedEnvelope::parse_in(&mut ctx, Some(value), MAX_KEYRING_CIPHERTEXT);
-        finish(ctx, out.map(Self))
+        let out = plain(&mut ctx, Some(value), MAX_KEYRING_CIPHERTEXT);
+        finish(ctx, out).map(|(key_id, nonce, ciphertext)| Self {
+            key_id,
+            nonce,
+            ciphertext,
+        })
     }
 }

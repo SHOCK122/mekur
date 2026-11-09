@@ -14,6 +14,9 @@
 //! verdict on every zone Node knows plus the edge cases, and the tests
 //! check this function agrees with all of them.
 
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
 use chrono_tz::TZ_VARIANTS;
 
 /// Zone ids ICU accepts that are not (or no longer) in the IANA database.
@@ -60,15 +63,25 @@ const ICU_LEGACY: &[&str] = &[
     "Canada/East-Saskatchewan",
 ];
 
+/// Every accepted zone name, ASCII-lower-cased; built on first use.
+fn names() -> &'static HashSet<String> {
+    static NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        TZ_VARIANTS
+            .iter()
+            .map(|tz| tz.name())
+            .chain(ICU_LEGACY.iter().copied())
+            .map(str::to_ascii_lowercase)
+            .collect()
+    })
+}
+
 /// True when `time_zone` names a zone `Intl.DateTimeFormat` would accept.
 pub fn is_valid_time_zone(time_zone: &str) -> bool {
+    // No zone name is longer than this; don't lower-case arbitrary input.
+    const LONGEST: usize = 64;
     is_offset(time_zone)
-        || TZ_VARIANTS
-            .iter()
-            .any(|tz| tz.name().eq_ignore_ascii_case(time_zone))
-        || ICU_LEGACY
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(time_zone))
+        || (time_zone.len() <= LONGEST && names().contains(&time_zone.to_ascii_lowercase()))
 }
 
 fn two_digits(s: &str, max: u8) -> bool {

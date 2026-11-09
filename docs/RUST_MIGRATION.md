@@ -17,8 +17,11 @@ written in Rust; existing TypeScript is replaced one module at a time.
    and remaining TS). No coverage is dropped on the way.
 3. **Conventions are translated, not dropped.**
    - TDD against a real local PostgreSQL for API work (sqlx), never mocks.
-   - `mekur-shared` takes the role of the Zod schemas: serde types plus
-     explicit validation functions.
+   - `mekur-shared` takes the role of the Zod schemas: each schema is a
+     type whose only way in from JSON is `parse(&Value)` (no
+     `Deserialize`), reporting Zod-shaped issues. New types follow the
+     same pattern rather than `#[derive(Deserialize)]` plus a separate
+     `validate()` that callers could forget.
    - Repositories stay constructor/factory functions returning a struct
      (or trait object); route handlers stay thin.
 4. **No hand-rolled cryptography.** Audited crates only (RustCrypto).
@@ -76,7 +79,7 @@ TS package is fully gone, its directory is deleted, not left empty.
 | Need | Crate | Notes |
 |---|---|---|
 | Serialization | `serde`, `serde_json` | No `deny_unknown_fields`: Zod objects strip unknown keys rather than rejecting them. |
-| Validation | hand-written `validate()` per type | Explicit, mirrors each Zod refinement one-to-one; no derive-macro framework whose rules drift from Zod's. |
+| Validation | hand-written `parse(&Value)` per type (no `Deserialize`) | Explicit, mirrors each Zod check and refinement one-to-one; no derive-macro framework whose rules drift from Zod's. |
 | Dates, zones | `chrono`, `chrono-tz` | IANA data is bundled at build time rather than read from the runtime's `Intl`; pin and note the tzdata version. |
 | AEAD | `chacha20poly1305` (`XChaCha20Poly1305`) | RustCrypto. |
 | X25519 | `x25519-dalek` | Check `SharedSecret::was_contributory()`: noble rejects an all-zero shared secret, so the port must too. |
@@ -122,12 +125,14 @@ with a line on anything simplified or discovered.
     type stops the container's refinements; a failed check or refinement
     does not). Only key order *within* an issue object may differ.
   - **Zod parity fixture.** `packages/shared/test/zodParity.test.ts` runs
-    140 cases through the Zod schemas and checks the result against
+    138 cases through the Zod schemas and checks the result against
     `crates/shared/tests/fixtures/zod_parity.json`; the Rust test
     `tests/zod_parity.rs` replays the same file. So the fixture is Zod's
     real output, can't drift while the TS package exists, and stays behind
     as the record once it's gone. It also holds Node's `Intl` verdict on
-    504 time-zone strings (every zone Node knows plus edge cases).
+    678 time-zone strings: Node's canonical zones, every alias chrono-tz
+    knows (a Rust test fails if chrono-tz gains a name the fixture lacks)
+    and edge cases.
     Regenerate with `UPDATE_ZOD_PARITY=1 npm run test
     --workspace=@schedule-app/shared`.
   - Time zones: IANA names from `chrono-tz` (tzdata 2025b; Node 22 here
@@ -309,5 +314,9 @@ tests are ported to Rust (`cargo test` for pure logic,
   `byMonthDay` "never occur" -- both reproduced. Node's `Intl` accepts far
   more than the IANA list (Java-style `PST`, `SystemV/EST5`); those are
   listed explicitly rather than rejected, so a stored rule never stops
-  validating. CI now also lints `mekur-shared` for wasm32, since the
+  validating. Self-review: `KeyringEnvelope` became its own type rather
+  than wrapping `EncryptedEnvelope`, so a 1 MB keyring ciphertext can't
+  pass for an event envelope; the zone fixture gained every alias
+  (`Intl`'s canonical list omits them); each enum's names live in one
+  table. CI now also lints `mekur-shared` for wasm32, since the
   browser client will link it.
