@@ -154,15 +154,45 @@ with a line on anything simplified or discovered.
   remove them; it is deleted when its last importer is gone.
 
 ### 2. `mekur-crypto` <- `packages/crypto`
-- [ ] `derive_auth_and_encryption_keys`, `encrypt_envelope` /
+- [x] `derive_auth_and_encryption_keys`, `encrypt_envelope` /
   `decrypt_envelope`, `seal_to_recipient` / `open_sealed`, keypair
-  generation, `sha256_base64`; port `packages/crypto/test/index.test.ts`.
-- [ ] **Cross-language vectors**: a small script (run once, output
-  committed as a fixture) has the TS package derive keys from a fixed
-  password + salt, and produce envelopes and sealed envelopes (named and
-  anonymous). The Rust tests must reproduce the derived keys exactly and
-  open every TS-made envelope; Rust-made envelopes are opened by a TS test
-  in the same PR.
+  generation, `sha256_base64`; port `packages/crypto/test/index.test.ts`
+  (`crates/crypto/tests/index.rs`, every TS test plus key/nonce lengths,
+  low-order points and malformed sealed bodies).
+  - Keys cross the API as base64 strings, as in TS, so call sites port
+    one-to-one. Secrets are zeroized on drop and redacted from `Debug`.
+  - `decrypt_envelope` returns a `serde_json::Value`; callers validate it
+    with the matching `mekur_shared` type's `parse`, as the TS client's
+    `decryptEnvelope<T>` cast was meant to be followed by a schema check.
+    It opens any envelope shape (`Envelope` trait); `encrypt_keyring_envelope`
+    makes a `KeyringEnvelope` (same bytes as `encrypt_envelope`) so the
+    keyring's larger size limit stays a type, not a convention.
+  - `from_base64` implements `atob`'s forgiving-base64 (whitespace
+    ignored, padding optional but checked, non-zero leftover bits
+    allowed), on top of the `base64` crate.
+  - A falsy `sender` inside a sealed body (`null`, `false`, `0`, `""`)
+    reads as anonymous, as `if (inner.sender)` did.
+- [x] **Cross-language vectors**: `packages/crypto/test/crossLanguage.test.ts`
+  writes `crates/crypto/tests/fixtures/ts_vectors.json` (5 derivations
+  incl. NFKC pairs and an empty password, 6 envelopes, 12 sealed --
+  anonymous and named -- and a forged sender) and opens
+  `rust_vectors.json`, which `crates/crypto/tests/cross_language.rs`
+  writes from the same keys and payloads and opens the TS file. The
+  derivations are re-checked against TS on every run. Regenerate with
+  `UPDATE_CRYPTO_VECTORS=1` on either side.
+- Divergences, all limited to content no client produces:
+  - `serde_json` rejects a JSON string with a lone UTF-16 surrogate escape
+    (`"\ud800"`) and nesting deeper than 128; `JSON.parse` accepts both.
+    `JSON.stringify` writes a lone surrogate as such an escape, so a title
+    holding one (only possible by pasting malformed text) decrypts in TS
+    but is `PlaintextNotJson` in Rust. Step 4e must show such an event as
+    unreadable rather than fail the whole list.
+  - A sealed body whose `body` is not a string is an error;
+    `JSON.parse(non-string)` coerced it.
+  - Payload JSON is written by `serde_json`: numbers can be spelled
+    differently (`1e21` vs `1e+21`, a float `1.0` vs `1`), so the
+    plaintext bytes (and ciphertext length) can differ by a character or
+    two, never the parsed value.
 - TS package deleted at step 4 (its last importer is the web client).
 
 ### 3. `mekur-api` <- `apps/api`, route group by route group
@@ -320,3 +350,13 @@ tests are ported to Rust (`cargo test` for pure logic,
   (`Intl`'s canonical list omits them); each enum's names live in one
   table. CI now also lints `mekur-shared` for wasm32, since the
   browser client will link it.
+- Step 2 (`mekur-crypto`). The TS package stays: the web client and API
+  still import it. Found while porting: Node's base64 decoder silently
+  accepted a mistyped 23-character salt in the first draft of the vector
+  script -- exactly the leniency the parity notes warned about; the Rust
+  side (following `atob`) rejected it. Crate versions are the current
+  RustCrypto majors (`chacha20poly1305` 0.11, `x25519-dalek` 3,
+  `scrypt` 0.12, `hkdf`/`hmac` 0.13, `sha2` 0.11); `getrandom` 0.4 needs
+  only its `wasm_js` feature in the browser (no `--cfg`). scrypt and its
+  inner crates build optimised even in dev, or a debug derivation takes
+  tens of seconds. CI now also lints and builds `mekur-crypto` for wasm32.

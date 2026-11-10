@@ -1,0 +1,289 @@
+{
+  "envelopes": [
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "EPR+0xmhabsgT12AlfVQ2A8DAj4VDmDA4HDjgstHVdqD4J8kr0tIyw5MQbqXxDzirx7zctYypt1fTUEo5Ne61SJSWOGcQj9SiyONNjDKMDVcVT0BBEMlFmqWPLwQmPf51QllFVYBUpaVUkpN6Ujfito=",
+        "keyId": "key-0",
+        "nonce": "3QJofdbgqx/qSqsTM3QIh7fnqNaylUN2",
+        "v": 1
+      },
+      "key": "XIHSVb5N9fI0Jhjic+4fwLUlR4mJXIkzvLX8QBevEQE=",
+      "payload": {
+        "endTime": "2026-08-01T11:00:00.000Z",
+        "startTime": "2026-08-01T10:00:00.000Z",
+        "title": "Team sync"
+      }
+    },
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "4Xka8cKnQFTXMcM1erKfFGW0x9/PuqH1/90sveP5pogJktcwoqCCp0TwaEXuZ3D7r6gsjK4OsoVPWdmFJpDCvXg1HydwXm0imWZeT4lYRlxOC5OEAqeoH+4iXWPPNH/W4r12voM9zSDBC/iVY3Pv",
+        "keyId": "key-1",
+        "nonce": "Mbu05BMINrOGSNcgqV+a3fQCEEFgDmfM",
+        "v": 1
+      },
+      "key": "H+zx3Fa/Gr6MEVH/bNEUjH6eF0g5HHtncScRpizwpj4=",
+      "payload": {
+        "nested": {
+          "a": [
+            1,
+            -2.5,
+            1e+21,
+            0.1,
+            null,
+            true
+          ]
+        },
+        "title": "Ünïcödé 😀   \"quoted\" \\ \n\t"
+      }
+    },
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "Cnkj5zNVnsnQ1mrOL7O2jp2hpgUAjskWPHl8ZF8G0g==",
+        "keyId": "key-2",
+        "nonce": "mGRsDPoAXwdbucl3RcyZCv4V33GMpUVG",
+        "v": 1
+      },
+      "key": "XIHSVb5N9fI0Jhjic+4fwLUlR4mJXIkzvLX8QBevEQE=",
+      "payload": "a bare string"
+    },
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "Gs8AWvDHU56tVnZkb/+4yo8T",
+        "keyId": "key-3",
+        "nonce": "FxVxFnr6R9e4LYkNK+5E1oJfnbmNdAoU",
+        "v": 1
+      },
+      "key": "H+zx3Fa/Gr6MEVH/bNEUjH6eF0g5HHtncScRpizwpj4=",
+      "payload": 42
+    },
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "H8Tf7UxojzxNof489hglLoduTVM=",
+        "keyId": "key-4",
+        "nonce": "8ZeMpnP4J1rdKOIMXb/tYnciVzk/CHGo",
+        "v": 1
+      },
+      "key": "XIHSVb5N9fI0Jhjic+4fwLUlR4mJXIkzvLX8QBevEQE=",
+      "payload": null
+    },
+    {
+      "envelope": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "CtOF2qUwfDPGUZAeSGLoqtBu",
+        "keyId": "key-5",
+        "nonce": "8hdEVa75puB7dOQ/we5WqAwk1+9Fn0Ve",
+        "v": 1
+      },
+      "key": "H+zx3Fa/Gr6MEVH/bNEUjH6eF0g5HHtncScRpizwpj4=",
+      "payload": []
+    }
+  ],
+  "forged": [
+    {
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "jz3U+uRlVLuYSXEmipzMJP4Gr+QYuCKdiCgbEwLxVyamqEsxYNXBAe9+XskcpbDeI2o97cAUuqGtMJhvcvJwh/CkLWix6nnl0ePx/AXboOdQCQN/hVE1l18prMCjIQibTQQJSVoQ6GQiZjLh9xo3h1T9mjuEbQottmNzkUYUBq/JEfUJkdbu/+Sb/oqSfQkRTf54AahmhRaeMJ02WutzaxdzvJk=",
+        "epk": "1j7mDi+WKspNV9tWgMh/vkfk9UFMSgDJIMZDN+klhhY=",
+        "keyId": "sealed",
+        "nonce": "QSo9YaoCGDE0FcIzNS4Ttg422XrJCxx3",
+        "v": 1
+      }
+    }
+  ],
+  "sealed": [
+    {
+      "payload": {
+        "endTime": "2026-08-01T11:00:00.000Z",
+        "startTime": "2026-08-01T10:00:00.000Z",
+        "title": "Team sync"
+      },
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "cu0Yrewp/f2FKDc3fTO666ZFdRd3uc2j6du9QF1VDROb/W6Y3TK0tjcVQxs0nU11yrXRQwN4n1IH+IE5AF9Vn5ZTOwKymvmukNL5Na4rJJlJ4rlOhRQd0cLL4OwBgxkSmcinDpFKcNqiwA6HucWpUsSc8IbU+316A1+nP1oA8FVm2XLN/Iz1WA==",
+        "epk": "a5/XkILq1WkDGHjXsuIMOWxLKweia399BWUqSfIKvkk=",
+        "keyId": "sealed",
+        "nonce": "wLUIKMlUw3em3Ige0aZlhr0o2o0kNQZi",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": {
+        "endTime": "2026-08-01T11:00:00.000Z",
+        "startTime": "2026-08-01T10:00:00.000Z",
+        "title": "Team sync"
+      },
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "cQcQuLJNrbzD7oJsdspfy2wcF2c8lKvUqQyVyGFlYYlX6epL1ozWTYnGQlKVpVHNHUaAzgJDUe0viTcB+hMIZojnXdUA4RyXYJR/v/kgu2rrYXdYpCI+WyyEjiVTf7MgK28QRoR3gH1z470DXD4HAb+ho/CExlqUgGy5Cd3GnZwfK/5ujC9Xga97EQhigerFMqrmJ6zOX00lTGq23KGJR4BkHcvSoIUukpKCh38AxmVPDscuw/C0P3WSr3O/J3dLHmG4OjqVPpJsdWIoIlT1HMzCKvd9U++AZ83zhGGiRdcM8xs3sKPkY+t+K5+uQUW06L5FhGEEqCv6sbjkHpFuk+yyUZcU",
+        "epk": "32CsIXbekLt17179ZlpKCWqLOtL2tJXCyb5s0dILtn8=",
+        "keyId": "sealed",
+        "nonce": "e2Uoim9aiXuTa7SpCQEuQO9/sctUTw8u",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    },
+    {
+      "payload": {
+        "nested": {
+          "a": [
+            1,
+            -2.5,
+            1e+21,
+            0.1,
+            null,
+            true
+          ]
+        },
+        "title": "Ünïcödé 😀   \"quoted\" \\ \n\t"
+      },
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "CbP++PUH9v24xPlLzpvuo0NUqbhMPCEOTALx+jIvVPQn84uMo7bW+/6cL5Byrmw0myED87uqy8mNbRHR+mMuOaLeMnhRils7oYLoit0tYdCjAZNUcRG+qyML9ECNCcvJShr/ufG8eF2ZPYorWjA5WPlluUwXQx74498qklrm+2y3KLDDI7OvEr7T",
+        "epk": "OndZqOrnCwXy8tOs9EMmes0Cxo0Mvw99LjbfJ1Kt0Q8=",
+        "keyId": "sealed",
+        "nonce": "u7NfIhI9N0vAgRsI5RgfyvijhDmtHpSX",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": {
+        "nested": {
+          "a": [
+            1,
+            -2.5,
+            1e+21,
+            0.1,
+            null,
+            true
+          ]
+        },
+        "title": "Ünïcödé 😀   \"quoted\" \\ \n\t"
+      },
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "rqMpi7tAUQES00eaG6BtlokczUiMHA235ZI7t1qUK3Frx2H10De+8ghvdA50TKsVt8+NTTbzcgbfFmB09l6XPwuVkOiDoHz0G76Ruil6yiKqrrb4qgqFO4zgNHuMQP+9J1vcYZU6Axg2QpSV9ASpaEArELAcXGvr7P3gwLeLI77vOxfDd3V4JSGH/ht8nqZD66r2kHxeYniwzR6AzJrOhshnmFYPOrFT9+Dxcg4bl3ojIFq5x+thdHaJ6l/RAUo4OskMOmeTqb8/iXlAnnJ/evdCSUcrwd5gpf1euz0s8Y2X7d7cPwzZSBNetUwyZycXaoa06ELUkpIlo+ECiQQQSWdZcFwqT9o=",
+        "epk": "qrDFSxDVl9M6+DnbVQjnAtlz2LBPLq2nRivObg2FbxI=",
+        "keyId": "sealed",
+        "nonce": "8qyHEAtjyJTDDbKwK2ooFzmN2ExO55xt",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    },
+    {
+      "payload": "a bare string",
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "/0M1rvnH0oO3QdFbI7FHWwPfZgyONAUF9elMPpzPnGJLQyKEiSOfX5u3fGA=",
+        "epk": "V9wBHT7ZySBO4Ulz8UthnIj8J++LHf5hgINj0dhQfR8=",
+        "keyId": "sealed",
+        "nonce": "ndE2CZKDYjcI2Q5JFEZVwXPEF4gq8BOP",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": "a bare string",
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "FGxz8nLv5xA4W6q7TPFBqEZ5htRfeCBGcZfUCTVfTCEk/ev7VbXD7PaNCfFIUedl1pv24IZBKBn8tZZLLRuNLSVq1v5MdY4jKOHLJ3ghBDfarySa8J8Pwi3PO2nQCRnjTFyb0hy+oxLav8TmmrQJZYbI5D36zFO2ccl8oQClXoJ2eY9nKobOXuZ5M+nRZCZ5x9G6L8LwAn56Ttj49+x5xhtzUBqlPyiGNg==",
+        "epk": "GYOFJReDvu6o4UKvWj2VRFU08H8/aiIT24UxE2mGTXE=",
+        "keyId": "sealed",
+        "nonce": "XNWPYZ0a9vF03ewYViZOpKnYmOdBVCeo",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    },
+    {
+      "payload": 42,
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "2m34TWxkj1ClvUPGzDyYihijtSB5E80BVpMjRaU=",
+        "epk": "LsQOSWggjS2vQkviGCq5/joLit0lz8Mugait/gsFK1o=",
+        "keyId": "sealed",
+        "nonce": "bbgfkapv6IKPqNBmnCY8txrOTJ7/XAqv",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": 42,
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "MiiI20nlUCx+DcaCaNa0zK6C9cOCZIoy/7k5hV2gYKlvP/W6RbdXLfp0f4KzYaPLg+CMJEylL/+KbnvYY0bAIoQD1fBImtbpJqznR+70f0BRKgOkwoGWvxpSdecTBcWwjtvE4XoLfTAahcDiA+gaV0hQsK8unmZ/p9nKwB+vXFy78WytEdk+wkWjwj+aaoxVLrawRKFbE3eAWw==",
+        "epk": "xf6lFMswy2ANX4vv2pFbtZ2WVAZ2jOEw4RxzR2jVRFU=",
+        "keyId": "sealed",
+        "nonce": "3kTabrZ8HzgmepfTTcoa8enXB4eb2RF+",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    },
+    {
+      "payload": null,
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "v3M288QRc+VjR5gvTKcvPlwSS00FcqrXPdLOupD2qA==",
+        "epk": "LbErzJRTsl8owwtqPeZQApS7lGW3N5XekgYB8P4np3A=",
+        "keyId": "sealed",
+        "nonce": "WyMD7w+oAXwpqGNf1L8sD0W9OHENtIHU",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": null,
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "VDVMV0ja0avUyGrjNeP1lVuVKKLyGUeX9oUyPV8LdssByHtPCvJwEUSHNByU/CVOOcYCX2reloiAaAq4TzhJvih6TGa3sQqzjjnSnRJrITI7uwCT6eVL/FVl30uRBY5AYuSCHbyhl+O/ku6c4EMjsne97HiAMAooqWuM0l3bXDhmNp0unE0xDmBCHDzFSUYKUDwmuCAFl0PD8xGN",
+        "epk": "qbMjw+CnnwPJ4ZnJP4QEGRtovoX4N/yHY8UK51hZexA=",
+        "keyId": "sealed",
+        "nonce": "HfzRhslPL9mjpAi9E8VaswxLBrB1aSll",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    },
+    {
+      "payload": [],
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "eRZOIR3AuRpr/64kOaMHW5JI1Od0L37b2DIsO+U=",
+        "epk": "qdjPQ1weWHaV/1KUu+Ii8i5v005kKq/6brFBH9lgtDk=",
+        "keyId": "sealed",
+        "nonce": "KlE9GE5LooFQg7MHSbTw3Wue+Vc7EbbC",
+        "v": 1
+      },
+      "senderPublicKey": null
+    },
+    {
+      "payload": [],
+      "recipientSecretKey": "WMTy3kgE1Gv8O03VHC97Yy1pJoIDo0q7Gx2bWtc0710=",
+      "sealed": {
+        "algo": "xchacha20poly1305",
+        "ciphertext": "mDCFzU2Eh/z6mb6XPCsq9DDZ5r6cy75Hln6oVNKhvbiYBllUuPS9exxPKd7MK2lImxYHRmycty7wcfi0PH/D6Aru8u2l0neLXx35MfGHBdbdt7RbKZBGZXPoM5y4A8oIFL7uowizuuWjFK4KpFiK6eRgzeS7IlNuTcIgLcKBBclAZuWeyhjJOtyHxZH3OCGaEOzSFNnOhFPm8A==",
+        "epk": "llDmZcTnBWGKTxq3GdGtfHKWm6IEQSGytGfbZnXniko=",
+        "keyId": "sealed",
+        "nonce": "YPqf7Bad08KUEaDYyrwcYMiJnpOfonvP",
+        "v": 1
+      },
+      "senderPublicKey": "PODohyq6KDBEN7mG5yTjNlBh8RiLj1vLmIvA/saBkVI="
+    }
+  ]
+}
