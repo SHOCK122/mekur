@@ -10,3 +10,24 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+mekur-shared = { path = "../shared" }
+base64 = "0.23.1"
+chacha20poly1305 = "0.11.0"
+getrandom = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+scrypt = { version = "0.12.0", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+subtle = "2.6.1"
+thiserror = "2"
+unicode-normalization = "0.1.26"
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+zeroize = "1.9.1"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# Browser randomness (crypto.getRandomValues).
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
