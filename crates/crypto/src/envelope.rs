@@ -11,12 +11,24 @@ use zeroize::Zeroizing;
 use crate::keys::random_array;
 use crate::{CryptoError, KEY_LENGTH, NONCE_LENGTH, from_base64, to_base64};
 
-fn cipher(key_base64: &str, wrong_length: CryptoError) -> Result<XChaCha20Poly1305, CryptoError> {
-    let key = Zeroizing::new(from_base64(key_base64)?);
-    if key.len() != KEY_LENGTH {
+/// Decodes a base64 symmetric key, which must be exactly
+/// [`KEY_LENGTH`] bytes (`wrong_length` otherwise, so encryption and
+/// decryption keep their own TS error messages).
+fn symmetric_key(
+    key_base64: &str,
+    wrong_length: CryptoError,
+) -> Result<Zeroizing<[u8; KEY_LENGTH]>, CryptoError> {
+    let bytes = Zeroizing::new(from_base64(key_base64)?);
+    let mut key = Zeroizing::new([0u8; KEY_LENGTH]);
+    if bytes.len() != KEY_LENGTH {
         return Err(wrong_length);
     }
-    XChaCha20Poly1305::new_from_slice(&key).map_err(|_| CryptoError::EncryptionKeyLength)
+    key.copy_from_slice(&bytes);
+    Ok(key)
+}
+
+fn cipher(key: &[u8; KEY_LENGTH]) -> XChaCha20Poly1305 {
+    XChaCha20Poly1305::new(&(*key).into())
 }
 
 /// The JSON text of a payload, as `JSON.stringify` would carry it.
@@ -44,9 +56,12 @@ macro_rules! envelope {
 }
 envelope!(EncryptedEnvelope, KeyringEnvelope, SealedEnvelope);
 
-/// `(nonce, ciphertext)`, both base64.
-fn seal(payload: &impl Serialize, key_base64: &str) -> Result<(String, String), CryptoError> {
-    let cipher = cipher(key_base64, CryptoError::EncryptionKeyLength)?;
+/// `(nonce, ciphertext)`, both base64, under a raw key.
+pub(crate) fn seal(
+    payload: &impl Serialize,
+    key: &[u8; KEY_LENGTH],
+) -> Result<(String, String), CryptoError> {
+    let cipher = cipher(key);
     let plaintext = to_json(payload)?;
     let nonce = random_array::<NONCE_LENGTH>()?;
     let ciphertext = cipher
@@ -62,7 +77,8 @@ pub fn encrypt_envelope(
     key_base64: &str,
     key_id: &str,
 ) -> Result<EncryptedEnvelope, CryptoError> {
-    let (nonce, ciphertext) = seal(payload, key_base64)?;
+    let key = symmetric_key(key_base64, CryptoError::EncryptionKeyLength)?;
+    let (nonce, ciphertext) = seal(payload, &key)?;
     Ok(EncryptedEnvelope {
         key_id: key_id.to_owned(),
         nonce,
@@ -72,13 +88,16 @@ pub fn encrypt_envelope(
 
 /// [`encrypt_envelope`] for the account keyring: the same format (the TS
 /// client used `encryptEnvelope` for both), typed as a
-/// [`KeyringEnvelope`] so it carries the keyring's larger size limit.
+/// [`KeyringEnvelope`] so it is checked against the keyring's larger size
+/// limit, not the event one, when the API parses it. Like the TS
+/// functions, neither constructor checks the schema's limits itself.
 pub fn encrypt_keyring_envelope(
     payload: &impl Serialize,
     key_base64: &str,
     key_id: &str,
 ) -> Result<KeyringEnvelope, CryptoError> {
-    let (nonce, ciphertext) = seal(payload, key_base64)?;
+    let key = symmetric_key(key_base64, CryptoError::EncryptionKeyLength)?;
+    let (nonce, ciphertext) = seal(payload, &key)?;
     Ok(KeyringEnvelope {
         key_id: key_id.to_owned(),
         nonce,
@@ -86,13 +105,13 @@ pub fn encrypt_keyring_envelope(
     })
 }
 
-/// Raw plaintext bytes of an envelope's ciphertext.
+/// Raw plaintext bytes of an envelope's ciphertext, under a raw key.
 pub(crate) fn decrypt_bytes(
     nonce_base64: &str,
     ciphertext_base64: &str,
-    key_base64: &str,
+    key: &[u8; KEY_LENGTH],
 ) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
-    let cipher = cipher(key_base64, CryptoError::DecryptionKeyLength)?;
+    let cipher = cipher(key);
     let nonce = from_base64(nonce_base64)?;
     let nonce = XNonce::try_from(nonce.as_slice()).map_err(|_| CryptoError::NonceLength)?;
     let ciphertext = from_base64(ciphertext_base64)?;
@@ -107,6 +126,7 @@ pub(crate) fn decrypt_bytes(
 /// or any tampering (Poly1305 tag mismatch). The payload is not validated:
 /// pass it to the matching `mekur_shared` type's `parse`.
 pub fn decrypt_envelope(envelope: &impl Envelope, key_base64: &str) -> Result<Value, CryptoError> {
-    let plaintext = decrypt_bytes(envelope.nonce(), envelope.ciphertext(), key_base64)?;
+    let key = symmetric_key(key_base64, CryptoError::DecryptionKeyLength)?;
+    let plaintext = decrypt_bytes(envelope.nonce(), envelope.ciphertext(), &key)?;
     serde_json::from_slice(&plaintext).map_err(|_| CryptoError::PlaintextNotJson)
 }

@@ -5,7 +5,7 @@ use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 use x25519_dalek::{PublicKey, StaticSecret};
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::{CryptoError, KEY_LENGTH, SALT_LENGTH, from_base64, to_base64};
 
@@ -21,11 +21,16 @@ const ENCRYPTION_KEY_INFO: &[u8] = b"schedule-app:encryption-key:v1";
 const IDENTITY_KEY_INFO: &[u8] = b"schedule-app:identity-key:v1";
 
 /// An X25519 key pair, both halves base64.
-#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+///
+/// Secret fields are `Zeroizing` (wiped when dropped, wherever they are
+/// moved to) rather than the struct being `ZeroizeOnDrop`, so callers can
+/// move a field out without cloning it into an unprotected `String`. No
+/// `PartialEq`: comparing secrets with `==` is not constant-time.
+#[derive(Clone)]
 pub struct KeyPair {
     pub public_key: String,
     /// NEVER sent to the server.
-    pub secret_key: String,
+    pub secret_key: Zeroizing<String>,
 }
 
 impl std::fmt::Debug for KeyPair {
@@ -38,14 +43,15 @@ impl std::fmt::Debug for KeyPair {
 }
 
 /// Everything derived from one password (see
-/// [`derive_auth_and_encryption_keys`]). All fields are base64.
-#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+/// [`derive_auth_and_encryption_keys`]). All fields are base64; see
+/// [`KeyPair`] for why secrets are `Zeroizing` fields.
+#[derive(Clone)]
 pub struct AuthAndEncryptionKeys {
     /// Sent to the server only at login, over TLS; the server stores its
     /// SHA-256.
-    pub auth_key: String,
+    pub auth_key: Zeroizing<String>,
     /// Encrypts the keyring. Never leaves the client.
-    pub encryption_key: String,
+    pub encryption_key: Zeroizing<String>,
     /// The account's X25519 identity: the public half is registered with
     /// the server so others can seal invitations to it; the secret half
     /// never leaves the client.
@@ -126,7 +132,7 @@ pub fn generate_key_pair() -> Result<KeyPair, CryptoError> {
     let secret = random_array::<32>()?;
     Ok(KeyPair {
         public_key: to_base64(&x25519_public(&secret)),
-        secret_key: to_base64(secret.as_ref()),
+        secret_key: Zeroizing::new(to_base64(secret.as_ref())),
     })
 }
 
@@ -141,7 +147,11 @@ pub fn generate_key_pair() -> Result<KeyPair, CryptoError> {
 /// different keyboards derives the same keys. A fresh 16-byte salt is
 /// generated when `salt` is `None`.
 ///
-/// This costs ~128 MiB and real CPU time by design.
+/// This costs ~128 MiB and seconds of CPU by design, synchronously. The
+/// TS version was `async` and yielded to the event loop; in the browser
+/// this must run in a dedicated Web Worker (see `docs/RUST_MIGRATION.md`,
+/// step 4e), which also lets the 128 MiB of wasm memory -- which never
+/// shrinks -- be released by ending the worker.
 pub fn derive_auth_and_encryption_keys(
     password: &str,
     salt: Option<&[u8]>,
@@ -150,7 +160,11 @@ pub fn derive_auth_and_encryption_keys(
         Some(s) => Zeroizing::new(s.to_vec()),
         None => Zeroizing::new(random_bytes(SALT_LENGTH)?),
     };
-    let normalized: Zeroizing<String> = Zeroizing::new(password.nfkc().collect());
+    // Sized exactly before filling, so no partly written copy of the
+    // password is left behind in a freed buffer by reallocation.
+    let normalized_len = password.nfkc().map(char::len_utf8).sum();
+    let mut normalized = Zeroizing::new(String::with_capacity(normalized_len));
+    normalized.extend(password.nfkc());
     let params = scrypt::Params::new(SCRYPT_LOG_N, SCRYPT_R, SCRYPT_P)
         .expect("N = 2^17, r = 8, p = 1 are valid scrypt parameters");
     let mut master = Zeroizing::new([0u8; KEY_LENGTH]);
@@ -161,11 +175,11 @@ pub fn derive_auth_and_encryption_keys(
     let encryption_key = hkdf32(master.as_ref(), Some(&used_salt), ENCRYPTION_KEY_INFO);
     let identity_seed = hkdf32(master.as_ref(), Some(&used_salt), IDENTITY_KEY_INFO);
     Ok(AuthAndEncryptionKeys {
-        auth_key: to_base64(auth_key.as_ref()),
-        encryption_key: to_base64(encryption_key.as_ref()),
+        auth_key: Zeroizing::new(to_base64(auth_key.as_ref())),
+        encryption_key: Zeroizing::new(to_base64(encryption_key.as_ref())),
         identity_key_pair: KeyPair {
             public_key: to_base64(&x25519_public(&identity_seed)),
-            secret_key: to_base64(identity_seed.as_ref()),
+            secret_key: Zeroizing::new(to_base64(identity_seed.as_ref())),
         },
         salt: to_base64(&used_salt),
     })

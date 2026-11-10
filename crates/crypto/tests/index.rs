@@ -6,6 +6,18 @@ use mekur_crypto::*;
 use mekur_shared::{EncryptedEnvelope, SealedEnvelope};
 use serde_json::{Value, json};
 
+/// Every field, for comparing derivations (the types deliberately have no
+/// `PartialEq`).
+fn fields(k: &AuthAndEncryptionKeys) -> [&str; 5] {
+    [
+        &k.auth_key,
+        &k.encryption_key,
+        &k.identity_key_pair.public_key,
+        &k.identity_key_pair.secret_key,
+        &k.salt,
+    ]
+}
+
 fn key_pair() -> KeyPair {
     generate_key_pair().unwrap()
 }
@@ -25,19 +37,19 @@ fn key_pair_has_distinct_32_byte_halves() {
     let pair = key_pair();
     assert_eq!(from_base64(&pair.public_key).unwrap().len(), 32);
     assert_eq!(from_base64(&pair.secret_key).unwrap().len(), 32);
-    assert_ne!(pair.public_key, pair.secret_key);
+    assert_ne!(pair.public_key, *pair.secret_key);
 }
 
 #[test]
 fn key_pair_differs_every_call() {
-    assert_ne!(key_pair().secret_key, key_pair().secret_key);
+    assert_ne!(*key_pair().secret_key, *key_pair().secret_key);
 }
 
 #[test]
 fn debug_output_redacts_secrets() {
     let pair = key_pair();
     let shown = format!("{pair:?}");
-    assert!(!shown.contains(&pair.secret_key));
+    assert!(!shown.contains(pair.secret_key.as_str()));
     assert!(shown.contains(&pair.public_key));
 }
 
@@ -56,7 +68,7 @@ fn derivation_is_deterministic_distinct_and_password_dependent() {
     assert_eq!(from_base64(&a.auth_key).unwrap().len(), 32);
     assert_eq!(from_base64(&a.encryption_key).unwrap().len(), 32);
     // deterministic given the same password and salt, identity included
-    assert_eq!(a, b);
+    assert_eq!(fields(&a), fields(&b));
     assert_eq!(
         from_base64(&a.identity_key_pair.public_key).unwrap().len(),
         32
@@ -65,11 +77,14 @@ fn derivation_is_deterministic_distinct_and_password_dependent() {
     // different passwords, different keys
     assert_ne!(a.auth_key, c.auth_key);
     assert_ne!(a.encryption_key, c.encryption_key);
-    assert_ne!(a.identity_key_pair, c.identity_key_pair);
+    assert_ne!(
+        a.identity_key_pair.public_key,
+        c.identity_key_pair.public_key
+    );
 
     let shown = format!("{a:?}");
-    assert!(!shown.contains(&a.auth_key) && !shown.contains(&a.encryption_key));
-    assert!(!shown.contains(&a.identity_key_pair.secret_key));
+    assert!(!shown.contains(a.auth_key.as_str()) && !shown.contains(a.encryption_key.as_str()));
+    assert!(!shown.contains(a.identity_key_pair.secret_key.as_str()));
 }
 
 #[test]

@@ -20,9 +20,9 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
-use crate::envelope::{decrypt_bytes, encrypt_envelope, to_json};
+use crate::envelope::{decrypt_bytes, seal, to_json};
 use crate::keys::{hkdf32, random_array, x25519_key, x25519_public, x25519_shared};
-use crate::{CryptoError, KeyPair, to_base64};
+use crate::{CryptoError, KEY_LENGTH, KeyPair, to_base64};
 
 const SEAL_INFO: &[u8] = b"schedule-app:seal:v1";
 const SENDER_PROOF_INFO: &[u8] = b"schedule-app:sender-proof:v1";
@@ -53,11 +53,15 @@ struct Inner<'a> {
     sender: Option<Sender<'a>>,
 }
 
-fn seal_key(shared: &[u8; 32], epk: &[u8; 32], recipient_public: &[u8; 32]) -> String {
+fn seal_key(
+    shared: &[u8; 32],
+    epk: &[u8; 32],
+    recipient_public: &[u8; 32],
+) -> Zeroizing<[u8; KEY_LENGTH]> {
     let mut salt = [0u8; 64];
     salt[..32].copy_from_slice(epk);
     salt[32..].copy_from_slice(recipient_public);
-    to_base64(hkdf32(shared, Some(&salt), SEAL_INFO).as_ref())
+    hkdf32(shared, Some(&salt), SEAL_INFO)
 }
 
 fn sender_proof(static_shared: &[u8; 32], epk: &[u8; 32], body: &str) -> String {
@@ -81,11 +85,11 @@ pub fn seal_to_recipient(
     let recipient_public = x25519_key(recipient_public_key)?;
     let ephemeral = random_array::<32>()?;
     let epk = x25519_public(&ephemeral);
-    let key = Zeroizing::new(seal_key(
+    let key = seal_key(
         &*x25519_shared(&ephemeral, &recipient_public)?,
         &epk,
         &recipient_public,
-    ));
+    );
 
     let body_bytes = to_json(payload)?;
     let body = std::str::from_utf8(&body_bytes).expect("serde_json writes UTF-8");
@@ -99,11 +103,11 @@ pub fn seal_to_recipient(
             })
         }
     };
-    let envelope = encrypt_envelope(&Inner { body, sender }, &key, SEALED_KEY_ID)?;
+    let (nonce, ciphertext) = seal(&Inner { body, sender }, &key)?;
     Ok(SealedEnvelope {
-        key_id: envelope.key_id,
-        nonce: envelope.nonce,
-        ciphertext: envelope.ciphertext,
+        key_id: SEALED_KEY_ID.to_owned(),
+        nonce,
+        ciphertext,
         epk: to_base64(&epk),
     })
 }
@@ -131,11 +135,11 @@ pub fn open_sealed(
     let recipient_secret = x25519_key(recipient_secret_key)?;
     let recipient_public = x25519_public(&recipient_secret);
     let epk = x25519_key(&sealed.epk)?;
-    let key = Zeroizing::new(seal_key(
+    let key = seal_key(
         &*x25519_shared(&recipient_secret, &epk)?,
         &epk,
         &recipient_public,
-    ));
+    );
     let plaintext = decrypt_bytes(&sealed.nonce, &sealed.ciphertext, &key)?;
     let inner: Value =
         serde_json::from_slice(&plaintext).map_err(|_| CryptoError::PlaintextNotJson)?;
@@ -200,11 +204,11 @@ mod tests {
         let epk = x25519_public(&ephemeral);
         let shared = x25519_shared(&ephemeral, &recipient_public).unwrap();
         let key = seal_key(&shared, &epk, &recipient_public);
-        let e = encrypt_envelope(inner, &key, SEALED_KEY_ID).unwrap();
+        let (nonce, ciphertext) = seal(inner, &key).unwrap();
         SealedEnvelope {
-            key_id: e.key_id,
-            nonce: e.nonce,
-            ciphertext: e.ciphertext,
+            key_id: SEALED_KEY_ID.to_owned(),
+            nonce,
+            ciphertext,
             epk: to_base64(&epk),
         }
     }

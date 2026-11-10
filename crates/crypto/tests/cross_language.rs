@@ -71,10 +71,13 @@ fn derives_the_same_keys_as_typescript() {
         let salt = from_base64(s(d, "salt")).unwrap();
         let keys = derive_auth_and_encryption_keys(s(d, "password"), Some(&salt)).unwrap();
         let password = s(d, "password");
-        assert_eq!(keys.auth_key, s(d, "authKey"), "{password:?}");
-        assert_eq!(keys.encryption_key, s(d, "encryptionKey"), "{password:?}");
+        assert_eq!(*keys.auth_key, s(d, "authKey"), "{password:?}");
+        assert_eq!(*keys.encryption_key, s(d, "encryptionKey"), "{password:?}");
         assert_eq!(keys.identity_key_pair.public_key, s(d, "identityPublicKey"));
-        assert_eq!(keys.identity_key_pair.secret_key, s(d, "identitySecretKey"));
+        assert_eq!(
+            *keys.identity_key_pair.secret_key,
+            s(d, "identitySecretKey")
+        );
         assert_eq!(keys.salt, s(d, "salt"));
         assert_eq!(sha256_base64(&keys.auth_key).unwrap(), s(d, "authKeyHash"));
     }
@@ -99,7 +102,7 @@ fn rust_vectors() {
         let d = arr(&ts, "derivations");
         let pair = |d: &Value| KeyPair {
             public_key: s(d, "identityPublicKey").to_owned(),
-            secret_key: s(d, "identitySecretKey").to_owned(),
+            secret_key: s(d, "identitySecretKey").to_owned().into(),
         };
         let (alice, bob, mallory) = (&d[0], &d[4], &d[1]);
         let payloads: Vec<Value> = arr(&ts, "envelopes")
@@ -139,7 +142,7 @@ fn rust_vectors() {
             .collect();
         let forger = KeyPair {
             public_key: s(alice, "identityPublicKey").to_owned(),
-            secret_key: s(mallory, "identitySecretKey").to_owned(),
+            secret_key: s(mallory, "identitySecretKey").to_owned().into(),
         };
         let forged = vec![json!({
             "recipientSecretKey": bob_secret,

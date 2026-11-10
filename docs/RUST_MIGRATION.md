@@ -160,13 +160,23 @@ with a line on anything simplified or discovered.
   (`crates/crypto/tests/index.rs`, every TS test plus key/nonce lengths,
   low-order points and malformed sealed bodies).
   - Keys cross the API as base64 strings, as in TS, so call sites port
-    one-to-one. Secrets are zeroized on drop and redacted from `Debug`.
+    one-to-one. Secret fields are `Zeroizing<String>` (wiped on drop,
+    movable out of their struct) and redacted from `Debug`; key types
+    have no `PartialEq`, so secrets aren't compared with a non-constant-
+    time `==`. Internally keys stay raw `Zeroizing` byte arrays (no
+    base64 round trip for the seal key), and base64 decoding and NFKC
+    normalisation write into buffers sized up front and wiped on drop.
+  - **Derivation is synchronous** (`scryptAsync` yielded to the event
+    loop) and allocates ~128 MiB, which wasm memory never gives back. Step
+    4e must call it in a dedicated Web Worker and end the worker
+    afterwards, or login freezes the page and the tab keeps the memory.
   - `decrypt_envelope` returns a `serde_json::Value`; callers validate it
     with the matching `mekur_shared` type's `parse`, as the TS client's
     `decryptEnvelope<T>` cast was meant to be followed by a schema check.
     It opens any envelope shape (`Envelope` trait); `encrypt_keyring_envelope`
-    makes a `KeyringEnvelope` (same bytes as `encrypt_envelope`) so the
-    keyring's larger size limit stays a type, not a convention.
+    makes a `KeyringEnvelope` (same bytes as `encrypt_envelope`), so the
+    API checks it against the keyring's size limit. Like the TS functions,
+    the constructors don't check the schema limits themselves.
   - `from_base64` implements `atob`'s forgiving-base64 (whitespace
     ignored, padding optional but checked, non-zero leftover bits
     allowed), on top of the `base64` crate.
@@ -238,7 +248,8 @@ tests are ported to Rust (`cargo test` for pure logic,
   meaning; otherwise port the expansion directly.
 - [ ] 4d. `timeline`, `timelineInteraction`
 - [ ] 4e. `events`, `keyring`, `social`, `session`, `api`, `http`,
-  `eventCache`, `push` -- the crypto call sites. After this nothing
+  `eventCache`, `push` -- the crypto call sites. Key derivation runs in a
+  short-lived Web Worker (see step 2). After this nothing
   imports `packages/crypto` or `packages/shared`: delete both.
 
 ### 5. UI
@@ -360,3 +371,5 @@ tests are ported to Rust (`cargo test` for pure logic,
   only its `wasm_js` feature in the browser (no `--cfg`). scrypt and its
   inner crates build optimised even in dev, or a debug derivation takes
   tens of seconds. CI now also lints and builds `mekur-crypto` for wasm32.
+  Review (no correctness findings) tightened secret handling as noted
+  under step 2, and surfaced the synchronous-scrypt requirement for 4e.

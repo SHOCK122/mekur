@@ -14,6 +14,8 @@ use base64::alphabet;
 use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
 use base64::engine::{DecodePaddingMode, general_purpose::STANDARD};
 
+use zeroize::Zeroizing;
+
 use crate::CryptoError;
 
 /// Standard alphabet, no padding expected (it is stripped first), and the
@@ -31,19 +33,25 @@ pub fn to_base64(bytes: &[u8]) -> String {
     STANDARD.encode(bytes)
 }
 
-/// Decodes base64 the way the browser's `atob` does.
+/// Decodes base64 the way the browser's `atob` does. Callers decoding a
+/// secret should wrap the result in `Zeroizing`.
 pub fn from_base64(input: &str) -> Result<Vec<u8>, CryptoError> {
-    // 1. Remove ASCII whitespace (TAB, LF, FF, CR, SPACE).
-    let mut data: Vec<u8> = input
-        .bytes()
-        .filter(|b| !matches!(b, b'\t' | b'\n' | b'\x0C' | b'\r' | b' '))
-        .collect();
+    // 1. Remove ASCII whitespace (TAB, LF, FF, CR, SPACE). The copy is
+    //    sized up front (no reallocation) and wiped on drop: the input is
+    //    often a secret key.
+    let mut data = Zeroizing::new(Vec::with_capacity(input.len()));
+    data.extend(
+        input
+            .bytes()
+            .filter(|b| !matches!(b, b'\t' | b'\n' | b'\x0C' | b'\r' | b' ')),
+    );
     // 2. If the length is a multiple of 4, drop one or two trailing '='.
     if data.len().is_multiple_of(4) {
+        let len = data.len();
         if data.ends_with(b"==") {
-            data.truncate(data.len() - 2);
+            data.truncate(len - 2);
         } else if data.ends_with(b"=") {
-            data.truncate(data.len() - 1);
+            data.truncate(len - 1);
         }
     }
     // 3. A remainder of 1 can't encode a byte; any other '=' is invalid
