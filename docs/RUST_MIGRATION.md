@@ -229,6 +229,11 @@ routes, repository and tests for that group are deleted.
     routes plus `ROUTES` in `crates/api/src/app.rs` (read from the source)
     must equal what the document lists, and no route is on both servers.
     Later slices edit the JSON file directly.
+  - **Proxy split**: nginx (`location =` per path) and the Vite proxy (one
+    regex) list the Rust server's paths; `openapi.test.ts` checks both
+    against `ROUTES`, so a slice can't port a route and forget a proxy.
+    The split is by path, so a path moves to Rust with all its methods
+    (also checked).
   - **Parity fixture**: `apps/api/test/rustParity.test.ts` records the TS
     server's 404s (unknown paths, wrong methods, trailing slash, case,
     query strings) with every header in
@@ -440,3 +445,9 @@ tests are ported to Rust (`cargo test` for pure logic,
   whole router instead. Checked end to end with a real nginx in front of
   both servers (split, query strings passed through, OpenAPI bytes
   identical to the TS server's).
+  Review fixes: the migration connection is closed rather than pooled, so
+  a cancelled run can't leave the advisory lock held on an idle pooled
+  connection (blocking both servers' next start); the lock-released test
+  only counts locks on its own database (it flaked against parallel
+  tests); `healthcheck` asks the address in `HOST`; the proxies' route
+  lists are tested; test binaries migrate once rather than per test.

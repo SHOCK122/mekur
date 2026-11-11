@@ -7,11 +7,15 @@
 # requirement is met.
 FROM rust:1.97-slim-trixie AS build
 WORKDIR /repo
-COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
+# rust-toolchain.toml is left out on purpose: it would make rustup fetch
+# clippy, rustfmt and the wasm32 target, none of which the image needs. The
+# base image's 1.97 is the pinned minor version.
+COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 # Embedded at build time by crates/api/build.rs.
 COPY apps/api/src/db/migrations apps/api/src/db/migrations
-RUN cargo build --release --locked -p mekur-api
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --release --locked -p mekur-api
 
 FROM debian:trixie-slim AS runtime
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin app

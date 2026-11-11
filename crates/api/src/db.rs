@@ -58,6 +58,13 @@ pub async fn run_migrations_from(
     migrations: &[(&str, &'static str)],
 ) -> Result<Vec<String>, MigrationError> {
     let mut conn = pool.acquire().await?;
+    // The lock is held by this session, so this connection must never go
+    // back to the pool still holding it -- which is what would happen if
+    // this future were dropped mid-run (a timeout, a `select!`): every
+    // later run, from either server, would then wait on an idle pooled
+    // connection. Closing the session releases the lock whatever happens,
+    // at the cost of one reconnect after a once-per-startup job.
+    conn.close_on_drop();
     sqlx::query("SELECT pg_advisory_lock($1)")
         .bind(MIGRATION_LOCK_KEY)
         .execute(&mut *conn)
@@ -65,21 +72,16 @@ pub async fn run_migrations_from(
 
     let result = apply_pending(&mut conn, migrations).await;
 
-    // Always release the lock, as the TS runner's `finally` does. If the
-    // unlock itself fails the connection is suspect: close it rather than
-    // hand it back to the pool, since closing the session is what
-    // guarantees Postgres drops the lock.
+    // Release the lock explicitly too, as the TS runner's `finally` does,
+    // so it's free the moment we're done rather than when the close lands.
     let unlocked = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(MIGRATION_LOCK_KEY)
         .execute(&mut *conn)
         .await;
-    if let Err(err) = unlocked {
-        let _ = conn.detach().close().await;
-        // The migration error, if any, is the more useful one to report.
-        result?;
-        return Err(err.into());
-    }
-    result
+    // The migration error, if any, is the more useful one to report.
+    let applied = result?;
+    unlocked?;
+    Ok(applied)
 }
 
 async fn apply_pending(

@@ -68,7 +68,7 @@ function report(result: ScenarioResult) {
 }
 
 async function main() {
-  console.log(`Load testing ${BASE_URL} -- concurrency=${CONCURRENCY}, duration=${DURATION_MS}ms per scenario\n`);
+  console.log(`Load testing ${BASE_URL} (and ${RUST_BASE_URL} for /health) -- concurrency=${CONCURRENCY}, duration=${DURATION_MS}ms per scenario\n`);
 
   report(
     await runScenario("GET /health (Rust server, baseline, no DB)", () => fetch(`${RUST_BASE_URL}/health`))

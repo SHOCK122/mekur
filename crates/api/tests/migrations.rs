@@ -124,9 +124,12 @@ async fn a_failing_migration_rolls_back_is_not_recorded_and_releases_the_lock() 
         .unwrap();
     assert_eq!(recorded, i64::try_from(MIGRATIONS.len()).unwrap());
 
-    // The lock was released: no session holds it, and a later run proceeds.
+    // The lock was released: no session on this database holds it (other
+    // tests take it on their own databases at the same time), and a later
+    // run proceeds.
     let held: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid::bigint = $1",
+        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid::bigint = $1 \
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
     )
     .bind(mekur_api::db::MIGRATION_LOCK_KEY)
     .fetch_one(&db)

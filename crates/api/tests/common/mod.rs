@@ -26,19 +26,32 @@ use tower::ServiceExt;
 const DEFAULT_DATABASE_URL: &str =
     "postgres://postgres:postgres@localhost:5432/scheduleapp_rust_test";
 
-static SHARED_DATABASE: Mutex<()> = Mutex::const_new(());
+/// Held by each test using the shared database; `true` once this binary
+/// has created and migrated it.
+static SHARED_DATABASE: Mutex<bool> = Mutex::const_new(false);
 
 pub fn database_url() -> String {
     std::env::var("RUST_TEST_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned())
 }
 
+/// Splits a database URL into (everything before the name, name, query
+/// string with its `?`).
+fn split_url(url: &str) -> (&str, &str, &str) {
+    let (before_query, query) = url.find('?').map_or((url, ""), |i| url.split_at(i));
+    let (server, name) = before_query
+        .rsplit_once('/')
+        .expect("a database URL has a path");
+    (server, name, query)
+}
+
+/// The database name in `url`.
+pub fn database_name(url: &str) -> &str {
+    split_url(url).1
+}
+
 /// `url` with its database name replaced by `name`.
 pub fn with_database(url: &str, name: &str) -> String {
-    let (server, rest) = url.rsplit_once('/').expect("a database URL has a path");
-    let query = rest
-        .split_once('?')
-        .map(|(_, q)| format!("?{q}"))
-        .unwrap_or_default();
+    let (server, _, query) = split_url(url);
     format!("{server}/{name}{query}")
 }
 
@@ -106,26 +119,25 @@ pub async fn drop_database(name: &str) {
 pub struct TestApp {
     pub app: Router,
     pub db: PgPool,
-    _exclusive: MutexGuard<'static, ()>,
+    _exclusive: MutexGuard<'static, bool>,
 }
 
 impl TestApp {
     pub async fn new() -> Self {
-        let exclusive = SHARED_DATABASE.lock().await;
+        let mut migrated = SHARED_DATABASE.lock().await;
         let url = database_url();
-        let name = url
-            .rsplit('/')
-            .next()
-            .and_then(|n| n.split('?').next())
-            .unwrap_or_default();
-        ensure_database(name).await;
         let db = create_pool(&url).expect("valid database URL");
-        run_migrations(&db).await.expect("migrations apply");
+        // Once per test binary; each test just empties the tables.
+        if !*migrated {
+            ensure_database(database_name(&url)).await;
+            run_migrations(&db).await.expect("migrations apply");
+            *migrated = true;
+        }
         truncate_all(&db).await;
         TestApp {
             app: build_app(AppState { db: db.clone() }),
             db,
-            _exclusive: exclusive,
+            _exclusive: migrated,
         }
     }
 

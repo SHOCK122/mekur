@@ -25,7 +25,7 @@ async fn main() -> ExitCode {
     };
     let result = match std::env::args().nth(1).as_deref() {
         None => serve(config).await,
-        Some("healthcheck") => healthcheck(config.port).await,
+        Some("healthcheck") => healthcheck(&config.host, config.port).await,
         Some(other) => Err(format!(
             "unknown command {other:?} (expected none, or \"healthcheck\")"
         )),
@@ -79,9 +79,16 @@ async fn shutdown_signal() {
 }
 
 /// Succeeds if `GET /health` on this machine answers 200 within 3 seconds.
-async fn healthcheck(port: u16) -> Result<(), String> {
+/// Asks the address the server listens on (`HOST`), or loopback when it
+/// listens on every interface.
+async fn healthcheck(host: &str, port: u16) -> Result<(), String> {
+    let host = match host {
+        "0.0.0.0" => "127.0.0.1",
+        "::" | "[::]" => "::1",
+        other => other,
+    };
     let check = async {
-        let mut stream = TcpStream::connect(("127.0.0.1", port)).await?;
+        let mut stream = TcpStream::connect((host, port)).await?;
         stream
             .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
             .await?;

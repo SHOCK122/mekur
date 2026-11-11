@@ -51,8 +51,7 @@ async fn health() -> Response {
 
 /// The OpenAPI document, sent as `JSON.stringify` sent it: without
 /// whitespace. The file is kept pretty-printed for review.
-static OPENAPI_JSON: LazyLock<String> =
-    LazyLock::new(|| minify_json(include_str!("../openapi.json")));
+static OPENAPI_JSON: LazyLock<String> = LazyLock::new(|| minify_json(OPENAPI_SOURCE));
 
 /// The document as stored, for tests.
 pub const OPENAPI_SOURCE: &str = include_str!("../openapi.json");
