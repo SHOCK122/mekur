@@ -6,6 +6,15 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig({
   server: {
     proxy: {
+      // The routes already ported to Rust go to the Rust API server
+      // (`PORT=3001 cargo run -p mekur-api`), the rest to the TS one -- the
+      // same split nginx makes (infra/nginx.conf). Listed before "/api",
+      // since the first matching entry wins.
+      "^/api/(health|openapi\\.json)(\\?|$)": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
       "/api": {
         target: "http://localhost:3000",
         changeOrigin: true,

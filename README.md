@@ -85,9 +85,14 @@ npm install
 npm run test        # every package's test suite
 npm run typecheck   # typecheck every package
 
-cd apps/api && npm run dev    # API on :3000
-cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to :3000
+cd apps/api && npm run dev    # TS API on :3000
+PORT=3001 cargo run -p mekur-api   # Rust API on :3001 (routes ported so far)
+cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to both
 ```
+
+The API is mid-migration to Rust: the Rust server answers the routes
+already ported (`/health`, `/openapi.json`) and the TS server the rest.
+nginx (Docker) and the Vite dev proxy split `/api` between them.
 
 Rust crates (the toolchain is pinned in `rust-toolchain.toml`):
 
@@ -105,12 +110,15 @@ run one at a time, since they share the database):
 ```bash
 createdb scheduleapp_test
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/scheduleapp_test npm run test
+# The Rust tests use their own database (created if missing), so both
+# suites can run at once:
+RUST_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/scheduleapp_rust_test cargo test
 ```
 
 Load testing against a running instance:
 
 ```bash
-cd apps/api && BASE_URL=http://localhost:3000 npm run loadtest
+cd apps/api && BASE_URL=http://localhost:3000 RUST_BASE_URL=http://localhost:3001 npm run loadtest
 ```
 
 ## Project structure
@@ -123,7 +131,7 @@ packages/
   shared/   Shared types and validation schemas (Zod)
   crypto/   Client-side encryption (X25519, XChaCha20-Poly1305, scrypt, HKDF)
 infra/
-  Dockerfile.api, Dockerfile.web, nginx.conf
+  Dockerfile.api, Dockerfile.api-rs, Dockerfile.web, nginx.conf
 crates/     Rust workspace replacing the TypeScript, module by module
 docs/
   ARCHITECTURE.md   threat model, keys, capability model, invitations, scaling

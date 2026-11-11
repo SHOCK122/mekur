@@ -37,11 +37,36 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Any HTTP answer: /health itself is served by api-rs (it 404s here).
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  # The Rust API server (crates/api), side by side with the TS one during
+  # the migration: nginx sends it the routes ported so far. Same database,
+  # same secrets; both run the (shared, lock-protected) migrations at start.
+  api-rs:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api-rs
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgres://scheduleapp:${POSTGRES_PASSWORD:-scheduleapp}@postgres:5432/scheduleapp
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in a .env file -- see .env.example}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:?Set VAPID_PUBLIC_KEY in a .env file -- see .env.example}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:?Set VAPID_PRIVATE_KEY in a .env file -- see .env.example}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:you@example.com}
+      - NODE_ENV=production
+      - TRUST_PROXY=1
+    expose:
+      - "3000"
 
   web:
     build:
@@ -50,6 +75,8 @@ services:
     restart: unless-stopped
     depends_on:
       api:
+        condition: service_healthy
+      api-rs:
         condition: service_healthy
     ports:
       - "3080:80"

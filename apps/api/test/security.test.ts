@@ -114,7 +114,8 @@ describe("security hardening", () => {
     });
 
     it("sends security headers that mitigate clickjacking and content injection", async () => {
-      const response = await app.inject({ method: "GET", url: "/health" });
+      // Any response: /health itself is now served by the Rust server.
+      const response = await app.inject({ method: "GET", url: "/keyring" });
       expect(response.headers["content-security-policy"]).toBeDefined();
       expect(String(response.headers["content-security-policy"])).toContain("frame-ancestors 'none'");
       expect(response.headers["x-content-type-options"]).toBe("nosniff");

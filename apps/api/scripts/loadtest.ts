@@ -6,10 +6,12 @@
  * instance (see package.json's `loadtest` script) to get honest,
  * reproducible numbers instead of aspirational ones.
  *
- * Usage: BASE_URL=http://localhost:3000 npx tsx scripts/loadtest.ts
+ * Usage: BASE_URL=http://localhost:3000 RUST_BASE_URL=http://localhost:3001 npx tsx scripts/loadtest.ts
  */
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+// /health is served by the Rust server (crates/api) during the migration.
+const RUST_BASE_URL = process.env.RUST_BASE_URL ?? "http://localhost:3001";
 const CONCURRENCY = Number(process.env.LOADTEST_CONCURRENCY ?? 20);
 const DURATION_MS = Number(process.env.LOADTEST_DURATION_MS ?? 5000);
 
@@ -68,7 +70,9 @@ function report(result: ScenarioResult) {
 async function main() {
   console.log(`Load testing ${BASE_URL} -- concurrency=${CONCURRENCY}, duration=${DURATION_MS}ms per scenario\n`);
 
-  report(await runScenario("GET /health (baseline, no DB)", () => fetch(`${BASE_URL}/health`)));
+  report(
+    await runScenario("GET /health (Rust server, baseline, no DB)", () => fetch(`${RUST_BASE_URL}/health`))
+  );
 
   // Set up a real user + token for the authenticated scenarios, using
   // fixed pre-derived key material (no need to run scrypt here -- we're

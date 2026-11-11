@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+# The Rust API server (crates/api). During the migration it serves the
+# route groups ported so far; nginx sends everything else to the TS server
+# (Dockerfile.api). See docs/RUST_MIGRATION.md.
+
+# Build and runtime are the same Debian release, so the binary's glibc
+# requirement is met.
+FROM rust:1.97-slim-trixie AS build
+WORKDIR /repo
+COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
+COPY crates crates
+# Embedded at build time by crates/api/build.rs.
+COPY apps/api/src/db/migrations apps/api/src/db/migrations
+RUN cargo build --release --locked -p mekur-api
+
+FROM debian:trixie-slim AS runtime
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin app
+COPY --from=build /repo/target/release/mekur-api /usr/local/bin/mekur-api
+USER app
+EXPOSE 3000
+# The image has no curl; the binary asks its own /health.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD ["mekur-api", "healthcheck"]
+CMD ["mekur-api"]
