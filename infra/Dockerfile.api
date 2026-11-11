@@ -46,7 +46,9 @@ COPY --from=build /repo/apps/api/package.json apps/api/package.json
 
 USER app
 EXPOSE 3000
+# /health is served by the Rust server now (Dockerfile.api-rs), so this asks
+# only that the server answers HTTP at all -- which is all /health showed.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:3000/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"
 
 CMD ["node", "apps/api/dist/server.js"]

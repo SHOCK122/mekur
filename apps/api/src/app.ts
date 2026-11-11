@@ -18,7 +18,6 @@ import { registerPushRoutes } from "./routes/pushRoutes.js";
 import { registerSocialRoutes } from "./routes/socialRoutes.js";
 import { registerKeyringRoutes } from "./routes/keyringRoutes.js";
 import { registerInboxRoutes } from "./routes/inboxRoutes.js";
-import { openApiSpec } from "./openapi.js";
 
 export interface BuildAppOptions {
   db: Database;
@@ -105,8 +104,8 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
 
   app.register(authPlugin, { secret: opts.jwtSecret, apiKeys });
 
-  app.get("/health", async () => ({ status: "ok" }));
-  app.get("/openapi.json", async () => openApiSpec);
+  // GET /health and GET /openapi.json are served by the Rust server
+  // (crates/api) -- see docs/RUST_MIGRATION.md, step 3a.
 
   app.register(async (instance) => {
     registerAuthRoutes(instance, users, opts.authRateLimitMax ?? 10);

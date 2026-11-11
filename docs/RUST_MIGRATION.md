@@ -211,17 +211,62 @@ group to the Rust server and everything else to the TS server. Both use
 the same database and the same `JWT_SECRET`. After each slice the TS
 routes, repository and tests for that group are deleted.
 
-- [ ] **3a. Foundation**: config (same variables, same production
+- [x] **3a. Foundation**: config (same variables, defaults and production
   guards), pool, migration runner, `GET /health`, `GET /openapi.json`,
-  security headers, 256 KB body limit, empty JSON body as `{}`, 404 and
-  parse-error bodies, rate limiting; Rust test harness (real Postgres,
-  truncate between tests, tests serialised, `RUST_TEST_DATABASE_URL`);
-  a Postgres service in the `rust` CI job; Docker image for the Rust
-  server; nginx + Vite proxy split. Port `health.test.ts`,
-  `migrationConcurrency.test.ts` and the header/body-limit parts of
+  helmet's security headers, Fastify's 404s; Rust test harness (real
+  Postgres, truncate between tests, tests serialised,
+  `RUST_TEST_DATABASE_URL`, database created if missing); a Postgres
+  service in the `rust` CI job; `infra/Dockerfile.api-rs` (`api-rs` in
+  `docker-compose.yml`); nginx + Vite proxy split. Ported
+  `health.test.ts`, `migrationConcurrency.test.ts` (plus: re-runs apply
+  nothing, a partly-migrated database is completed, a failing file rolls
+  back and still releases the lock) and the header test of
   `security.test.ts`.
+  - **One OpenAPI document for both servers**: `crates/api/openapi.json`,
+    generated once from `openapi.ts` (now deleted) and served
+    byte-for-byte as before (stored pretty-printed, sent minified). The
+    route-coverage check moved to `apps/api/test/openapi.test.ts`: TS
+    routes plus `ROUTES` in `crates/api/src/app.rs` (read from the source)
+    must equal what the document lists, and no route is on both servers.
+    Later slices edit the JSON file directly.
+  - **Proxy split**: nginx (`location =` per path) and the Vite proxy (one
+    regex) list the Rust server's paths; `openapi.test.ts` checks both
+    against `ROUTES`, so a slice can't port a route and forget a proxy.
+    The split is by path, so a path moves to Rust with all its methods
+    (also checked).
+  - **Parity fixture**: `apps/api/test/rustParity.test.ts` records the TS
+    server's 404s (unknown paths, wrong methods, trailing slash, case,
+    query strings) with every header in
+    `crates/api/tests/fixtures/ts_responses.json`; `tests/ts_parity.rs`
+    replays it, extra headers included. Regenerate with
+    `UPDATE_API_PARITY=1`. axum's `405` + `Allow` for a wrong method
+    is turned into Fastify's 404 without `Allow`.
+  - Migrations are embedded at build time by `build.rs` from
+    `apps/api/src/db/migrations`, so the image carries no SQL files.
+  - Startup checks that the TS server got implicitly from its
+    libraries -- `@fastify/jwt` refusing an empty secret, `web-push`
+    validating the VAPID keys and subject -- arrive with their consumers
+    (3b, 3g); the explicit production guards are ported.
+  - `PORT`/`TRUST_PROXY` are read as decimal whole numbers; `Number()`'s
+    other spellings (`0x1`, `1e0`) are refused rather than reproduced.
+  - **Moved to 3b, with their first consumer**: rate limiting, the 256 KB
+    body limit, empty-JSON-body-as-`{}` and the JSON parse-error body. The
+    TS server never rate-limited `/health` or `/openapi.json` (they are
+    registered before `@fastify/rate-limit` loads, so its `onRoute` hook
+    never sees them -- no `x-ratelimit-*` headers either), and neither
+    route reads a body, so nothing in 3a would use them.
+  - The TS container's healthcheck now accepts any HTTP answer (it gets a
+    404 for `/health`), which is all `/health` ever showed: it never
+    touched the database.
 - [ ] **3b. Auth**: auth extractor (JWT + `sak_` API keys), users
-  repository, `authRoutes`. Port `auth.test.ts`, `publicKeyRepair.test.ts`.
+  repository, `authRoutes`. Port `auth.test.ts`, `publicKeyRepair.test.ts`,
+  and the rate-limit tests of `security.test.ts`. Also, deferred from 3a:
+  rate limiting (global 300/min and the auth routes' own 10/min, per
+  client IP after `TRUST_PROXY` hops, with `@fastify/rate-limit`'s
+  `x-ratelimit-*`/`retry-after` headers and 429 body -- record them in the
+  parity fixture first), the 256 KB body limit (413 body
+  `FST_ERR_CTP_BODY_TOO_LARGE`), empty JSON body as `{}`, and the 400 for
+  malformed JSON.
 - [ ] **3c. API keys**: repository + routes. Port `apiKeys.test.ts`.
 - [ ] **3d. Events & capabilities**: repository + routes incl. batch read
   (one query per request, max 500). Port `capabilities.test.ts`.
@@ -328,6 +373,23 @@ tests are ported to Rust (`cargo test` for pure logic,
 - Body limits: 256 KB globally, but `PUT /keyring` raises its own to
   1.5 MB (`1536 * 1024`). A global `RequestBodyLimitLayer` must be
   overridden on that route.
+- Fastify's 404 is `{"message":"Route METHOD:URL not found","error":"Not
+  Found","statusCode":404}` with the raw request target (query string
+  included), for unknown paths *and* wrong methods (never 405). Paths are
+  case-sensitive and `/health/` is not `/health`. Every JSON reply's
+  `content-type` is `application/json; charset=utf-8`. Helmet's headers
+  are on every reply, 404s included.
+- Route-level rate limits apply only to routes registered after the plugin
+  loaded; check each route group's actual headers (the parity fixture)
+  rather than assuming the global limit covers it.
+- A malformed JSON body's 400 `message` is V8's `JSON.parse` error text
+  (`Expected property name or '}' in JSON at position 1 (line 1 column
+  2)`), which `serde_json` can't reproduce: keep the shape, document the
+  text as a divergence. Fastify also closes the connection after a 400
+  parse error or a 413.
+- Fastify parses `text/plain` bodies too (to a string), so a route given
+  one answers with its own validation error (400 `invalid_type`, received
+  `string`), not a 415.
 - During the side-by-side phase each server keeps its own rate-limit
   buckets, so the effective limit for a client is briefly the sum. Accepted
   for the transition; it ends at 3g.
@@ -373,3 +435,19 @@ tests are ported to Rust (`cargo test` for pure logic,
   tens of seconds. CI now also lints and builds `mekur-crypto` for wasm32.
   Review (no correctness findings) tightened secret handling as noted
   under step 2, and surfaced the synchronous-scrypt requirement for 4e.
+- Step 3a (API foundation). The Rust server now answers `/health` and
+  `/openapi.json` behind nginx and the Vite proxy; the TS server dropped
+  both. Found by probing the running TS server rather than reading it:
+  neither route was ever rate-limited (see 3a), so the limiter and body
+  handling moved to 3b, where the first routes that use them land. Also
+  found: axum still adds `Allow` to a wrong-method reply after
+  `Router::layer` middleware has run, so response middleware wraps the
+  whole router instead. Checked end to end with a real nginx in front of
+  both servers (split, query strings passed through, OpenAPI bytes
+  identical to the TS server's).
+  Review fixes: the migration connection is closed rather than pooled, so
+  a cancelled run can't leave the advisory lock held on an idle pooled
+  connection (blocking both servers' next start); the lock-released test
+  only counts locks on its own database (it flaked against parallel
+  tests); `healthcheck` asks the address in `HOST`; the proxies' route
+  lists are tested; test binaries migrate once rather than per test.
