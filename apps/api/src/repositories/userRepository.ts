@@ -79,7 +79,8 @@ export function createUserRepository(db: Database) {
     },
 
     /** Replaces a user's stored public key. Only ever called from login,
-     * after the password has been proven -- see authRoutes. */
+     * after the password has been proven -- see the login route in
+     * crates/api/src/routes/auth.rs. */
     async updatePublicKey(id: string, publicKey: string): Promise<boolean> {
       const result = await db.query(`UPDATE users SET public_key = $2 WHERE id = $1`, [
         id,

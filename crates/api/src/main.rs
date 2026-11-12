@@ -2,10 +2,10 @@
 //! running server's `/health` (for the container's `HEALTHCHECK`, since the
 //! runtime image has no curl).
 
-use std::{process::ExitCode, time::Duration};
+use std::{net::SocketAddr, process::ExitCode, time::Duration};
 
 use mekur_api::{
-    AppState, build_app,
+    AppOptions, AppState, build_app,
     config::Config,
     db::{create_pool, run_migrations},
 };
@@ -50,7 +50,16 @@ async fn serve(config: Config) -> Result<(), String> {
         .await
         .map_err(|e| format!("listen on {}:{}: {e}", config.host, config.port))?;
     println!("API listening on http://{}:{}", config.host, config.port);
-    axum::serve(listener, build_app(AppState { db }))
+    let state = AppState::new(
+        db,
+        AppOptions {
+            trust_proxy: config.trust_proxy,
+            ..AppOptions::new(config.jwt_secret)
+        },
+    );
+    // The peer address feeds the per-client rate limits.
+    let app = build_app(state).into_make_service_with_connect_info::<SocketAddr>();
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| e.to_string())

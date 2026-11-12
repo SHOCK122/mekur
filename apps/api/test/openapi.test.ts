@@ -28,6 +28,10 @@ function rustRoutes(): string[] {
   return routes;
 }
 
+/** The TS server's route paths in OpenAPI form, filled in by the first
+ * suite (which builds the app) for the proxy checks below. */
+const tsRoutePaths: string[] = [];
+
 describe("OpenAPI document", () => {
   let app: FastifyInstance;
   let db: Database;
@@ -57,6 +61,7 @@ describe("OpenAPI document", () => {
     const tsRoutes = routes
       .filter((r) => r.method !== "head" && r.method !== "options")
       .map((r) => `${r.method} ${toOpenApiPath(r.url)}`);
+    tsRoutePaths.push(...new Set(tsRoutes.map((r) => r.split(" ")[1]!)));
     const rust = rustRoutes();
     // A route is served by one server or the other, never both -- and
     // since nginx splits by path, a path moves with all its methods.
@@ -76,14 +81,39 @@ describe("OpenAPI document", () => {
 describe("the proxies' route split", () => {
   const rustPaths = () => [...new Set(rustRoutes().map((r) => r.split(" ")[1]!))].sort();
 
+  /** A documented path with each `{param}` filled in, as a client sends it. */
+  const sample = (path: string) => path.replace(/\{\w+\}/g, "ada");
+
+  it("has the TS server's routes to compare against", () => {
+    expect(tsRoutePaths.length).toBeGreaterThan(0);
+  });
+
   it("nginx sends exactly the Rust server's paths to it", () => {
     const conf = readFileSync(NGINX_CONF_PATH, "utf8");
-    const proxied = [...conf.matchAll(/location = \/api(\/\S+)\s*\{\s*proxy_pass http:\/\/api_rs(\/\S+);/g)];
-    // Each location forwards to the same path on the Rust server.
-    for (const [, from, to] of proxied) expect(to).toBe(from);
-    expect(proxied.map((m) => m[1]).sort()).toEqual(rustPaths());
+    // Fixed paths: `location = /api/X { proxy_pass http://api_rs/X; }`.
+    const exact = [...conf.matchAll(/location = \/api(\/\S+)\s*\{\s*proxy_pass http:\/\/api_rs(\/\S+);/g)];
+    for (const [, from, to] of exact) expect(to).toBe(from);
+    // Paths with parameters: a regex location that strips /api.
+    const regexes = [
+      ...conf.matchAll(
+        /location ~ (\S+)\s*\{\s*rewrite \^\/api\(\/\.\*\)\$ \$1 break;\s*proxy_pass http:\/\/api_rs;\s*\}/g
+      ),
+    ].map((m) => new RegExp(m[1]!));
+
+    const fixed = rustPaths().filter((p) => !p.includes("{"));
+    const parametric = rustPaths().filter((p) => p.includes("{"));
+    expect(exact.map((m) => m[1]).sort()).toEqual(fixed);
+    for (const path of parametric) {
+      expect(regexes.some((re) => re.test(`/api${sample(path)}`)), path).toBe(true);
+      expect(regexes.some((re) => re.test(`/api${sample(path)}/more`)), path).toBe(false);
+    }
+    // Each regex is for some Rust path, and matches no TS route.
+    for (const re of regexes) {
+      expect(parametric.some((p) => re.test(`/api${sample(p)}`)), String(re)).toBe(true);
+      for (const ts of tsRoutePaths) expect(re.test(`/api${sample(ts)}`), `${re} ${ts}`).toBe(false);
+    }
     // ...and nothing else reaches it.
-    expect(conf.match(/api_rs/g)?.length).toBe(proxied.length + 1); // + the upstream block
+    expect(conf.match(/api_rs/g)?.length).toBe(exact.length + regexes.length + 1); // + the upstream block
   });
 
   it("the Vite dev proxy makes the same split", () => {
@@ -92,11 +122,12 @@ describe("the proxies' route split", () => {
     if (!key) throw new Error(`Rust proxy entry not found in ${VITE_CONFIG_PATH}`);
     // The key as written in the source is a JS string literal.
     const pattern = new RegExp(JSON.parse(`"${key[1]}"`));
-    for (const path of rustPaths()) {
+    for (const path of rustPaths().map(sample)) {
       expect(pattern.test(`/api${path}`), path).toBe(true);
       expect(pattern.test(`/api${path}?x=1`), path).toBe(true);
       expect(pattern.test(`/api${path}/more`), path).toBe(false);
     }
+    for (const ts of tsRoutePaths) expect(pattern.test(`/api${sample(ts)}`), ts).toBe(false);
     expect(pattern.test("/api/keyring")).toBe(false);
     expect(pattern.test("/api/healthz")).toBe(false);
   });

@@ -11,7 +11,6 @@ import { createFriendCodeRepository } from "./repositories/friendCodeRepository.
 import { createKeyringRepository } from "./repositories/keyringRepository.js";
 import { createInboxRepository } from "./repositories/inboxRepository.js";
 import { createNotificationService } from "./services/notificationService.js";
-import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerEventRoutes } from "./routes/eventRoutes.js";
 import { registerApiKeyRoutes } from "./routes/apiKeyRoutes.js";
 import { registerPushRoutes } from "./routes/pushRoutes.js";
@@ -28,8 +27,6 @@ export interface BuildAppOptions {
   /** Overridable so tests can raise it -- the default would otherwise
    * throttle a fast-running suite and cause confusing flakes. */
   rateLimitMax?: number;
-  /** Tighter limit for auth endpoints (login/registration). */
-  authRateLimitMax?: number;
   /** Reverse-proxy hops to trust when deriving the client IP (see config). */
   trustProxy?: number;
 }
@@ -82,8 +79,8 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   });
 
   // Global rate limit as a backstop against abuse and runaway agent
-  // clients. Auth endpoints get a much tighter limit registered below --
-  // an unthrottled login endpoint is brute-forceable.
+  // clients. (Login and registration, with their tighter limit, are served
+  // by the Rust server -- docs/RUST_MIGRATION.md, step 3b.)
   app.register(rateLimit, {
     max: opts.rateLimitMax ?? 300,
     timeWindow: "1 minute",
@@ -104,11 +101,11 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
 
   app.register(authPlugin, { secret: opts.jwtSecret, apiKeys });
 
-  // GET /health and GET /openapi.json are served by the Rust server
-  // (crates/api) -- see docs/RUST_MIGRATION.md, step 3a.
+  // GET /health, GET /openapi.json (step 3a) and POST /users, POST
+  // /sessions, GET /users/:username/salt (step 3b) are served by the Rust
+  // server (crates/api) -- see docs/RUST_MIGRATION.md.
 
   app.register(async (instance) => {
-    registerAuthRoutes(instance, users, opts.authRateLimitMax ?? 10);
     registerEventRoutes(instance, events);
     registerApiKeyRoutes(instance, apiKeys);
     registerPushRoutes(instance, pushSubscriptions, opts.vapidPublicKey);

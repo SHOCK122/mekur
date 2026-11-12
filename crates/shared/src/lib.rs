@@ -16,6 +16,7 @@
 //! `docs/RUST_MIGRATION.md`; `tests/fixtures/zod_parity.json` holds Zod's
 //! own verdicts, which the tests replay.
 
+mod auth;
 pub mod datetime;
 mod envelope;
 mod event;
@@ -24,6 +25,7 @@ mod recurrence;
 mod time_zone;
 mod zod;
 
+pub use auth::{LoginRequest, RegisterRequest};
 pub use envelope::{
     ENVELOPE_ALGO, ENVELOPE_VERSION, EncryptedEnvelope, KeyringEnvelope, MAX_EVENT_CIPHERTEXT,
     MAX_KEYRING_CIPHERTEXT, SealedEnvelope,

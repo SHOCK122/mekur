@@ -91,7 +91,8 @@ cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to both
 ```
 
 The API is mid-migration to Rust: the Rust server answers the routes
-already ported (`/health`, `/openapi.json`) and the TS server the rest.
+already ported (`/health`, `/openapi.json`, registration, login and the
+salt lookup) and the TS server the rest.
 nginx (Docker) and the Vite dev proxy split `/api` between them.
 
 Rust crates (the toolchain is pinned in `rust-toolchain.toml`):

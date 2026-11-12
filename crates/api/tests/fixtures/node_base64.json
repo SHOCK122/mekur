@@ -1,0 +1,8128 @@
+{
+  "cases": [
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q",
+      "hex": ""
+    },
+    {
+      "input": "QQ",
+      "hex": "41"
+    },
+    {
+      "input": "QQ=",
+      "hex": "41"
+    },
+    {
+      "input": "QQ==",
+      "hex": "41"
+    },
+    {
+      "input": "QQ===",
+      "hex": "41"
+    },
+    {
+      "input": "QUI",
+      "hex": "4142"
+    },
+    {
+      "input": "QUJD",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJDRA",
+      "hex": "41424344"
+    },
+    {
+      "input": "d3JvbmctZ3Vlc3M=",
+      "hex": "77726f6e672d6775657373"
+    },
+    {
+      "input": "Q U J D",
+      "hex": "414243"
+    },
+    {
+      "input": "Q\tU\nJ\rD",
+      "hex": "414243"
+    },
+    {
+      "input": "-_-_",
+      "hex": "fbffbf"
+    },
+    {
+      "input": "+/+/",
+      "hex": "fbffbf"
+    },
+    {
+      "input": "!!!!",
+      "hex": ""
+    },
+    {
+      "input": "QQ==QUJD",
+      "hex": "41"
+    },
+    {
+      "input": "=QUJD",
+      "hex": ""
+    },
+    {
+      "input": "Q=UJD",
+      "hex": ""
+    },
+    {
+      "input": "QUJD====",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJDR",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJDRA=x",
+      "hex": "41424344"
+    },
+    {
+      "input": "ŁŁŁŁ",
+      "hex": "000000"
+    },
+    {
+      "input": "QĽUJD",
+      "hex": ""
+    },
+    {
+      "input": "QUJDĽ",
+      "hex": "414243"
+    },
+    {
+      "input": "😀QUJD",
+      "hex": ""
+    },
+    {
+      "input": "QUJD😀",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJ😀D",
+      "hex": "4142"
+    },
+    {
+      "input": "....QUJD",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJD....",
+      "hex": "414243"
+    },
+    {
+      "input": "Q.U.J.D.",
+      "hex": "414243"
+    },
+    {
+      "input": "QUJDRA==QUJD",
+      "hex": "41424344"
+    },
+    {
+      "input": "z+ŁQ!/",
+      "hex": "cfe010"
+    },
+    {
+      "input": "éĽŁ099A9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/A9\n😀+-Q",
+      "hex": "fc0f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł++0 Azé0+ĽQéz!-",
+      "hex": "03efb4033d3e"
+    },
+    {
+      "input": "Ł😀+é/_==",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!Q-++z00",
+      "hex": "43efbecf4d"
+    },
+    {
+      "input": "ŁĽzŁ=😀0_Q_!z9_ĽQ",
+      "hex": ""
+    },
+    {
+      "input": "Ľ-Ł\nŁŁ9/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=Ľé=Ł😀9é+_zAéQ\n9",
+      "hex": ""
+    },
+    {
+      "input": "Aé=Ľ_ĽAŁ/Ľ/\n0Aé9",
+      "hex": ""
+    },
+    {
+      "input": "+é-\n=-Ľ=/Ł_9 Ľ-0",
+      "hex": "fb"
+    },
+    {
+      "input": "Q9-é!é 😀",
+      "hex": "43df"
+    },
+    {
+      "input": "\n=!😀=-Ľ-",
+      "hex": ""
+    },
+    {
+      "input": "😀_9+9-😀-",
+      "hex": ""
+    },
+    {
+      "input": "ézŁ9++ŁĽ",
+      "hex": "cc0f7ef8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "ĽŁ-_9é😀=",
+      "hex": ""
+    },
+    {
+      "input": "z_+!é=Ľ\n",
+      "hex": "cfff"
+    },
+    {
+      "input": "-zĽĽ=A!Ł",
+      "hex": "fb"
+    },
+    {
+      "input": "z\nz/éŁĽz",
+      "hex": "cf3fc0"
+    },
+    {
+      "input": "/0A//\n0_",
+      "hex": "ff403fff4f"
+    },
+    {
+      "input": "0 Q\n ĽŁ9==_!-/0 ",
+      "hex": "d1"
+    },
+    {
+      "input": "/+😀-Q😀Q\né0+9=Ľ!=",
+      "hex": "ff"
+    },
+    {
+      "input": "Ł9=/ Ł-😀/0Ł+ \nŁŁ",
+      "hex": "03"
+    },
+    {
+      "input": " AAAéĽQé99_09+= ",
+      "hex": "0000"
+    },
+    {
+      "input": "😀z+😀zA=9",
+      "hex": ""
+    },
+    {
+      "input": "==0+éé=0Ł 0é-/Ł ",
+      "hex": ""
+    },
+    {
+      "input": "0A0+0+ ŁĽ!--Q+0+",
+      "hex": "d00d3ed3e0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zQ-!!!=\nz=9-0\n /",
+      "hex": "cd0f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-0😀A=QŁA_Q90Ł-Aé",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "AŁ!_0! 0Ł0 zz\nAĽ",
+      "hex": "000ff4d00d33cc"
+    },
+    {
+      "input": "/_=!ĽQ++",
+      "hex": "ff"
+    },
+    {
+      "input": "z/=éŁĽ=+",
+      "hex": "cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_Ł/9+Ľ0Ľ",
+      "hex": "fc0ffd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "= \nŁŁ=Ł-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q//0\n0!==-/z-!AQ",
+      "hex": "43fff4"
+    },
+    {
+      "input": "\n=é=😀😀=/!ĽzĽ😀9Ł0Ľ",
+      "hex": ""
+    },
+    {
+      "input": "\nĽ00\nAéA",
+      "hex": ""
+    },
+    {
+      "input": "Q9Az😀\nŁ\n😀+00z 😀A",
+      "hex": "43d033"
+    },
+    {
+      "input": " 😀Ľ/=Ľ9é",
+      "hex": ""
+    },
+    {
+      "input": "é+é=!-zQ",
+      "hex": ""
+    },
+    {
+      "input": "\nŁ_=A=!_/\n!0+9Q/",
+      "hex": "03"
+    },
+    {
+      "input": "Q +\n😀0ĽQ",
+      "hex": "43"
+    },
+    {
+      "input": " zQQQ ++",
+      "hex": "cd0410fb"
+    },
+    {
+      "input": "z😀_z-😀=0",
+      "hex": ""
+    },
+    {
+      "input": "éz é_ŁQz",
+      "hex": "cff010"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9z\nQ-Ľ =",
+      "hex": "f7343e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "09_-!Ľ0+",
+      "hex": "d3dffe"
+    },
+    {
+      "input": "Q_/+éQ=Q=é_  +-!",
+      "hex": "43fffe"
+    },
+    {
+      "input": "é😀Ł-Ľ -\n",
+      "hex": ""
+    },
+    {
+      "input": "\nz!9+\n_-",
+      "hex": "cfdfbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n09Ł-AŁ+",
+      "hex": "d3d03e000f"
+    },
+    {
+      "input": "/Q 99éz0",
+      "hex": "fd0f7dcf"
+    },
+    {
+      "input": "\n😀z/QĽ\nŁ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/-   ĽĽĽ/- /0😀Ľ-",
+      "hex": "ff"
+    },
+    {
+      "input": "Qéz/é0\n=",
+      "hex": "433ff4"
+    },
+    {
+      "input": "+😀\n0éĽA-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9Q/0+Ł0+z😀Q \n99=",
+      "hex": "f50ff4f80d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/Ľz😀AĽ0😀zQ0éQé_z",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " ++A \n😀\n",
+      "hex": "fbe0"
+    },
+    {
+      "input": "Q-/-é/QA",
+      "hex": "43effefd00"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0_/+0+Q9",
+      "hex": "d3fffed3e43d"
+    },
+    {
+      "input": "/+ Ľ-Aé0=\nĽ9zĽ9_",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_/éA_Ľ+-😀90 Ł  /",
+      "hex": "fff03f"
+    },
+    {
+      "input": "é 0zAŁ =",
+      "hex": "d33000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A==/=zéz=_A\nQ_Ľ😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ0_😀é=!!QA!QĽz9_",
+      "hex": ""
+    },
+    {
+      "input": "\nQ=Ł!+z_Qé+09QQ_",
+      "hex": ""
+    },
+    {
+      "input": " ŁĽz_Ł\n_",
+      "hex": ""
+    },
+    {
+      "input": "A😀9Q9=_9z0//A!/=",
+      "hex": ""
+    },
+    {
+      "input": "Q00-Aé9zQéŁ-_+!_",
+      "hex": "434d3e03dcd003effe"
+    },
+    {
+      "input": "A=😀😀Ľ-Ľz",
+      "hex": ""
+    },
+    {
+      "input": "A== +Ľ😀ŁéĽĽŁQĽ 9",
+      "hex": ""
+    },
+    {
+      "input": "-9 \nA9+z",
+      "hex": "fbd03dfb"
+    },
+    {
+      "input": "/ -z!Q-_",
+      "hex": "ffecd0fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀=😀_+ŁŁ+0 A/z=Ł",
+      "hex": ""
+    },
+    {
+      "input": "9+Ľ!+=9-",
+      "hex": "f7"
+    },
+    {
+      "input": "A+Ľ+ --\n",
+      "hex": "03"
+    },
+    {
+      "input": "éŁŁQ😀Ł9+ -😀😀z-AĽ",
+      "hex": "0004"
+    },
+    {
+      "input": "9 Q😀=_  ",
+      "hex": "f5"
+    },
+    {
+      "input": "😀é_+z /\n",
+      "hex": ""
+    },
+    {
+      "input": "éz/Ł_Ł-A",
+      "hex": "cff03f03e0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "09 AQ-+ Q\nz-ŁĽz9",
+      "hex": "d3d010fbe433f8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\nQ9=+é-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=+Q=é!zz==é9/0Ł+",
+      "hex": ""
+    },
+    {
+      "input": "=-éĽ 9=zé_- 9é/é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q_== Q!é",
+      "hex": "43"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\néQŁ_Ľ/",
+      "hex": ""
+    },
+    {
+      "input": "A/é-/z \n",
+      "hex": "03ffbf"
+    },
+    {
+      "input": "Ł\nŁ!😀 Q+",
+      "hex": "00"
+    },
+    {
+      "input": "z+  -=-=",
+      "hex": "cfef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A0/+QAQĽ0A=zQŁĽé",
+      "hex": "034ffe4004"
+    },
+    {
+      "input": "+=!0/z!=!Q😀/😀! 😀",
+      "hex": ""
+    },
+    {
+      "input": "ĽQQ!z\n\n ŁŁAQ0A  ",
+      "hex": ""
+    },
+    {
+      "input": "\nŁQ0A\n-/zAA\n-QA!",
+      "hex": "010d00fbfcc003e400"
+    },
+    {
+      "input": "=00zŁQ!😀!!!ĽéŁAŁ",
+      "hex": ""
+    },
+    {
+      "input": "+ -0=!Ľ ",
+      "hex": "fbed"
+    },
+    {
+      "input": "+0éA-ŁŁ0ĽĽA_+_/\n",
+      "hex": "fb403e000d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0 Q/z+z😀",
+      "hex": "d10ff3fb"
+    },
+    {
+      "input": "z+-=ŁŁ9=+=_😀 0ŁĽ",
+      "hex": "cfef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0-+=/9_éz😀9=! !",
+      "hex": "d3ef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!\n=zé9é",
+      "hex": ""
+    },
+    {
+      "input": "zŁŁé-A0!/zA+Q +!",
+      "hex": "cc003e034ff303e43e"
+    },
+    {
+      "input": "=/é!!ĽĽ9😀\n\nŁ=😀QQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n A9z-Q9",
+      "hex": "03dcfe43"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QA++!/_Ľ+Qé09 Ľ9",
+      "hex": "400fbeff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/===!z/=",
+      "hex": ""
+    },
+    {
+      "input": "+_Ł😀0😀é+",
+      "hex": "fbf0"
+    },
+    {
+      "input": "9!-=éz- ",
+      "hex": "f7"
+    },
+    {
+      "input": "😀+- /!/-\nĽ9=zé-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀/z0/z_",
+      "hex": ""
+    },
+    {
+      "input": "9+_!+0/_-_/\n z+=",
+      "hex": "f7effed3fffefffcfe"
+    },
+    {
+      "input": "999!!__0",
+      "hex": "f7df7fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " 😀-/😀QAA",
+      "hex": ""
+    },
+    {
+      "input": "-/+_Ł-😀-",
+      "hex": "fbffbf03"
+    },
+    {
+      "input": "+😀00é =é",
+      "hex": ""
+    },
+    {
+      "input": "Ł😀-!QzA+--\n😀z/Ł-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=é=+Q é😀+QĽ_Q_9-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "= /!Q/Ł==Q! +!_0",
+      "hex": ""
+    },
+    {
+      "input": " zŁ\n=ĽQ0",
+      "hex": "cc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľz_0!!😀-",
+      "hex": ""
+    },
+    {
+      "input": "QQ9_Q-0/",
+      "hex": "410f7f43ed3f"
+    },
+    {
+      "input": " /z/AéŁ0Qzz\nQ_/😀",
+      "hex": "ff3fc0034433cd0fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z_+_éé/9Ł\nzĽ 😀é9",
+      "hex": "cfffbfffd033"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀é😀 Q/0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0-Ľ-éŁ/Q",
+      "hex": "d3"
+    },
+    {
+      "input": "0++=\nŁ+!9😀09Ł-_Ľ",
+      "hex": "d3ef"
+    },
+    {
+      "input": "// =\nz9_Q_z😀\n😀0z",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éA-ĽA_90",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_Qé+AĽ_😀",
+      "hex": "fd0f80"
+    },
+    {
+      "input": "\nzéA0/ A",
+      "hex": "cc0d3f"
+    },
+    {
+      "input": " 😀+zQ/99",
+      "hex": ""
+    },
+    {
+      "input": "-\n!Ł\n-0é",
+      "hex": "f80fb4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=A_A😀😀/😀9A!/ A0=",
+      "hex": ""
+    },
+    {
+      "input": "Ł=-=/_zĽ",
+      "hex": ""
+    },
+    {
+      "input": "=\nŁQ!+0Ľ",
+      "hex": ""
+    },
+    {
+      "input": "!ŁQŁ😀Qz /9Q_Q9ŁŁ",
+      "hex": "0100"
+    },
+    {
+      "input": "+Ł\n Ł  +",
+      "hex": "f8003e"
+    },
+    {
+      "input": "-zŁĽ9zQ!",
+      "hex": "fb30"
+    },
+    {
+      "input": "Ł!/z   /",
+      "hex": "03fcff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł/0Q/99!",
+      "hex": "03fd10ffdf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n=Q=90😀=",
+      "hex": ""
+    },
+    {
+      "input": "/+0😀9+\n/",
+      "hex": "ffed"
+    },
+    {
+      "input": "z/=== -ĽA0😀 \n-/Q",
+      "hex": "cf"
+    },
+    {
+      "input": "0A+zz9\n+Łz9😀 Q/Ł",
+      "hex": "d00fb3cfdf80cf"
+    },
+    {
+      "input": "A/-Ľ=\n/😀\nĽ_9z😀é\n",
+      "hex": "03ff"
+    },
+    {
+      "input": "=Q-0!/\n9",
+      "hex": ""
+    },
+    {
+      "input": "QQŁŁ-😀-/",
+      "hex": "410000"
+    },
+    {
+      "input": "_ +éé 😀-",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀é _😀ĽQĽ",
+      "hex": ""
+    },
+    {
+      "input": "+!_-=\n!90!__/!AŁ",
+      "hex": "fbff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/9/!ĽQ!z",
+      "hex": "ffdf"
+    },
+    {
+      "input": "zAé!=z/=",
+      "hex": "cc"
+    },
+    {
+      "input": "0_ Ľ-_9=",
+      "hex": "d3"
+    },
+    {
+      "input": "A!==\né+_zŁ/!\nA/+",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=zé0éA+/Q\nzŁ-zĽĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0z!é_!9_-=_zz09!",
+      "hex": "d33ffdff"
+    },
+    {
+      "input": "_😀é_+_QŁ",
+      "hex": ""
+    },
+    {
+      "input": "-ézéĽ_Q😀",
+      "hex": "fb"
+    },
+    {
+      "input": "-A-\n!😀=/",
+      "hex": "f80f"
+    },
+    {
+      "input": "_é_/+\n=Q",
+      "hex": "fffffe"
+    },
+    {
+      "input": "0Ł9+!/\nQ",
+      "hex": "d00f7efd"
+    },
+    {
+      "input": "Ł !Q+0/9é-+éA\n!9",
+      "hex": "010fb4ffdfbe03"
+    },
+    {
+      "input": "QA_=\nA_-",
+      "hex": "400f"
+    },
+    {
+      "input": "Ł z9\nz//QĽzzŁ-éé",
+      "hex": "033f73fff4"
+    },
+    {
+      "input": "Ł-/+Ľé0é9😀\n _Ł0z",
+      "hex": "03effe"
+    },
+    {
+      "input": "😀A 😀_9z9Q==0A-😀/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q +_ 0_+_😀ŁA\nŁ !",
+      "hex": "43eff4ffef"
+    },
+    {
+      "input": "ĽQ-é++9A_A+!/+éé",
+      "hex": ""
+    },
+    {
+      "input": "é-😀=Ł_!-",
+      "hex": ""
+    },
+    {
+      "input": "Q\n=Ł=Ł ==!z😀AAĽ!",
+      "hex": ""
+    },
+    {
+      "input": "9+Aé/Ľ éé9Q!A!z\n",
+      "hex": "f7e03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ0/zĽ+Ł😀_\n!900😀Ľ",
+      "hex": ""
+    },
+    {
+      "input": "9!é_-/A+",
+      "hex": "f7ffbf03"
+    },
+    {
+      "input": " \n😀Q/A __😀9!AzQ ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-++\néŁ+9😀Q Łé+Az",
+      "hex": "fbef80fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_=é=A=9\nz😀+\né/0-",
+      "hex": ""
+    },
+    {
+      "input": "é0++Ľz-_",
+      "hex": "d3ef"
+    },
+    {
+      "input": "😀!Q/ŁA+Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9=0éA😀+-",
+      "hex": ""
+    },
+    {
+      "input": "/+A!+AAA",
+      "hex": "ffe03e0000"
+    },
+    {
+      "input": "zĽ_09!ĽQ+Ľ09-éé!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/=Ł/_Ł- -é_A9Ľ0-",
+      "hex": ""
+    },
+    {
+      "input": "=ézĽĽ+\nĽ99Ł\nA\n\n-",
+      "hex": ""
+    },
+    {
+      "input": "/\n😀 9Ł+_z\n 9Ł_-Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q\nĽ9Ł--0_0 !-+Ľ_",
+      "hex": ""
+    },
+    {
+      "input": "😀AA9A9!=",
+      "hex": ""
+    },
+    {
+      "input": "é-!AŁ+\nŁ",
+      "hex": "f8003e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!Ľ!=_9\nA0z-A0Ľ é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_Ľ -=zŁ",
+      "hex": ""
+    },
+    {
+      "input": "A! ézzQ-é😀9!\n_Ľ=",
+      "hex": "033cd0"
+    },
+    {
+      "input": "/0QAŁ0!Q",
+      "hex": "ff44000344"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9\nA😀Q -Aéz!A9+=/",
+      "hex": "f4"
+    },
+    {
+      "input": "!ĽŁ9QQŁ9",
+      "hex": ""
+    },
+    {
+      "input": "ĽQQĽ\n!\n-0\nA\n9é_\n",
+      "hex": ""
+    },
+    {
+      "input": "zQ!/=--A _Q+😀 =-",
+      "hex": "cd0f"
+    },
+    {
+      "input": "\nŁ9Q😀 !A",
+      "hex": "03d4"
+    },
+    {
+      "input": "/ A0Ľ😀/-",
+      "hex": "fc0d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł9ĽQĽAĽ_",
+      "hex": "03"
+    },
+    {
+      "input": "Ľé=z9 0 +_-+z==\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !zA/+_/",
+      "hex": "cc0ffeff"
+    },
+    {
+      "input": "Q//!/Q Ľ",
+      "hex": "43ffff"
+    },
+    {
+      "input": "Ľéé _z\n😀",
+      "hex": ""
+    },
+    {
+      "input": "A/z!-/\n\nAAA0\nz9!",
+      "hex": "03fcfefc0000d33f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0\nŁ_/0+/",
+      "hex": "d00fffd3ef"
+    },
+    {
+      "input": "AA\nzĽ/!9",
+      "hex": "000c"
+    },
+    {
+      "input": " +ĽQŁ!0\n",
+      "hex": ""
+    },
+    {
+      "input": "A+éQ😀ŁAé+-9z\n\n/ ",
+      "hex": "03e4"
+    },
+    {
+      "input": "/Ł0Q_ŁĽ /😀= _9é9",
+      "hex": "fc0d10fc"
+    },
+    {
+      "input": "Łé0-é9\nŁ\n+Łé9AQz",
+      "hex": "034fbd03e03d010c"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀😀éQ_-A09_09=9/9",
+      "hex": ""
+    },
+    {
+      "input": "=Ľ_ =_\nŁQz0-😀Ł0😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QŁ Q_=\nQ0Q!_-\n+-",
+      "hex": "40043f"
+    },
+    {
+      "input": "ĽQ!😀 Ł--😀/\n=9Ľ0=",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-A_/_0😀9",
+      "hex": "f80fffff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n- 0zz 😀",
+      "hex": "fb4cf3"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zé!/_z Qz éŁ\n-😀/",
+      "hex": "cffff343303e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-+😀+0😀99",
+      "hex": "fb"
+    },
+    {
+      "input": "+A+\n/é😀-",
+      "hex": "f80fbf"
+    },
+    {
+      "input": "é!-zé-ĽQ+ A_ĽA+=",
+      "hex": "fb3f"
+    },
+    {
+      "input": "😀A0Ľ-A9=\n=/-😀zQ_",
+      "hex": ""
+    },
+    {
+      "input": "9😀Ľ9é_Qz0😀\n=0-zA",
+      "hex": ""
+    },
+    {
+      "input": "!+Ł+/=QŁ++ !+0=Q",
+      "hex": "f80fbf"
+    },
+    {
+      "input": "=z\n0A Q😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_Ł  AA-",
+      "hex": ""
+    },
+    {
+      "input": " 😀😀! 9z!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľé!A+A-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_=_ \n\nzé _ééé😀/😀",
+      "hex": ""
+    },
+    {
+      "input": "😀+é/QĽ!+zQ é-\n9é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QQ!!Q!\n-é\n=-A9--",
+      "hex": "41043e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!00+é+😀é",
+      "hex": "d34fbe"
+    },
+    {
+      "input": "😀Ł\nAzŁ/Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " Ľ+/+==_=😀zé+Ł=😀",
+      "hex": ""
+    },
+    {
+      "input": "é9QĽĽ/Ł ",
+      "hex": "f5"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A-A!+A😀/0Ł+_Łz0A",
+      "hex": "03e03e"
+    },
+    {
+      "input": "Ľé ĽĽ_9ŁAQzĽŁ_9Q",
+      "hex": ""
+    },
+    {
+      "input": "A+0\n-z!-",
+      "hex": "03ed3ecf"
+    },
+    {
+      "input": "😀😀😀0!90!😀A+=/_/\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/0éz99z=",
+      "hex": "ff4cfdf7"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A!😀zAéé\n0!A-!\n!A",
+      "hex": ""
+    },
+    {
+      "input": "-😀 9A=/-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n9=z😀z0QAŁé éz=9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é=A=9+/\n",
+      "hex": ""
+    },
+    {
+      "input": "Qzz--/A_é_Ł0\n+_=",
+      "hex": "433cfefbf03ffc0d3e"
+    },
+    {
+      "input": "/+\n9AzA9 =é\n=😀A+",
+      "hex": "ffef40cc0f"
+    },
+    {
+      "input": "/ +z=QA ",
+      "hex": "ffec"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀Q  -\n_0z/!_A+ĽQ",
+      "hex": ""
+    },
+    {
+      "input": "-z!99-Q\n",
+      "hex": "fb3f7df9"
+    },
+    {
+      "input": "/=\n09😀+Ľ😀😀!A!-\n!",
+      "hex": ""
+    },
+    {
+      "input": "éQé !Ľ!\n",
+      "hex": ""
+    },
+    {
+      "input": "+-zé+9+_é=Ľ9A/ =",
+      "hex": "fbecfef7ef"
+    },
+    {
+      "input": "😀\n😀z😀ĽĽ+",
+      "hex": ""
+    },
+    {
+      "input": "😀-! 😀+!0z/é - \nQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n+Ł\né\n-Q",
+      "hex": "f80f90"
+    },
+    {
+      "input": "/_ 0Q +z+z0--ĽŁz",
+      "hex": "fffd10fb3fb3d3ef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é=😀/0Q-=",
+      "hex": ""
+    },
+    {
+      "input": "9!ĽzQ_9éA!0Q0+Ł!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QAĽ z-0z\n=\n😀 -/Ł",
+      "hex": "40"
+    },
+    {
+      "input": "Ľ-\nA\n+_/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "AAQ=_-/!_ŁzQA/Ľ-",
+      "hex": "0004"
+    },
+    {
+      "input": "\n=!zŁ=9=9Ł!Q!Ł9-",
+      "hex": ""
+    },
+    {
+      "input": "9ŁĽ00+9+",
+      "hex": "f4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-=Q !😀zéé😀_Q 😀Ł ",
+      "hex": ""
+    },
+    {
+      "input": "/+😀\n0+!_9/_!+/ Ľ",
+      "hex": "ff"
+    },
+    {
+      "input": "😀+0Q++99",
+      "hex": ""
+    },
+    {
+      "input": "=/zQ_zQQ!zĽ_-A+é",
+      "hex": ""
+    },
+    {
+      "input": "0A +Ľ-Ľ0A-! éQĽ-",
+      "hex": "d00f"
+    },
+    {
+      "input": "éŁ=Ľ_\n😀Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "AŁzzéQ=+_0+Łé/Q_",
+      "hex": "000cf3"
+    },
+    {
+      "input": "/+/é\n\n-/",
+      "hex": "ffeffe"
+    },
+    {
+      "input": "ŁAQ //\n=0A\n-é-ŁĽ",
+      "hex": "00043f"
+    },
+    {
+      "input": "Ł_ 0 9Ľ ",
+      "hex": "03fd3d"
+    },
+    {
+      "input": " \nzA9-AĽ_+Ľ=!é/Ľ",
+      "hex": "cc0f7e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀=A😀z_Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0z zŁŁ9😀",
+      "hex": "d33cc003"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QQ9-/z+é\n_ A -0A",
+      "hex": "410f7eff3fbf03ed00"
+    },
+    {
+      "input": "+_z+ŁQ_ ",
+      "hex": "fbfcfe010f"
+    },
+    {
+      "input": "_0Łz=_AAAzé-9z Q",
+      "hex": "ff4033"
+    },
+    {
+      "input": "Ł0Ľ0z0=_",
+      "hex": "03"
+    },
+    {
+      "input": "Ľ  !Ł\nAA",
+      "hex": ""
+    },
+    {
+      "input": "Ł9Ľ= !Ł-A z\nQŁ=z",
+      "hex": "03"
+    },
+    {
+      "input": "/Ł!é +_+",
+      "hex": "fc0fbf"
+    },
+    {
+      "input": "/0 +éQz-Ľ9A+=!!9",
+      "hex": "ff4f90cf"
+    },
+    {
+      "input": "z-/é A_Ľ",
+      "hex": "cfefc0"
+    },
+    {
+      "input": "9z 😀ĽQĽ9z+éĽz+QŁ",
+      "hex": "f7"
+    },
+    {
+      "input": "=Ł😀😀0Ľ+/",
+      "hex": ""
+    },
+    {
+      "input": "😀zŁ éQ-A",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\n-Q/Q= ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "900+!ĽĽé0éz-Ľ\n!9",
+      "hex": "f74d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9-0-z!é+",
+      "hex": "f7ed3ecf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ😀😀/9-Ľ0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ/0\n z_0/99z  Ł ",
+      "hex": ""
+    },
+    {
+      "input": "0ĽA9/!😀z/😀0!0😀++",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+0=z+0!😀Ł😀Ľ+_9+😀",
+      "hex": "fb"
+    },
+    {
+      "input": "ŁĽ0+ŁŁ😀Łz_Qz-Ł-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "😀AQéé_/AA!Q=Q=!Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ-😀-😀=!Ł=--é_ĽQĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " //0/Ł\nA",
+      "hex": "fffd3f00"
+    },
+    {
+      "input": "-éAŁzA 0",
+      "hex": "f8003303"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/=\n+/A =",
+      "hex": ""
+    },
+    {
+      "input": "Q//0 0Ł-+//09+9=",
+      "hex": "43fff4d00fbefffd3dfb"
+    },
+    {
+      "input": "0AéQQ+z!",
+      "hex": "d00410fb"
+    },
+    {
+      "input": "_9!/0!!ŁQA\n0+ --",
+      "hex": "ffdff4010034fbef"
+    },
+    {
+      "input": "z\n=+éQ/!AĽQ_Ł/-/",
+      "hex": ""
+    },
+    {
+      "input": "Ł! +A0 !A Ľé😀-\n\n",
+      "hex": "03e034"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Łé!-\n09é",
+      "hex": "03ed3d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9/ = +😀0/QQ=+ =!",
+      "hex": "f7"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q0A!_ _+é 9éQ😀-/",
+      "hex": "43403fffef50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n+_=A_Q😀😀/A0Q999",
+      "hex": "fb"
+    },
+    {
+      "input": "_-Ł99!😀😀+ŁQéŁ\nA_",
+      "hex": "ffe03d"
+    },
+    {
+      "input": "😀9Q--é_!é9+=90- ",
+      "hex": ""
+    },
+    {
+      "input": "/+/+/0😀z",
+      "hex": "ffeffeff"
+    },
+    {
+      "input": "éŁA9QzéĽ=QŁz+/9 ",
+      "hex": "000f50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!+=😀zéŁ  _0A/-9\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+9éĽ9Ľ/-",
+      "hex": "fb"
+    },
+    {
+      "input": "😀-+zz 9😀\nĽ/A+\n\n9",
+      "hex": ""
+    },
+    {
+      "input": "QéŁ😀/z--",
+      "hex": "40"
+    },
+    {
+      "input": "!!/ééĽQ = !ĽŁĽ-😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-/éé-/-😀z9\n9z0!!",
+      "hex": "fbffbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " =A!+=é/",
+      "hex": ""
+    },
+    {
+      "input": " Ľ9-Ł= =A0é+-😀=A",
+      "hex": ""
+    },
+    {
+      "input": "+/A!z+ /Ł-😀+ĽA!=",
+      "hex": "fbf033fbf03e"
+    },
+    {
+      "input": "\nz_-Ľ9==!😀!😀-9é!",
+      "hex": "cfff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0ĽAĽ_A0Ľ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀!ĽŁ😀0//",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=z0A+A/\nŁ-=ŁzQA=_",
+      "hex": ""
+    },
+    {
+      "input": "_ é😀9AŁ_Q/!Qé! \n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n- \n+QzA",
+      "hex": "fbe433"
+    },
+    {
+      "input": "zz_9Ł =_",
+      "hex": "cf3ffd"
+    },
+    {
+      "input": "9Ł😀ĽQ -_",
+      "hex": "f4"
+    },
+    {
+      "input": "0_++Ł+😀Ł",
+      "hex": "d3ffbe03"
+    },
+    {
+      "input": "0 é_ /😀\n Ľ\n\n-ŁQ!",
+      "hex": "d3ff"
+    },
+    {
+      "input": "Q=A-zŁ=9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=z0ŁĽ=\n ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n/=+z=/Ľ",
+      "hex": ""
+    },
+    {
+      "input": "\nŁ=__😀=9",
+      "hex": ""
+    },
+    {
+      "input": " =\n/A_zĽ😀z90/z/Q",
+      "hex": ""
+    },
+    {
+      "input": "Ľ\n_Ł=!!😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "---QA0 Q",
+      "hex": "fbef900344"
+    },
+    {
+      "input": "//0ŁQz_/😀9éz😀ĽA9",
+      "hex": "fffd00433fff"
+    },
+    {
+      "input": "0A==0😀/zQŁ/_ĽŁ90",
+      "hex": "d0"
+    },
+    {
+      "input": "Q=/Ł+-9+",
+      "hex": ""
+    },
+    {
+      "input": "0\n \nŁA-0\n😀/90_ 9",
+      "hex": "d0003e"
+    },
+    {
+      "input": " Ł 0-😀!-z=😀😀0é\n!",
+      "hex": "034f"
+    },
+    {
+      "input": "9=Ľ-é0zQ",
+      "hex": ""
+    },
+    {
+      "input": "QA/0 Ł_😀Ł _09_zĽ",
+      "hex": "400ff403"
+    },
+    {
+      "input": "_=!==_++",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n\n9-\n=Ľ9\n=éz-\n9Q",
+      "hex": "f7"
+    },
+    {
+      "input": "\n //+/_😀😀0+ĽzzŁ_",
+      "hex": "ffffbf"
+    },
+    {
+      "input": "zŁ+//-éQ =/!😀A_+",
+      "hex": "cc0fbfffe4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nA__9\n9Q-! !Q/zŁ",
+      "hex": "03fffdf50f90ff30"
+    },
+    {
+      "input": "_-0A_!\n!\n+ŁĽ0AŁ+",
+      "hex": "ffed00ffe0"
+    },
+    {
+      "input": "9Q-Q_!\n\n_-\n-ĽŁ++",
+      "hex": "f50f90ffffbe"
+    },
+    {
+      "input": "éA0A=+Ł0",
+      "hex": "0340"
+    },
+    {
+      "input": "=A/!/A!ŁA😀zĽ+90+",
+      "hex": ""
+    },
+    {
+      "input": "_9Qéz9éA-zé!z_+Ľ",
+      "hex": "ffd433f40fb3cfff"
+    },
+    {
+      "input": "0\n😀z=Ľ0/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/-é_-/!\nQŁĽĽé=QŁ",
+      "hex": "ffeffefd00"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_é😀éé!!Q/\nz\n0\n+Ł",
+      "hex": ""
+    },
+    {
+      "input": "0Q/Ľ😀0z0é=--\n/z/",
+      "hex": "d10f"
+    },
+    {
+      "input": "+_😀\n0z!9\n_z-/+QĽ",
+      "hex": "fb"
+    },
+    {
+      "input": "Ľ-_Ł-\nQ -A+!Ľ\nŁé",
+      "hex": ""
+    },
+    {
+      "input": "Ł😀\n=ĽŁzé",
+      "hex": ""
+    },
+    {
+      "input": "0éQz/_ĽA=zAé0zé/",
+      "hex": "d10cff"
+    },
+    {
+      "input": "9=z!A😀9 /Ł😀😀zŁĽz",
+      "hex": ""
+    },
+    {
+      "input": "=9==Q9éz",
+      "hex": ""
+    },
+    {
+      "input": "-/Q\néz😀/",
+      "hex": "fbf433"
+    },
+    {
+      "input": "😀Ł/--/Ł😀!\nA9+=😀/",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!\n!_A+0",
+      "hex": ""
+    },
+    {
+      "input": "Ł+_!=é0Qé\nŁ- _/é",
+      "hex": "03ef"
+    },
+    {
+      "input": "--_!Ľ-é/+",
+      "hex": "fbef"
+    },
+    {
+      "input": "Q9!\n990ŁĽŁ😀_ _!Q",
+      "hex": "43df7dd0"
+    },
+    {
+      "input": "+z9\nQQ😀!0\n_ A9_é",
+      "hex": "fb3f50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A0😀Q+\néĽ",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł_Ł-  9!z+😀/99😀é",
+      "hex": "03f03ef73f"
+    },
+    {
+      "input": " 0QA+Ł+A",
+      "hex": "d1003e03e0"
+    },
+    {
+      "input": "+_//A9!0😀Ł=😀z99+",
+      "hex": "fbffff03dd"
+    },
+    {
+      "input": "Ł0+A+-Ľ=",
+      "hex": "034f80fb"
+    },
+    {
+      "input": "😀ĽzQé😀A_09QAéĽéé",
+      "hex": ""
+    },
+    {
+      "input": "=éQQĽ\nQ9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/Q==\n -!",
+      "hex": "fd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0_Ł+Ľz-zé\n!\n😀é0A",
+      "hex": "d3f03e"
+    },
+    {
+      "input": "=é\nAĽ\nŁA\nŁQ\n= z\n",
+      "hex": ""
+    },
+    {
+      "input": "\n!!=\nŁ=_/ _ !=z/",
+      "hex": ""
+    },
+    {
+      "input": "Q \n!= 0!",
+      "hex": ""
+    },
+    {
+      "input": "zAQ😀=9!=😀\n/9!Q__",
+      "hex": "cc04"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éQé/-ĽĽĽ  ++=A=😀",
+      "hex": "43ff"
+    },
+    {
+      "input": "A😀9_QA\n_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+é😀z zAé",
+      "hex": ""
+    },
+    {
+      "input": " /😀_zzĽ-",
+      "hex": ""
+    },
+    {
+      "input": "-=0/ \n+Ľ\n+\nz+=Aé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+z_!z0z0",
+      "hex": "fb3ff3d33d"
+    },
+    {
+      "input": "zQ=9é0ŁŁ",
+      "hex": "cd"
+    },
+    {
+      "input": "éQAĽ\néĽQ",
+      "hex": "40"
+    },
+    {
+      "input": "Q\n=_A\nQ+ĽzĽz9/QĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n AQé!9Ł",
+      "hex": "010f40"
+    },
+    {
+      "input": "0ĽĽé+A0Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ😀\n/-Ľ+0+é😀zĽQŁ!",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_9+9😀Ł!A+QĽ\n0/!",
+      "hex": ""
+    },
+    {
+      "input": "Ľ9 =\n+\nQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľz!zQ\n-\n",
+      "hex": ""
+    },
+    {
+      "input": "0A😀A_-é9",
+      "hex": "d0"
+    },
+    {
+      "input": "é\né+zĽ++/=! Ľ9😀😀",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀+😀=A=-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "éz😀é+9-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "A++Ł\n =Ľ",
+      "hex": "03ef80"
+    },
+    {
+      "input": "0!😀0é9\nQ Qé/!=😀/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀😀\n_z😀Ľ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/AĽ_=😀 é",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0=éŁ😀A0",
+      "hex": ""
+    },
+    {
+      "input": "zééé0é0+",
+      "hex": "cf4d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+ŁŁéé==/\n\nAŁ-0=é",
+      "hex": "f800"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A_QQŁ-z\n",
+      "hex": "03f41003ec"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+Ł9\n\nĽ+éQ=-Ľ!éz-",
+      "hex": "f80f"
+    },
+    {
+      "input": "A9-z_+-A\nQ=\nĽŁz\n",
+      "hex": "03dfb3ffef80"
+    },
+    {
+      "input": "_0_-😀A/\n  Ł-090-",
+      "hex": "ff4ffe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_Ł=ŁA/=z",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+9++=\n!QééA/=9!Q",
+      "hex": "fbdfbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!9😀Ł9😀Łz",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n-\n0=éŁ=",
+      "hex": "fb"
+    },
+    {
+      "input": "A=Ł\n!A/0",
+      "hex": ""
+    },
+    {
+      "input": "Ł0\n_-😀Ł😀Ł+ Ł=Q9z",
+      "hex": "034ffe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !0A _Q_+QŁ+ 09\n",
+      "hex": "d00fd0ffe400fb4f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é Ł!zĽ😀0=zĽŁ--😀z",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0",
+      "hex": ""
+    },
+    {
+      "input": "-Łé😀é0z 😀z\n\n/A00",
+      "hex": "f8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-0=-QQ0Ł",
+      "hex": "fb"
+    },
+    {
+      "input": "Q/Q9Ľ!=_",
+      "hex": "43f43d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0Q😀AéŁ/",
+      "hex": "d1"
+    },
+    {
+      "input": " QĽĽ😀9Azz0/!9!+=",
+      "hex": ""
+    },
+    {
+      "input": "+_\n+9 =Ł!\n=ŁéQ😀😀",
+      "hex": "fbffbd"
+    },
+    {
+      "input": "zz/=-0😀Q",
+      "hex": "cf3f"
+    },
+    {
+      "input": "é\n-AA0ézĽ9=/A-9/",
+      "hex": "f80034"
+    },
+    {
+      "input": "😀+QéA_0!z009z!_Ł",
+      "hex": ""
+    },
+    {
+      "input": "9\nA\n\n!  ",
+      "hex": "f4"
+    },
+    {
+      "input": "=+=\n/_=Łé_QA=\n--",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/0zŁ😀😀! -/ é9ŁŁ_",
+      "hex": "ff4cc0"
+    },
+    {
+      "input": "A-!/\n-!!",
+      "hex": "03effe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !09éé+0/0Ł+!9 Ł",
+      "hex": "d3dfb4ff403ef4"
+    },
+    {
+      "input": "_😀AĽ9-Az",
+      "hex": ""
+    },
+    {
+      "input": "😀Qz+009Ł!😀=Ł\n-Ľ=",
+      "hex": ""
+    },
+    {
+      "input": "ŁzĽ =0/9A+😀ŁA009",
+      "hex": "03"
+    },
+    {
+      "input": "Ľ00-9z\nĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-\n/!éz=z",
+      "hex": "fbfc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀QA\n!+QéŁQ=9é+Q_",
+      "hex": ""
+    },
+    {
+      "input": "!-AŁ9zŁQ",
+      "hex": "f8003dcc04"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀/Ľ9!\n\nA",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!ĽAĽ- 0\nĽ999A=A",
+      "hex": ""
+    },
+    {
+      "input": "!Ľ_0/9 ĽĽ90!/_!0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/éA+/z_ŁAQ😀AA Ľ/",
+      "hex": "fc0fbfcff000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=é+!ŁzzŁz/éz9\n😀\n",
+      "hex": ""
+    },
+    {
+      "input": "0\n+_Łé 0",
+      "hex": "d3efc0"
+    },
+    {
+      "input": "=9ĽA +!0A!QĽ==Ľ!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nQ9_+\n/0",
+      "hex": "43dffeff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=/0/Qz_=",
+      "hex": ""
+    },
+    {
+      "input": "ŁĽ😀ézz==",
+      "hex": ""
+    },
+    {
+      "input": "\n-\n+-+/Ł",
+      "hex": "fbefbefc"
+    },
+    {
+      "input": "9!0😀09z😀0é ŁŁé0-",
+      "hex": "f7"
+    },
+    {
+      "input": "Ł9=Q 😀AŁ_=+Q!0 é",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+ŁzĽ\nQ😀z",
+      "hex": "f80c"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!_ĽĽ\n ++",
+      "hex": ""
+    },
+    {
+      "input": "!😀_Ł/z9+_-+Ł=0zA",
+      "hex": ""
+    },
+    {
+      "input": "AĽ!😀QéŁz",
+      "hex": ""
+    },
+    {
+      "input": "0+/\n9A  Ľ😀😀0\n\n-=",
+      "hex": "d3effd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é!-- -!!",
+      "hex": "fbef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł\n!+!😀ĽĽ0Ľéé!9é\n",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀=\n!A😀ŁĽ=Q9/ĽĽ\n ",
+      "hex": ""
+    },
+    {
+      "input": "zz!9!\n\n😀",
+      "hex": "cf3f"
+    },
+    {
+      "input": "9Ł\n\n=😀0z",
+      "hex": "f4"
+    },
+    {
+      "input": "z+ ++QĽ ",
+      "hex": "cfefbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+Ľ\n😀0/9ĽĽ!z0ĽA_+",
+      "hex": ""
+    },
+    {
+      "input": " A!ŁQĽ\nQ/zŁ0ŁQ==",
+      "hex": "0004"
+    },
+    {
+      "input": "z!A!Q00Q",
+      "hex": "cc0434d1"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é😀-Ł-Ľ A",
+      "hex": ""
+    },
+    {
+      "input": "   _=é\n+/-Ł-😀 9é",
+      "hex": ""
+    },
+    {
+      "input": "/-Ľ9QŁ/!",
+      "hex": "ff"
+    },
+    {
+      "input": "9_Ł!-Ľ_Ł!éŁ=/_ =",
+      "hex": "f7f03e"
+    },
+    {
+      "input": "9+-_-=éé=!\n-_0Ł=",
+      "hex": "f7efbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_-é😀Łz😀/é0 z\n\néz",
+      "hex": "ff"
+    },
+    {
+      "input": "=!z/\n/+/99 Ł! +_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł! é!09-",
+      "hex": "034f7e"
+    },
+    {
+      "input": "=-_=Ľ9😀Ľ0/ +=!!é",
+      "hex": ""
+    },
+    {
+      "input": "Q0é/  Ł\n! é=Ł+A0",
+      "hex": "434fc0"
+    },
+    {
+      "input": " é!é !0é",
+      "hex": ""
+    },
+    {
+      "input": "!!+😀éŁ!Ł0é_ĽQA9+",
+      "hex": ""
+    },
+    {
+      "input": "\néĽ\n=0AA\n!9Q/_-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9+_Ł-0!!",
+      "hex": "f7efc0fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zŁĽ+\n/!=éz-zé😀ŁŁ",
+      "hex": "cc"
+    },
+    {
+      "input": "A+!A=--Ł",
+      "hex": "03e0"
+    },
+    {
+      "input": "/é-AŁ😀z+",
+      "hex": "ffe000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z\n😀😀!-Ľ-",
+      "hex": ""
+    },
+    {
+      "input": "_0/ !++9Qz\n!ŁQ\nA",
+      "hex": "ff4ffefbd4330100"
+    },
+    {
+      "input": "_Łé9/Ł=z",
+      "hex": "fc0f7f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é0!zQ_/_!Q /++😀-",
+      "hex": "d3343ffff43ffb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "ĽAéAéĽ!Ł9/=+😀=A9",
+      "hex": ""
+    },
+    {
+      "input": "A-/éQQŁŁ!/ \n😀!9/",
+      "hex": "03efd040003f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀-😀-éQ- ",
+      "hex": ""
+    },
+    {
+      "input": " QA=éA_Ł😀+!Ľ=\n9!",
+      "hex": "40"
+    },
+    {
+      "input": " /_ŁŁ++!",
+      "hex": "fff000fb"
+    },
+    {
+      "input": "=!+Ľz!Ł😀A=9_😀z9 ",
+      "hex": ""
+    },
+    {
+      "input": " !==Ľ 0zŁ/_9_0_Q",
+      "hex": ""
+    },
+    {
+      "input": "z-\n=Ľ/zŁ",
+      "hex": "cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-0\n \nA0/ééé=9-+Q",
+      "hex": "fb4034"
+    },
+    {
+      "input": "Az/\n\n😀_/zŁ=!éz/_",
+      "hex": "033f"
+    },
+    {
+      "input": "==zĽ\n/\n9",
+      "hex": ""
+    },
+    {
+      "input": "+\n_ĽéĽ=Ľ",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A\nAQ9Az_Ł+-é!=/\n",
+      "hex": "00043d033fc0fb"
+    },
+    {
+      "input": "!éŁ\néé😀é/Q//9=é ",
+      "hex": ""
+    },
+    {
+      "input": "0Ł0!Ł 9 ",
+      "hex": "d00d00"
+    },
+    {
+      "input": "Ľ!éA😀_Qé",
+      "hex": ""
+    },
+    {
+      "input": "+\n😀!Ł_0A",
+      "hex": ""
+    },
+    {
+      "input": "-0\n0- é_é_ Q/\nA=",
+      "hex": "fb4d3efff43f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-+!z=Q_z",
+      "hex": "fbec"
+    },
+    {
+      "input": "Ľz😀+Q !9z0Ł😀9!99",
+      "hex": ""
+    },
+    {
+      "input": " Qé😀_/0-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀Ł\n0😀//0/Q/z\n+_9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A=A zĽ!😀Q=\nz!/-!",
+      "hex": ""
+    },
+    {
+      "input": "/😀-! 9Az",
+      "hex": ""
+    },
+    {
+      "input": "\nzŁ0é--\n",
+      "hex": "cc0d3e"
+    },
+    {
+      "input": "Q !/zĽ\n\n",
+      "hex": "43fc"
+    },
+    {
+      "input": "=!é Q z+",
+      "hex": ""
+    },
+    {
+      "input": "é /😀=Łz-/!ĽA!😀\nŁ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9=/QĽ😀 9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ9A0/9😀_",
+      "hex": ""
+    },
+    {
+      "input": "😀 /Q!Ľ-Q!/=__ +Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_!/_0_Qz",
+      "hex": "fffff4fd0c"
+    },
+    {
+      "input": "😀/-Ľ!+Ł ",
+      "hex": ""
+    },
+    {
+      "input": "9-Ł _Q😀zĽ0ĽzĽ+😀+\n",
+      "hex": "f7e03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ-z😀0é--",
+      "hex": ""
+    },
+    {
+      "input": "-/ \n=ĽQ\n!Q!Ľ\nQé\n",
+      "hex": "fb"
+    },
+    {
+      "input": "Q😀= zQ++",
+      "hex": ""
+    },
+    {
+      "input": "Ł-A9Q0-_",
+      "hex": "03e03d434fbf"
+    },
+    {
+      "input": "+Q =-éĽ_Ł99_/Ł+Ľ",
+      "hex": "f9"
+    },
+    {
+      "input": "é!-Ł\nŁzŁ _Ľ0😀\nĽĽ",
+      "hex": "f8003303"
+    },
+    {
+      "input": "0+é😀=z😀- _+/-!\n+",
+      "hex": "d3"
+    },
+    {
+      "input": "QA+++Q\nA",
+      "hex": "400fbef900"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_\nQé_é!/",
+      "hex": "fd0fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "! é_-+=z0ézA+-😀Ł",
+      "hex": "ffef"
+    },
+    {
+      "input": "A9Ł9 😀-😀",
+      "hex": "03d03d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n\n0_Q//0z9AQ z0/",
+      "hex": "d3f43fff4cfd010cf4"
+    },
+    {
+      "input": "\n  ! z_\n",
+      "hex": "cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n\n=+é😀/0-zŁQQ9-9",
+      "hex": ""
+    },
+    {
+      "input": "😀!é😀 😀09QŁQ😀--_Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł9/z\n😀/z",
+      "hex": "03dff3"
+    },
+    {
+      "input": "0 =Qé+/é",
+      "hex": ""
+    },
+    {
+      "input": "-0Ľ_z😀ŁŁ",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0Ł- Q-/Q",
+      "hex": "d00f90fbf4"
+    },
+    {
+      "input": "\nĽŁ9/z!é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nA!!/+z_",
+      "hex": "03ffb3"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-Ľ\nz==!9",
+      "hex": ""
+    },
+    {
+      "input": " _\né\n A😀",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A09Ľ-Qz009 -Ł+AA",
+      "hex": "034f"
+    },
+    {
+      "input": "/\n😀!9é=Q",
+      "hex": ""
+    },
+    {
+      "input": "Qé9-Q!=-",
+      "hex": "43df90"
+    },
+    {
+      "input": "_!\n9 QŁ9+--=QĽ z",
+      "hex": "ffd400f7efbe"
+    },
+    {
+      "input": " AĽé=0_\n",
+      "hex": ""
+    },
+    {
+      "input": "/__Q0😀=-",
+      "hex": "ffffd0"
+    },
+    {
+      "input": "😀9/!/-Q0Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_A==A!😀-",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " zA-_Ł😀 ",
+      "hex": "cc0fbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-😀=9/+=A",
+      "hex": ""
+    },
+    {
+      "input": "-😀\nŁ/A\n9Q!=_ 0!+",
+      "hex": ""
+    },
+    {
+      "input": "=Ľ0é\nĽ0_0_é_Q!\nQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "==+\n\n00 Ł=😀Ľ=0😀 ",
+      "hex": ""
+    },
+    {
+      "input": "=+ŁAĽ/😀AĽĽŁ/Ł!/\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/_éz09\nQéQz\n0/9Q",
+      "hex": "fffcf4f50433d3ff50"
+    },
+    {
+      "input": "A+_/!ĽA_é!/Ł=!😀9",
+      "hex": "03efff"
+    },
+    {
+      "input": "-😀=ŁQĽ\nĽ",
+      "hex": ""
+    },
+    {
+      "input": "90/A/Q 0z/==+😀_!",
+      "hex": "f74fc0fd0d33"
+    },
+    {
+      "input": "+ 9Ł😀0 é",
+      "hex": "fbd0"
+    },
+    {
+      "input": "\n-Ł\n/_Ľz=/- Q😀-\n",
+      "hex": "f80fff"
+    },
+    {
+      "input": " 😀/9=0ŁĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " 9/  😀9Ľ",
+      "hex": "f7"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A9😀ĽA😀Ł9+_9\nQ9+Ł",
+      "hex": "03"
+    },
+    {
+      "input": "--A0\néĽ\nA0😀\n0- 9",
+      "hex": "fbe034"
+    },
+    {
+      "input": "+// 😀A=0",
+      "hex": "fbff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n+ z+\n_!",
+      "hex": "fb3fbf"
+    },
+    {
+      "input": "éQzĽ😀/Q9",
+      "hex": "43"
+    },
+    {
+      "input": "-é\n😀!+ éŁ+! +Ł-/",
+      "hex": ""
+    },
+    {
+      "input": "_0Ł0+09z",
+      "hex": "ff4034fb4f73"
+    },
+    {
+      "input": "-/\n_/-9z/😀!0 + _",
+      "hex": "fbfffffbdcff"
+    },
+    {
+      "input": "\n=\nQA0_Q!-9_/ĽA9",
+      "hex": ""
+    },
+    {
+      "input": "é/9+9A\nŁ-\n99QĽ\n!",
+      "hex": "ffdfbd000fbdf5"
+    },
+    {
+      "input": " !-0\né-Q",
+      "hex": "fb4f90"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zzŁ=_A9/",
+      "hex": "cf30"
+    },
+    {
+      "input": "_9zQ-Ľ/A",
+      "hex": "ffdcd0"
+    },
+    {
+      "input": "z_=/Łé0-",
+      "hex": "cf"
+    },
+    {
+      "input": "QAĽ0é-/+",
+      "hex": "40"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-éQ/ŁA!é_9+-_-Aé",
+      "hex": "f90fc003ff7efbff80"
+    },
+    {
+      "input": "9=9ŁĽé+-",
+      "hex": ""
+    },
+    {
+      "input": "zé-Q z+😀Ł=/Ľ_QĽ ",
+      "hex": "cfe433"
+    },
+    {
+      "input": "Ľ0+!é😀/ ",
+      "hex": ""
+    },
+    {
+      "input": "Ł!é_!0-Ľ",
+      "hex": "03fd3e"
+    },
+    {
+      "input": "Ľ -z-A_é-QĽŁ_Ł++",
+      "hex": ""
+    },
+    {
+      "input": "_9=!=😀é😀Ł-0Łé😀\n+",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é =😀++/A",
+      "hex": ""
+    },
+    {
+      "input": "/z +é+=!9😀😀\n😀0z_",
+      "hex": "ff3fbe"
+    },
+    {
+      "input": "9ŁQ=!Q+_+\n0😀 =AĽ",
+      "hex": "f404"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é0/zé=😀 ",
+      "hex": "d3fc"
+    },
+    {
+      "input": "ŁA-9Q_Q/_Q0éé/éĽ",
+      "hex": "000fbd43f43ffd0d3f"
+    },
+    {
+      "input": "Ľz \n+zQ=QAŁ\nŁz-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "0 A+/+0😀Q-😀\n😀 !0",
+      "hex": "d00fbffb"
+    },
+    {
+      "input": "é😀+!é=!0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_=/=!😀zQŁQ_=😀Ľ!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QŁ=0_0__QQ-!0AQz",
+      "hex": "40"
+    },
+    {
+      "input": "\n!_/_\n/é",
+      "hex": "ffffff"
+    },
+    {
+      "input": "Q/AQ_é\n😀",
+      "hex": "43f010"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀0/!+/é0== + -0",
+      "hex": ""
+    },
+    {
+      "input": "-=/!/Łé_",
+      "hex": ""
+    },
+    {
+      "input": "-ĽŁ0ĽéŁ😀",
+      "hex": ""
+    },
+    {
+      "input": "\nAzĽ+!QA",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9Ł9-9=_Q",
+      "hex": "f40f7e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9😀!+-_😀!\n-z=Ł😀Aé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_\n9+/\n!é",
+      "hex": "ffdfbf"
+    },
+    {
+      "input": "Q_-z-A9z-é=Ľ😀A_é",
+      "hex": "43ffb3f80f73"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/\n\nz=\né_",
+      "hex": "ff"
+    },
+    {
+      "input": "9éé9Ł-+/+ +9ĽAéé",
+      "hex": "f7d03efbffbe"
+    },
+    {
+      "input": "éA=\néé_Q",
+      "hex": ""
+    },
+    {
+      "input": "Aéé-!é_+😀A9 0😀0_",
+      "hex": "03effe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9Aé/Ľé9é",
+      "hex": "f40f"
+    },
+    {
+      "input": "+ -éŁ\n_\n",
+      "hex": "fbe03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-/-A=ĽAĽ-😀/Ł/Ľ9😀",
+      "hex": "fbff80"
+    },
+    {
+      "input": "9 -😀!!é--😀zĽA+!😀",
+      "hex": "f7"
+    },
+    {
+      "input": "Q/ĽŁ0+_é",
+      "hex": "43"
+    },
+    {
+      "input": "!0+-!A\nĽ",
+      "hex": "d3ef80"
+    },
+    {
+      "input": "009Q+0\n_",
+      "hex": "d34f50fb4f"
+    },
+    {
+      "input": "+0Ł//9+é",
+      "hex": "fb403fffdf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀zŁ😀+é_\n_",
+      "hex": ""
+    },
+    {
+      "input": " -/=z=zŁ",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀!😀zĽ😀9Ľ_/9//-=",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éz Ľ0Ľ😀9",
+      "hex": ""
+    },
+    {
+      "input": "zŁĽ0Ł+++Ł\né!_ Q=",
+      "hex": "cc"
+    },
+    {
+      "input": "\n/9_zéŁz99/😀!_😀A",
+      "hex": "ffdff3033f7d"
+    },
+    {
+      "input": "z!éA0\n_-ĽĽAŁ/A+0",
+      "hex": "cc0d3f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/+ !é_Ľ-éAQŁ9z/+",
+      "hex": "ffef"
+    },
+    {
+      "input": "A__=A_A _=Ľ+Łz +",
+      "hex": "03ff"
+    },
+    {
+      "input": "A😀/+😀z😀+",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A-!0\nA-A",
+      "hex": "03ed00f8"
+    },
+    {
+      "input": "Ľ9zĽ!éz-",
+      "hex": ""
+    },
+    {
+      "input": "0😀+\n=//=",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Qz\nz 0+=+é  Q😀z ",
+      "hex": "433cf4"
+    },
+    {
+      "input": "-Ľ!_😀😀\n==+!Ł😀_= ",
+      "hex": ""
+    },
+    {
+      "input": "!=z Q=_-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A+Ľ-A \n😀",
+      "hex": "03"
+    },
+    {
+      "input": "=Ł+/😀!Q-9!Ł+=0Ł_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł \nŁ! = =!😀 _Ľ+0",
+      "hex": "00"
+    },
+    {
+      "input": "+=+ĽĽ😀 +",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A+😀éAĽzz",
+      "hex": "03"
+    },
+    {
+      "input": "_😀-09/99Q A0Q\n/\n",
+      "hex": ""
+    },
+    {
+      "input": "!Ľ+é/Q😀 Q/_/😀\n +",
+      "hex": ""
+    },
+    {
+      "input": "z 0AŁ9QA",
+      "hex": "cf4000f500"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A9Ł=zéA0",
+      "hex": "03d0"
+    },
+    {
+      "input": "+\n😀 é0++Ľ-Q_/A😀Ľ",
+      "hex": ""
+    },
+    {
+      "input": "z/Q_+Q=90!Ł!ĽQ9+",
+      "hex": "cff43ff9"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n_/+\nĽ+9_+\né😀Q+Ł",
+      "hex": "ffff"
+    },
+    {
+      "input": " 9-AŁ\nQ0-A_/zé_\n",
+      "hex": "f7e000434f80fffcff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éQ= _+😀0/A +A\né0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é\nAz😀0AQ",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+9-=😀zA_",
+      "hex": "fbdf"
+    },
+    {
+      "input": "é=+ŁA/😀!A!=Q=__Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!\nQ=Qzz😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "- 9😀+é!=9z/ -Az9",
+      "hex": "fb"
+    },
+    {
+      "input": "0-/_-Az9",
+      "hex": "d3effff80cfd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł==+Ł0ŁŁ-z/zA😀!/",
+      "hex": ""
+    },
+    {
+      "input": "Q_!ŁŁĽ+é0! Ľ+_zz",
+      "hex": "43f000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é+A9ŁŁ z-Ľ😀A+A0_",
+      "hex": "f80f40033f"
+    },
+    {
+      "input": "9+9 _+!/",
+      "hex": "f7ef7ffb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " \nĽz/_Łz9z-zAĽ9\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Qz\n_!\nŁQ",
+      "hex": "433fc0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!QQ é9\nŁ !é\n😀z/\n",
+      "hex": "410f40"
+    },
+    {
+      "input": "+_😀_Ł-=😀+ =Ł_QAz",
+      "hex": "fb"
+    },
+    {
+      "input": "90QzĽ0 9A+=9ŁQ _",
+      "hex": "f74433"
+    },
+    {
+      "input": "\n_😀+0Aé_/0!A=😀\n-",
+      "hex": ""
+    },
+    {
+      "input": "-!!Ł-/0\nA/9QŁé-é",
+      "hex": "f80fbfd00ffd400f"
+    },
+    {
+      "input": "\n\nzQ !/!\nzŁ😀/-z+",
+      "hex": "cd0ff3"
+    },
+    {
+      "input": "Q/ĽŁ/éAQ",
+      "hex": "43"
+    },
+    {
+      "input": "éé!Q9!\nA-0é\n éŁ=",
+      "hex": "43d03ed0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z_é!=\nz\n!A-ĽQ\nA=",
+      "hex": "cf"
+    },
+    {
+      "input": "9QŁz-_ éA=/-Ľ!+ ",
+      "hex": "f50033fbf0"
+    },
+    {
+      "input": "QQ+! ++AŁ_=+-090",
+      "hex": "410fbef8003f"
+    },
+    {
+      "input": "_",
+      "hex": ""
+    },
+    {
+      "input": "0\nĽ_-A/A!QŁAŁ00+",
+      "hex": ""
+    },
+    {
+      "input": "z/9!Ľ_-😀éŁAĽ= 0=",
+      "hex": "cfff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9é_+9+ _",
+      "hex": "f7ffbdfb"
+    },
+    {
+      "input": "!Ł!_--+AQ!Ľ_9Q \n",
+      "hex": "03ffbef804"
+    },
+    {
+      "input": "Ł0!+A-A-+😀é😀Ľ+-\n",
+      "hex": "034f80f80fbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "ĽQ!Q zAé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/++AŁŁ= ",
+      "hex": "ffef8000"
+    },
+    {
+      "input": "+z\nQ!Ľ -__ AĽ/-9",
+      "hex": "fb34"
+    },
+    {
+      "input": "9Ł=!Łz-z-é\nĽQ\n!!",
+      "hex": "f4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!  !//Qz/A0! é-Ł",
+      "hex": "fff433fc0d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "++0-!0\n!A=Azz Ł+",
+      "hex": "fbed3ed0"
+    },
+    {
+      "input": "Ľ0_!\nAéé00=9Ľ= 9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀9_\nQz_=QĽQŁ0Ł😀!",
+      "hex": ""
+    },
+    {
+      "input": " ĽĽz0_9😀",
+      "hex": ""
+    },
+    {
+      "input": "Q/-+Ł😀é😀",
+      "hex": "43ffbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀0\nQ\nQĽ",
+      "hex": ""
+    },
+    {
+      "input": "😀_-99z 😀",
+      "hex": ""
+    },
+    {
+      "input": "é!9A 9Qé_éA=\n Ľ_",
+      "hex": "f40f50fc"
+    },
+    {
+      "input": "é-0Q+!/9",
+      "hex": "fb443eff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_+_\n-0Q0",
+      "hex": "ffeffed10d"
+    },
+    {
+      "input": "-AA -+z_",
+      "hex": "f8003efb3f"
+    },
+    {
+      "input": " /+😀-/z\n!-Ł=  -A",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-\néQ\nA😀=",
+      "hex": "f900"
+    },
+    {
+      "input": "z😀/ Ľ+ !",
+      "hex": ""
+    },
+    {
+      "input": "Q!ŁAz0!0Ľ+z\n0Ľ+ ",
+      "hex": "400033d3"
+    },
+    {
+      "input": "Q éŁŁ ŁĽ_!Ľ \nQéQ",
+      "hex": "400000"
+    },
+    {
+      "input": "😀+/+9_A ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-=/_Ł9/ĽQ0A\n!zz_",
+      "hex": ""
+    },
+    {
+      "input": "😀éQ!Ł\né9",
+      "hex": ""
+    },
+    {
+      "input": "+!Q!0😀z\n",
+      "hex": "f90d"
+    },
+    {
+      "input": "-=+!=éĽ!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=Q0/😀\nAŁ_!A-QAé!",
+      "hex": ""
+    },
+    {
+      "input": "!/AĽ+zĽAQ+z+=-\né",
+      "hex": "fc"
+    },
+    {
+      "input": " 0+0😀+9é",
+      "hex": "d3ed"
+    },
+    {
+      "input": "😀zz/ =+Ł_9A=/Ľ9-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9-zĽ+9-Ľ",
+      "hex": "f7ec"
+    },
+    {
+      "input": "éz-/QĽ!_",
+      "hex": "cfefd0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n 09_0_éz9+-Aé0=",
+      "hex": "d3dff4ff3f7ef80d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_ Ł0-=é A😀-!9!Łé",
+      "hex": "fc0d3e"
+    },
+    {
+      "input": "+z😀=\n!=Q",
+      "hex": "fb"
+    },
+    {
+      "input": "9😀 😀 \n=!AŁĽ _!-/",
+      "hex": ""
+    },
+    {
+      "input": " -😀+ 9-A",
+      "hex": ""
+    },
+    {
+      "input": "\nzAŁ0!z/",
+      "hex": "cc0034cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀😀0é 0Ł😀=! Ľé😀9é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0-9A Aé\n",
+      "hex": "d3ef40"
+    },
+    {
+      "input": "ŁĽ/+/0/Ľ",
+      "hex": ""
+    },
+    {
+      "input": " z/9!A0=",
+      "hex": "cfff40"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀!éĽQ+A///_\n\n=9=",
+      "hex": ""
+    },
+    {
+      "input": "+AAA/zé=",
+      "hex": "f80000ff"
+    },
+    {
+      "input": "_/!!z!_0",
+      "hex": "fffcff"
+    },
+    {
+      "input": "0AĽŁ==Ł-",
+      "hex": "d0"
+    },
+    {
+      "input": "é😀+Q_é++",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀z\n=!!!=A😀9Q😀__ ",
+      "hex": ""
+    },
+    {
+      "input": "ĽAŁ😀0AĽ9z= /Q-0Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A😀Az 9_=Ľ\né/z-90",
+      "hex": ""
+    },
+    {
+      "input": "/=😀ĽŁA_=é/Ľz9=9=",
+      "hex": ""
+    },
+    {
+      "input": "+=éA😀=!/QĽ/Ł99_=",
+      "hex": ""
+    },
+    {
+      "input": "=😀 +=!/ _=Q!Ľ=é0",
+      "hex": ""
+    },
+    {
+      "input": "-Ľ Q/Az/",
+      "hex": ""
+    },
+    {
+      "input": "A9-Q0Q!z",
+      "hex": "03df90d10c"
+    },
+    {
+      "input": "-z9/=/😀 \n+😀=Q =Ł",
+      "hex": "fb3f7f"
+    },
+    {
+      "input": "A😀!=Q+ z_9AŁéŁ Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/ĽzĽ=90=😀+0éQ=+9",
+      "hex": ""
+    },
+    {
+      "input": "99+!ĽŁ😀é",
+      "hex": "f7df"
+    },
+    {
+      "input": "é0_Q9+0😀\n-A0-\n😀😀",
+      "hex": "d3f43dfb"
+    },
+    {
+      "input": "-\n0+z-/_",
+      "hex": "fb4fb3fbff"
+    },
+    {
+      "input": "😀_!9ĽQ_Ľ",
+      "hex": ""
+    },
+    {
+      "input": "_😀Ł !+Q_",
+      "hex": ""
+    },
+    {
+      "input": "!ĽA! ŁĽŁ",
+      "hex": ""
+    },
+    {
+      "input": "zĽ😀\n_ \nz",
+      "hex": ""
+    },
+    {
+      "input": "0Ł=9Ľ😀zA",
+      "hex": "d0"
+    },
+    {
+      "input": "-_99=z_0",
+      "hex": "fbff7d"
+    },
+    {
+      "input": "Ľ/ ==!+ ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-\n\n-😀=/=",
+      "hex": "fb"
+    },
+    {
+      "input": "zz=ŁAQz-",
+      "hex": "cf"
+    },
+    {
+      "input": "/  A9 A0",
+      "hex": "fc0f40"
+    },
+    {
+      "input": "😀Ł_é0-Q\n",
+      "hex": ""
+    },
+    {
+      "input": "ĽĽ/+😀 9Q",
+      "hex": ""
+    },
+    {
+      "input": "QéĽ\n_Ł/++/é+!0A0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_z\nQ😀/-Ľ",
+      "hex": "ff34"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀_+QŁ\n+\n",
+      "hex": ""
+    },
+    {
+      "input": "Qé/A9\n! ",
+      "hex": "43f03d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=éŁ\nQ9=Ľz=_9Aé--",
+      "hex": ""
+    },
+    {
+      "input": "😀z0-AA😀=Ł0 /ĽA=-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z_\n00Az+_é9Ľ!9=/",
+      "hex": "cffd34033fbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é+ŁQA\nz9/!0Az/Łé",
+      "hex": "f80400cfdff4033fc0"
+    },
+    {
+      "input": "é😀/QĽ 0_",
+      "hex": ""
+    },
+    {
+      "input": "_ z00=/9",
+      "hex": "ff3d34"
+    },
+    {
+      "input": "_+Q!z😀_AŁ_ŁA!9//",
+      "hex": "ffe433"
+    },
+    {
+      "input": "😀/é--+=Q",
+      "hex": ""
+    },
+    {
+      "input": "A\n0Ł😀\nĽ=",
+      "hex": "0340"
+    },
+    {
+      "input": "😀-!-AAéA",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀z/😀\n\n😀\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+=zŁ!=_\n",
+      "hex": ""
+    },
+    {
+      "input": "Ľ /9ŁQ +",
+      "hex": ""
+    },
+    {
+      "input": "=!z+0-Aé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q!😀!=-éQ",
+      "hex": ""
+    },
+    {
+      "input": "9Ł\n _=z!",
+      "hex": "f40f"
+    },
+    {
+      "input": "A😀-Ł=99A Q=/=9z!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " 9ĽéĽézz",
+      "hex": ""
+    },
+    {
+      "input": " !-z0_Ł=",
+      "hex": "fb3d3f"
+    },
+    {
+      "input": "9Q/QA😀😀😀",
+      "hex": "f50fd0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z+ŁQ/-__\n-_!- QQ",
+      "hex": "cfe010ffeffffbff90"
+    },
+    {
+      "input": "\n !+z_zQ_+Ľ ŁQŁ9",
+      "hex": "fb3ff343ff"
+    },
+    {
+      "input": "+=zŁ =A9Qz😀 =/+é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=/\nŁAQ+\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!=_A Ľ=z0!/é/_/Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n-ĽzŁ😀!Q",
+      "hex": ""
+    },
+    {
+      "input": "\nĽ é_/-A_-A9\n-\n9",
+      "hex": ""
+    },
+    {
+      "input": "AQQĽŁ9z0\nQ/-😀+😀A",
+      "hex": "0104"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é/-0Q_Aé",
+      "hex": "ffed10fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n-!A=\n= ",
+      "hex": "f8"
+    },
+    {
+      "input": "/Q/9éŁz_😀/Ľ\nz😀9é",
+      "hex": "fd0ffd033f"
+    },
+    {
+      "input": "Ł\n é+\nzQ++_0Q/ŁQ",
+      "hex": "03ecd0fbeff443f010"
+    },
+    {
+      "input": "/A +!-=Ľ0_Ł0-😀QĽ",
+      "hex": "fc0fbe"
+    },
+    {
+      "input": "//A_A!=z",
+      "hex": "fff03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0😀-0Ľ😀_A",
+      "hex": ""
+    },
+    {
+      "input": "\nŁ😀 Ľ9A0",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_é\nz \n😀+Ľ+_z0+/",
+      "hex": ""
+    },
+    {
+      "input": "z0z!Ł_=😀",
+      "hex": "cf4cc0"
+    },
+    {
+      "input": "\nQ/\n0A+Q",
+      "hex": "43fd00f9"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n=-A=+\n\n",
+      "hex": ""
+    },
+    {
+      "input": "=\n/\n9-é/",
+      "hex": ""
+    },
+    {
+      "input": "😀_!zŁŁ😀-Q/é 😀😀z!",
+      "hex": ""
+    },
+    {
+      "input": " +Q-=0-+/  Aé😀!Q",
+      "hex": "f90f"
+    },
+    {
+      "input": "😀9z_\nz\n/",
+      "hex": ""
+    },
+    {
+      "input": "ŁĽ\nĽĽŁĽ_Ł0é_éé!_",
+      "hex": ""
+    },
+    {
+      "input": "99Q_-+9z",
+      "hex": "f7d43ffbef73"
+    },
+    {
+      "input": "/😀_=0+\n😀éŁ😀9=Q😀9",
+      "hex": ""
+    },
+    {
+      "input": "QĽ!9!!\n!",
+      "hex": ""
+    },
+    {
+      "input": "//9-éŁĽ_",
+      "hex": "ffff7e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/=_zAŁQQ",
+      "hex": ""
+    },
+    {
+      "input": "-9 9😀ŁzA",
+      "hex": "fbdf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-Łz9!+😀9zŁ!z0-Łz",
+      "hex": "f80cfd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀/ŁQ-=  ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+é-QĽ_Q9",
+      "hex": "fbe4"
+    },
+    {
+      "input": "Ł0😀/_é+9",
+      "hex": "03"
+    },
+    {
+      "input": "-9Ł !Q-Ł",
+      "hex": "fbd010f8"
+    },
+    {
+      "input": "AzŁŁéĽ+Q",
+      "hex": "033000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0Ľ!!/=/Ľ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_😀/ŁQĽé+",
+      "hex": ""
+    },
+    {
+      "input": "!=-/ /éé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z!z\nzĽz-",
+      "hex": "cf3c"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z99=-Ł=-",
+      "hex": "cfdf"
+    },
+    {
+      "input": "_\n_QŁA/é",
+      "hex": "fff40003"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-\n!A9/Az\né--\n=Q\n",
+      "hex": "f80f7f033fbe"
+    },
+    {
+      "input": "9Ł😀!A+\n0éz+ ŁAĽA",
+      "hex": "f4"
+    },
+    {
+      "input": "😀A00Q0ŁQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/+ĽQ/A999/9z!\nAŁ",
+      "hex": "ff"
+    },
+    {
+      "input": "z!9_Q_ 0éé/😀0Ł9_",
+      "hex": "cfdfd0ff4f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0Ľ_!Ľ/0é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "99+ 😀 éŁ-A99Q+z0",
+      "hex": "f7df"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0😀=0Ľé_é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/0+z\nAQ!",
+      "hex": "ff4fb301"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_😀+_AAA\n",
+      "hex": ""
+    },
+    {
+      "input": "A!-0+Ł0/éA!+/A0\n",
+      "hex": "03ed3e034fc0fbf034"
+    },
+    {
+      "input": "=/+9\n Ľ90-Ł é-_Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀+- Ľz_😀Ł Łéz-/_",
+      "hex": ""
+    },
+    {
+      "input": " Ł\n 9\n=-_-+ĽĽĽ😀0",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0+Ł0+z😀Q",
+      "hex": "d3e034fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9==Q+/Ľz",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ0😀zQ0éQé_zé/ ++",
+      "hex": ""
+    },
+    {
+      "input": " \n😀\nĽQ-/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/QA/+Ľ-0",
+      "hex": "fd003f"
+    },
+    {
+      "input": "/+0+Q9z/+ Ľ-Aé0=",
+      "hex": "ffed3e43dcff"
+    },
+    {
+      "input": "Ľ9zĽ9_é+-_/éA_Ľ+",
+      "hex": ""
+    },
+    {
+      "input": "😀90 Ł  /+é 0zAŁ ",
+      "hex": ""
+    },
+    {
+      "input": "+!A==/=zéz=_A\nQ_",
+      "hex": "f8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/ĽAĽ0_😀é=!!QA!QĽ",
+      "hex": ""
+    },
+    {
+      "input": "9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nQ=Ł!+z_Qé+09QQ_",
+      "hex": ""
+    },
+    {
+      "input": " ŁĽz_Ł\n_",
+      "hex": ""
+    },
+    {
+      "input": "A😀9Q9=_9z0//A!/=",
+      "hex": ""
+    },
+    {
+      "input": "Q00-Aé9zQéŁ-_+!_",
+      "hex": "434d3e03dcd003effe"
+    },
+    {
+      "input": "A=😀😀Ľ-Ľz",
+      "hex": ""
+    },
+    {
+      "input": "A== +Ľ😀ŁéĽĽŁQĽ 9",
+      "hex": ""
+    },
+    {
+      "input": "-9 \nA9+z",
+      "hex": "fbd03dfb"
+    },
+    {
+      "input": "/ -z!Q-_",
+      "hex": "ffecd0fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀=😀_+ŁŁ+0 A/z=Ł",
+      "hex": ""
+    },
+    {
+      "input": "9+Ľ!+=9-",
+      "hex": "f7"
+    },
+    {
+      "input": "A+Ľ+ --\n",
+      "hex": "03"
+    },
+    {
+      "input": "éŁŁQ😀Ł9+ -😀😀z-AĽ",
+      "hex": "0004"
+    },
+    {
+      "input": "9 Q😀=_  ",
+      "hex": "f5"
+    },
+    {
+      "input": "😀é_+z /\n",
+      "hex": ""
+    },
+    {
+      "input": "éz/Ł_Ł-A",
+      "hex": "cff03f03e0"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "09 AQ-+ Q\nz-ŁĽz9",
+      "hex": "d3d010fbe433f8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\nQ9=+é-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=+Q=é!zz==é9/0Ł+",
+      "hex": ""
+    },
+    {
+      "input": "=-éĽ 9=zé_- 9é/é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q_== Q!é",
+      "hex": "43"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\néQŁ_Ľ/",
+      "hex": ""
+    },
+    {
+      "input": "A/é-/z \n",
+      "hex": "03ffbf"
+    },
+    {
+      "input": "Ł\nŁ!😀 Q+",
+      "hex": "00"
+    },
+    {
+      "input": "z+  -=-=",
+      "hex": "cfef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A0/+QAQĽ0A=zQŁĽé",
+      "hex": "034ffe4004"
+    },
+    {
+      "input": "+=!0/z!=!Q😀/😀! 😀",
+      "hex": ""
+    },
+    {
+      "input": "ĽQQ!z\n\n ŁŁAQ0A  ",
+      "hex": ""
+    },
+    {
+      "input": "\nŁQ0A\n-/zAA\n-QA!",
+      "hex": "010d00fbfcc003e400"
+    },
+    {
+      "input": "=00zŁQ!😀!!!ĽéŁAŁ",
+      "hex": ""
+    },
+    {
+      "input": "+ -0=!Ľ ",
+      "hex": "fbed"
+    },
+    {
+      "input": "+0éA-ŁŁ0ĽĽA_+_/\n",
+      "hex": "fb403e000d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0 Q/z+z😀",
+      "hex": "d10ff3fb"
+    },
+    {
+      "input": "z+-=ŁŁ9=+=_😀 0ŁĽ",
+      "hex": "cfef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0-+=/9_éz😀9=! !",
+      "hex": "d3ef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!\n=zé9é",
+      "hex": ""
+    },
+    {
+      "input": "zŁŁé-A0!/zA+Q +!",
+      "hex": "cc003e034ff303e43e"
+    },
+    {
+      "input": "=/é!!ĽĽ9😀\n\nŁ=😀QQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n A9z-Q9",
+      "hex": "03dcfe43"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QA++!/_Ľ+Qé09 Ľ9",
+      "hex": "400fbeff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/===!z/=",
+      "hex": ""
+    },
+    {
+      "input": "+_Ł😀0😀é+",
+      "hex": "fbf0"
+    },
+    {
+      "input": "9!-=éz- ",
+      "hex": "f7"
+    },
+    {
+      "input": "😀+- /!/-\nĽ9=zé-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀/z0/z_",
+      "hex": ""
+    },
+    {
+      "input": "9+_!+0/_-_/\n z+=",
+      "hex": "f7effed3fffefffcfe"
+    },
+    {
+      "input": "999!!__0",
+      "hex": "f7df7fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " 😀-/😀QAA",
+      "hex": ""
+    },
+    {
+      "input": "-/+_Ł-😀-",
+      "hex": "fbffbf03"
+    },
+    {
+      "input": "+😀00é =é",
+      "hex": ""
+    },
+    {
+      "input": "Ł😀-!QzA+--\n😀z/Ł-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=é=+Q é😀+QĽ_Q_9-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "= /!Q/Ł==Q! +!_0",
+      "hex": ""
+    },
+    {
+      "input": " zŁ\n=ĽQ0",
+      "hex": "cc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľz_0!!😀-",
+      "hex": ""
+    },
+    {
+      "input": "QQ9_Q-0/",
+      "hex": "410f7f43ed3f"
+    },
+    {
+      "input": " /z/AéŁ0Qzz\nQ_/😀",
+      "hex": "ff3fc0034433cd0fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z_+_éé/9Ł\nzĽ 😀é9",
+      "hex": "cfffbfffd033"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n😀é😀 Q/0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0-Ľ-éŁ/Q",
+      "hex": "d3"
+    },
+    {
+      "input": "0++=\nŁ+!9😀09Ł-_Ľ",
+      "hex": "d3ef"
+    },
+    {
+      "input": "// =\nz9_Q_z😀\n😀0z",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éA-ĽA_90",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_Qé+AĽ_😀",
+      "hex": "fd0f80"
+    },
+    {
+      "input": "\nzéA0/ A",
+      "hex": "cc0d3f"
+    },
+    {
+      "input": " 😀+zQ/99",
+      "hex": ""
+    },
+    {
+      "input": "-\n!Ł\n-0é",
+      "hex": "f80fb4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=A_A😀😀/😀9A!/ A0=",
+      "hex": ""
+    },
+    {
+      "input": "Ł=-=/_zĽ",
+      "hex": ""
+    },
+    {
+      "input": "=\nŁQ!+0Ľ",
+      "hex": ""
+    },
+    {
+      "input": "!ŁQŁ😀Qz /9Q_Q9ŁŁ",
+      "hex": "0100"
+    },
+    {
+      "input": "+Ł\n Ł  +",
+      "hex": "f8003e"
+    },
+    {
+      "input": "-zŁĽ9zQ!",
+      "hex": "fb30"
+    },
+    {
+      "input": "Ł!/z   /",
+      "hex": "03fcff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł/0Q/99!",
+      "hex": "03fd10ffdf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n=Q=90😀=",
+      "hex": ""
+    },
+    {
+      "input": "/+0😀9+\n/",
+      "hex": "ffed"
+    },
+    {
+      "input": "z/=== -ĽA0😀 \n-/Q",
+      "hex": "cf"
+    },
+    {
+      "input": "0A+zz9\n+Łz9😀 Q/Ł",
+      "hex": "d00fb3cfdf80cf"
+    },
+    {
+      "input": "A/-Ľ=\n/😀\nĽ_9z😀é\n",
+      "hex": "03ff"
+    },
+    {
+      "input": "=Q-0!/\n9",
+      "hex": ""
+    },
+    {
+      "input": "QQŁŁ-😀-/",
+      "hex": "410000"
+    },
+    {
+      "input": "_ +éé 😀-",
+      "hex": "ff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀é _😀ĽQĽ",
+      "hex": ""
+    },
+    {
+      "input": "+!_-=\n!90!__/!AŁ",
+      "hex": "fbff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/9/!ĽQ!z",
+      "hex": "ffdf"
+    },
+    {
+      "input": "zAé!=z/=",
+      "hex": "cc"
+    },
+    {
+      "input": "0_ Ľ-_9=",
+      "hex": "d3"
+    },
+    {
+      "input": "A!==\né+_zŁ/!\nA/+",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=zé0éA+/Q\nzŁ-zĽĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0z!é_!9_-=_zz09!",
+      "hex": "d33ffdff"
+    },
+    {
+      "input": "_😀é_+_QŁ",
+      "hex": ""
+    },
+    {
+      "input": "-ézéĽ_Q😀",
+      "hex": "fb"
+    },
+    {
+      "input": "-A-\n!😀=/",
+      "hex": "f80f"
+    },
+    {
+      "input": "_é_/+\n=Q",
+      "hex": "fffffe"
+    },
+    {
+      "input": "0Ł9+!/\nQ",
+      "hex": "d00f7efd"
+    },
+    {
+      "input": "Ł !Q+0/9é-+éA\n!9",
+      "hex": "010fb4ffdfbe03"
+    },
+    {
+      "input": "QA_=\nA_-",
+      "hex": "400f"
+    },
+    {
+      "input": "Ł z9\nz//QĽzzŁ-éé",
+      "hex": "033f73fff4"
+    },
+    {
+      "input": "Ł-/+Ľé0é9😀\n _Ł0z",
+      "hex": "03effe"
+    },
+    {
+      "input": "😀A 😀_9z9Q==0A-😀/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q +_ 0_+_😀ŁA\nŁ !",
+      "hex": "43eff4ffef"
+    },
+    {
+      "input": "ĽQ-é++9A_A+!/+éé",
+      "hex": ""
+    },
+    {
+      "input": "é-😀=Ł_!-",
+      "hex": ""
+    },
+    {
+      "input": "Q\n=Ł=Ł ==!z😀AAĽ!",
+      "hex": ""
+    },
+    {
+      "input": "9+Aé/Ľ éé9Q!A!z\n",
+      "hex": "f7e03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ0/zĽ+Ł😀_\n!900😀Ľ",
+      "hex": ""
+    },
+    {
+      "input": "9!é_-/A+",
+      "hex": "f7ffbf03"
+    },
+    {
+      "input": " \n😀Q/A __😀9!AzQ ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-++\néŁ+9😀Q Łé+Az",
+      "hex": "fbef80fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_=é=A=9\nz😀+\né/0-",
+      "hex": ""
+    },
+    {
+      "input": "é0++Ľz-_",
+      "hex": "d3ef"
+    },
+    {
+      "input": "😀!Q/ŁA+Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9=0éA😀+-",
+      "hex": ""
+    },
+    {
+      "input": "/+A!+AAA",
+      "hex": "ffe03e0000"
+    },
+    {
+      "input": "zĽ_09!ĽQ+Ľ09-éé!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/=Ł/_Ł- -é_A9Ľ0-",
+      "hex": ""
+    },
+    {
+      "input": "=ézĽĽ+\nĽ99Ł\nA\n\n-",
+      "hex": ""
+    },
+    {
+      "input": "/\n😀 9Ł+_z\n 9Ł_-Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q\nĽ9Ł--0_0 !-+Ľ_",
+      "hex": ""
+    },
+    {
+      "input": "😀AA9A9!=",
+      "hex": ""
+    },
+    {
+      "input": "é-!AŁ+\nŁ",
+      "hex": "f8003e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!Ľ!=_9\nA0z-A0Ľ é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_Ľ -=zŁ",
+      "hex": ""
+    },
+    {
+      "input": "A! ézzQ-é😀9!\n_Ľ=",
+      "hex": "033cd0"
+    },
+    {
+      "input": "/0QAŁ0!Q",
+      "hex": "ff44000344"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9\nA😀Q -Aéz!A9+=/",
+      "hex": "f4"
+    },
+    {
+      "input": "!ĽŁ9QQŁ9",
+      "hex": ""
+    },
+    {
+      "input": "ĽQQĽ\n!\n-0\nA\n9é_\n",
+      "hex": ""
+    },
+    {
+      "input": "zQ!/=--A _Q+😀 =-",
+      "hex": "cd0f"
+    },
+    {
+      "input": "\nŁ9Q😀 !A",
+      "hex": "03d4"
+    },
+    {
+      "input": "/ A0Ľ😀/-",
+      "hex": "fc0d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł9ĽQĽAĽ_",
+      "hex": "03"
+    },
+    {
+      "input": "Ľé=z9 0 +_-+z==\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !zA/+_/",
+      "hex": "cc0ffeff"
+    },
+    {
+      "input": "Q//!/Q Ľ",
+      "hex": "43ffff"
+    },
+    {
+      "input": "Ľéé _z\n😀",
+      "hex": ""
+    },
+    {
+      "input": "A/z!-/\n\nAAA0\nz9!",
+      "hex": "03fcfefc0000d33f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0\nŁ_/0+/",
+      "hex": "d00fffd3ef"
+    },
+    {
+      "input": "AA\nzĽ/!9",
+      "hex": "000c"
+    },
+    {
+      "input": " +ĽQŁ!0\n",
+      "hex": ""
+    },
+    {
+      "input": "A+éQ😀ŁAé+-9z\n\n/ ",
+      "hex": "03e4"
+    },
+    {
+      "input": "/Ł0Q_ŁĽ /😀= _9é9",
+      "hex": "fc0d10fc"
+    },
+    {
+      "input": "Łé0-é9\nŁ\n+Łé9AQz",
+      "hex": "034fbd03e03d010c"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀😀éQ_-A09_09=9/9",
+      "hex": ""
+    },
+    {
+      "input": "=Ľ_ =_\nŁQz0-😀Ł0😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QŁ Q_=\nQ0Q!_-\n+-",
+      "hex": "40043f"
+    },
+    {
+      "input": "ĽQ!😀 Ł--😀/\n=9Ľ0=",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-A_/_0😀9",
+      "hex": "f80fffff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n- 0zz 😀",
+      "hex": "fb4cf3"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zé!/_z Qz éŁ\n-😀/",
+      "hex": "cffff343303e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-+😀+0😀99",
+      "hex": "fb"
+    },
+    {
+      "input": "+A+\n/é😀-",
+      "hex": "f80fbf"
+    },
+    {
+      "input": "é!-zé-ĽQ+ A_ĽA+=",
+      "hex": "fb3f"
+    },
+    {
+      "input": "😀A0Ľ-A9=\n=/-😀zQ_",
+      "hex": ""
+    },
+    {
+      "input": "9😀Ľ9é_Qz0😀\n=0-zA",
+      "hex": ""
+    },
+    {
+      "input": "!+Ł+/=QŁ++ !+0=Q",
+      "hex": "f80fbf"
+    },
+    {
+      "input": "=z\n0A Q😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_Ł  AA-",
+      "hex": ""
+    },
+    {
+      "input": " 😀😀! 9z!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľé!A+A-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_=_ \n\nzé _ééé😀/😀",
+      "hex": ""
+    },
+    {
+      "input": "😀+é/QĽ!+zQ é-\n9é",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QQ!!Q!\n-é\n=-A9--",
+      "hex": "41043e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!00+é+😀é",
+      "hex": "d34fbe"
+    },
+    {
+      "input": "😀Ł\nAzŁ/Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " Ľ+/+==_=😀zé+Ł=😀",
+      "hex": ""
+    },
+    {
+      "input": "é9QĽĽ/Ł ",
+      "hex": "f5"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A-A!+A😀/0Ł+_Łz0A",
+      "hex": "03e03e"
+    },
+    {
+      "input": "Ľé ĽĽ_9ŁAQzĽŁ_9Q",
+      "hex": ""
+    },
+    {
+      "input": "A+0\n-z!-",
+      "hex": "03ed3ecf"
+    },
+    {
+      "input": "😀😀😀0!90!😀A+=/_/\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/0éz99z=",
+      "hex": "ff4cfdf7"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A!😀zAéé\n0!A-!\n!A",
+      "hex": ""
+    },
+    {
+      "input": "-😀 9A=/-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n9=z😀z0QAŁé éz=9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é=A=9+/\n",
+      "hex": ""
+    },
+    {
+      "input": "Qzz--/A_é_Ł0\n+_=",
+      "hex": "433cfefbf03ffc0d3e"
+    },
+    {
+      "input": "/+\n9AzA9 =é\n=😀A+",
+      "hex": "ffef40cc0f"
+    },
+    {
+      "input": "/ +z=QA ",
+      "hex": "ffec"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀Q  -\n_0z/!_A+ĽQ",
+      "hex": ""
+    },
+    {
+      "input": "-z!99-Q\n",
+      "hex": "fb3f7df9"
+    },
+    {
+      "input": "/=\n09😀+Ľ😀😀!A!-\n!",
+      "hex": ""
+    },
+    {
+      "input": "éQé !Ľ!\n",
+      "hex": ""
+    },
+    {
+      "input": "+-zé+9+_é=Ľ9A/ =",
+      "hex": "fbecfef7ef"
+    },
+    {
+      "input": "😀\n😀z😀ĽĽ+",
+      "hex": ""
+    },
+    {
+      "input": "😀-! 😀+!0z/é - \nQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n+Ł\né\n-Q",
+      "hex": "f80f90"
+    },
+    {
+      "input": "/_ 0Q +z+z0--ĽŁz",
+      "hex": "fffd10fb3fb3d3ef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é=😀/0Q-=",
+      "hex": ""
+    },
+    {
+      "input": "9!ĽzQ_9éA!0Q0+Ł!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QAĽ z-0z\n=\n😀 -/Ł",
+      "hex": "40"
+    },
+    {
+      "input": "Ľ-\nA\n+_/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "AAQ=_-/!_ŁzQA/Ľ-",
+      "hex": "0004"
+    },
+    {
+      "input": "\n=!zŁ=9=9Ł!Q!Ł9-",
+      "hex": ""
+    },
+    {
+      "input": "9ŁĽ00+9+",
+      "hex": "f4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-=Q !😀zéé😀_Q 😀Ł ",
+      "hex": ""
+    },
+    {
+      "input": "/+😀\n0+!_9/_!+/ Ľ",
+      "hex": "ff"
+    },
+    {
+      "input": "😀+0Q++99",
+      "hex": ""
+    },
+    {
+      "input": "=/zQ_zQQ!zĽ_-A+é",
+      "hex": ""
+    },
+    {
+      "input": "0A +Ľ-Ľ0A-! éQĽ-",
+      "hex": "d00f"
+    },
+    {
+      "input": "éŁ=Ľ_\n😀Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "AŁzzéQ=+_0+Łé/Q_",
+      "hex": "000cf3"
+    },
+    {
+      "input": "/+/é\n\n-/",
+      "hex": "ffeffe"
+    },
+    {
+      "input": "ŁAQ //\n=0A\n-é-ŁĽ",
+      "hex": "00043f"
+    },
+    {
+      "input": "Ł_ 0 9Ľ ",
+      "hex": "03fd3d"
+    },
+    {
+      "input": " \nzA9-AĽ_+Ľ=!é/Ľ",
+      "hex": "cc0f7e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀=A😀z_Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0z zŁŁ9😀",
+      "hex": "d33cc003"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "QQ9-/z+é\n_ A -0A",
+      "hex": "410f7eff3fbf03ed00"
+    },
+    {
+      "input": "+_z+ŁQ_ ",
+      "hex": "fbfcfe010f"
+    },
+    {
+      "input": "_0Łz=_AAAzé-9z Q",
+      "hex": "ff4033"
+    },
+    {
+      "input": "Ł0Ľ0z0=_",
+      "hex": "03"
+    },
+    {
+      "input": "Ľ  !Ł\nAA",
+      "hex": ""
+    },
+    {
+      "input": "Ł9Ľ= !Ł-A z\nQŁ=z",
+      "hex": "03"
+    },
+    {
+      "input": "/Ł!é +_+",
+      "hex": "fc0fbf"
+    },
+    {
+      "input": "/0 +éQz-Ľ9A+=!!9",
+      "hex": "ff4f90cf"
+    },
+    {
+      "input": "z-/é A_Ľ",
+      "hex": "cfefc0"
+    },
+    {
+      "input": "9z 😀ĽQĽ9z+éĽz+QŁ",
+      "hex": "f7"
+    },
+    {
+      "input": "=Ł😀😀0Ľ+/",
+      "hex": ""
+    },
+    {
+      "input": "😀zŁ éQ-A",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀\n-Q/Q= ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "900+!ĽĽé0éz-Ľ\n!9",
+      "hex": "f74d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9-0-z!é+",
+      "hex": "f7ed3ecf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ😀😀/9-Ľ0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ/0\n z_0/99z  Ł ",
+      "hex": ""
+    },
+    {
+      "input": "0ĽA9/!😀z/😀0!0😀++",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+0=z+0!😀Ł😀Ľ+_9+😀",
+      "hex": "fb"
+    },
+    {
+      "input": "ŁĽ0+ŁŁ😀Łz_Qz-Ł-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "😀AQéé_/AA!Q=Q=!Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ-😀-😀=!Ł=--é_ĽQĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " //0/Ł\nA",
+      "hex": "fffd3f00"
+    },
+    {
+      "input": "-éAŁzA 0",
+      "hex": "f8003303"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/=\n+/A =",
+      "hex": ""
+    },
+    {
+      "input": "Q//0 0Ł-+//09+9=",
+      "hex": "43fff4d00fbefffd3dfb"
+    },
+    {
+      "input": "0AéQQ+z!",
+      "hex": "d00410fb"
+    },
+    {
+      "input": "_9!/0!!ŁQA\n0+ --",
+      "hex": "ffdff4010034fbef"
+    },
+    {
+      "input": "z\n=+éQ/!AĽQ_Ł/-/",
+      "hex": ""
+    },
+    {
+      "input": "Ł! +A0 !A Ľé😀-\n\n",
+      "hex": "03e034"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Łé!-\n09é",
+      "hex": "03ed3d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9/ = +😀0/QQ=+ =!",
+      "hex": "f7"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q0A!_ _+é 9éQ😀-/",
+      "hex": "43403fffef50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n+_=A_Q😀😀/A0Q999",
+      "hex": "fb"
+    },
+    {
+      "input": "_-Ł99!😀😀+ŁQéŁ\nA_",
+      "hex": "ffe03d"
+    },
+    {
+      "input": "😀9Q--é_!é9+=90- ",
+      "hex": ""
+    },
+    {
+      "input": "/+/+/0😀z",
+      "hex": "ffeffeff"
+    },
+    {
+      "input": "éŁA9QzéĽ=QŁz+/9 ",
+      "hex": "000f50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!+=😀zéŁ  _0A/-9\n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+9éĽ9Ľ/-",
+      "hex": "fb"
+    },
+    {
+      "input": "😀-+zz 9😀\nĽ/A+\n\n9",
+      "hex": ""
+    },
+    {
+      "input": "QéŁ😀/z--",
+      "hex": "40"
+    },
+    {
+      "input": "!!/ééĽQ = !ĽŁĽ-😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-/éé-/-😀z9\n9z0!!",
+      "hex": "fbffbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " =A!+=é/",
+      "hex": ""
+    },
+    {
+      "input": " Ľ9-Ł= =A0é+-😀=A",
+      "hex": ""
+    },
+    {
+      "input": "+/A!z+ /Ł-😀+ĽA!=",
+      "hex": "fbf033fbf03e"
+    },
+    {
+      "input": "\nz_-Ľ9==!😀!😀-9é!",
+      "hex": "cfff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0ĽAĽ_A0Ľ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀!ĽŁ😀0//",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=z0A+A/\nŁ-=ŁzQA=_",
+      "hex": ""
+    },
+    {
+      "input": "_ é😀9AŁ_Q/!Qé! \n",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n- \n+QzA",
+      "hex": "fbe433"
+    },
+    {
+      "input": "zz_9Ł =_",
+      "hex": "cf3ffd"
+    },
+    {
+      "input": "9Ł😀ĽQ -_",
+      "hex": "f4"
+    },
+    {
+      "input": "0_++Ł+😀Ł",
+      "hex": "d3ffbe03"
+    },
+    {
+      "input": "0 é_ /😀\n Ľ\n\n-ŁQ!",
+      "hex": "d3ff"
+    },
+    {
+      "input": "Q=A-zŁ=9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=z0ŁĽ=\n ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n/=+z=/Ľ",
+      "hex": ""
+    },
+    {
+      "input": "\nŁ=__😀=9",
+      "hex": ""
+    },
+    {
+      "input": " =\n/A_zĽ😀z90/z/Q",
+      "hex": ""
+    },
+    {
+      "input": "Ľ\n_Ł=!!😀",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "---QA0 Q",
+      "hex": "fbef900344"
+    },
+    {
+      "input": "//0ŁQz_/😀9éz😀ĽA9",
+      "hex": "fffd00433fff"
+    },
+    {
+      "input": "0A==0😀/zQŁ/_ĽŁ90",
+      "hex": "d0"
+    },
+    {
+      "input": "Q=/Ł+-9+",
+      "hex": ""
+    },
+    {
+      "input": "0\n \nŁA-0\n😀/90_ 9",
+      "hex": "d0003e"
+    },
+    {
+      "input": " Ł 0-😀!-z=😀😀0é\n!",
+      "hex": "034f"
+    },
+    {
+      "input": "9=Ľ-é0zQ",
+      "hex": ""
+    },
+    {
+      "input": "QA/0 Ł_😀Ł _09_zĽ",
+      "hex": "400ff403"
+    },
+    {
+      "input": "_=!==_++",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n\n9-\n=Ľ9\n=éz-\n9Q",
+      "hex": "f7"
+    },
+    {
+      "input": "\n //+/_😀😀0+ĽzzŁ_",
+      "hex": "ffffbf"
+    },
+    {
+      "input": "zŁ+//-éQ =/!😀A_+",
+      "hex": "cc0fbfffe4"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nA__9\n9Q-! !Q/zŁ",
+      "hex": "03fffdf50f90ff30"
+    },
+    {
+      "input": "_-0A_!\n!\n+ŁĽ0AŁ+",
+      "hex": "ffed00ffe0"
+    },
+    {
+      "input": "9Q-Q_!\n\n_-\n-ĽŁ++",
+      "hex": "f50f90ffffbe"
+    },
+    {
+      "input": "éA0A=+Ł0",
+      "hex": "0340"
+    },
+    {
+      "input": "=A/!/A!ŁA😀zĽ+90+",
+      "hex": ""
+    },
+    {
+      "input": "_9Qéz9éA-zé!z_+Ľ",
+      "hex": "ffd433f40fb3cfff"
+    },
+    {
+      "input": "0\n😀z=Ľ0/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/-é_-/!\nQŁĽĽé=QŁ",
+      "hex": "ffeffefd00"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_é😀éé!!Q/\nz\n0\n+Ł",
+      "hex": ""
+    },
+    {
+      "input": "0Q/Ľ😀0z0é=--\n/z/",
+      "hex": "d10f"
+    },
+    {
+      "input": "+_😀\n0z!9\n_z-/+QĽ",
+      "hex": "fb"
+    },
+    {
+      "input": "Ľ-_Ł-\nQ -A+!Ľ\nŁé",
+      "hex": ""
+    },
+    {
+      "input": "Ł😀\n=ĽŁzé",
+      "hex": ""
+    },
+    {
+      "input": "0éQz/_ĽA=zAé0zé/",
+      "hex": "d10cff"
+    },
+    {
+      "input": "9=z!A😀9 /Ł😀😀zŁĽz",
+      "hex": ""
+    },
+    {
+      "input": "=9==Q9éz",
+      "hex": ""
+    },
+    {
+      "input": "-/Q\néz😀/",
+      "hex": "fbf433"
+    },
+    {
+      "input": "😀Ł/--/Ł😀!\nA9+=😀/",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!\n!_A+0",
+      "hex": ""
+    },
+    {
+      "input": "Ł+_!=é0Qé\nŁ- _/é",
+      "hex": "03ef"
+    },
+    {
+      "input": "--_!Ľ-é/+",
+      "hex": "fbef"
+    },
+    {
+      "input": "Q9!\n990ŁĽŁ😀_ _!Q",
+      "hex": "43df7dd0"
+    },
+    {
+      "input": "+z9\nQQ😀!0\n_ A9_é",
+      "hex": "fb3f50"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A0😀Q+\néĽ",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł_Ł-  9!z+😀/99😀é",
+      "hex": "03f03ef73f"
+    },
+    {
+      "input": " 0QA+Ł+A",
+      "hex": "d1003e03e0"
+    },
+    {
+      "input": "+_//A9!0😀Ł=😀z99+",
+      "hex": "fbffff03dd"
+    },
+    {
+      "input": "Ł0+A+-Ľ=",
+      "hex": "034f80fb"
+    },
+    {
+      "input": "😀ĽzQé😀A_09QAéĽéé",
+      "hex": ""
+    },
+    {
+      "input": "=éQQĽ\nQ9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/Q==\n -!",
+      "hex": "fd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0_Ł+Ľz-zé\n!\n😀é0A",
+      "hex": "d3f03e"
+    },
+    {
+      "input": "=é\nAĽ\nŁA\nŁQ\n= z\n",
+      "hex": ""
+    },
+    {
+      "input": "\n!!=\nŁ=_/ _ !=z/",
+      "hex": ""
+    },
+    {
+      "input": "Q \n!= 0!",
+      "hex": ""
+    },
+    {
+      "input": "zAQ😀=9!=😀\n/9!Q__",
+      "hex": "cc04"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "éQé/-ĽĽĽ  ++=A=😀",
+      "hex": "43ff"
+    },
+    {
+      "input": "A😀9_QA\n_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+é😀z zAé",
+      "hex": ""
+    },
+    {
+      "input": " /😀_zzĽ-",
+      "hex": ""
+    },
+    {
+      "input": "-=0/ \n+Ľ\n+\nz+=Aé",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+z_!z0z0",
+      "hex": "fb3ff3d33d"
+    },
+    {
+      "input": "zQ=9é0ŁŁ",
+      "hex": "cd"
+    },
+    {
+      "input": "éQAĽ\néĽQ",
+      "hex": "40"
+    },
+    {
+      "input": "Q\n=_A\nQ+ĽzĽz9/QĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n AQé!9Ł",
+      "hex": "010f40"
+    },
+    {
+      "input": "0ĽĽé+A0Q",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ😀\n/-Ľ+0+é😀zĽQŁ!",
+      "hex": ""
+    },
+    {
+      "input": "Ľ_9+9😀Ł!A+QĽ\n0/!",
+      "hex": ""
+    },
+    {
+      "input": "Ľ9 =\n+\nQ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľz!zQ\n-\n",
+      "hex": ""
+    },
+    {
+      "input": "0A😀A_-é9",
+      "hex": "d0"
+    },
+    {
+      "input": "é\né+zĽ++/=! Ľ9😀😀",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀+😀=A=-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "éz😀é+9-Ľ",
+      "hex": ""
+    },
+    {
+      "input": "A++Ł\n =Ľ",
+      "hex": "03ef80"
+    },
+    {
+      "input": "0!😀0é9\nQ Qé/!=😀/",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Q😀😀\n_z😀Ľ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/AĽ_=😀 é",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0=éŁ😀A0",
+      "hex": ""
+    },
+    {
+      "input": "zééé0é0+",
+      "hex": "cf4d3e"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+ŁŁéé==/\n\nAŁ-0=é",
+      "hex": "f800"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A_QQŁ-z\n",
+      "hex": "03f41003ec"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+Ł9\n\nĽ+éQ=-Ľ!éz-",
+      "hex": "f80f"
+    },
+    {
+      "input": "A9-z_+-A\nQ=\nĽŁz\n",
+      "hex": "03dfb3ffef80"
+    },
+    {
+      "input": "_0_-😀A/\n  Ł-090-",
+      "hex": "ff4ffe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_Ł=ŁA/=z",
+      "hex": "fc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+9++=\n!QééA/=9!Q",
+      "hex": "fbdfbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!9😀Ł9😀Łz",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n-\n0=éŁ=",
+      "hex": "fb"
+    },
+    {
+      "input": "A=Ł\n!A/0",
+      "hex": ""
+    },
+    {
+      "input": "Ł0\n_-😀Ł😀Ł+ Ł=Q9z",
+      "hex": "034ffe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !0A _Q_+QŁ+ 09\n",
+      "hex": "d00fd0ffe400fb4f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é Ł!zĽ😀0=zĽŁ--😀z",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "0",
+      "hex": ""
+    },
+    {
+      "input": "-Łé😀é0z 😀z\n\n/A00",
+      "hex": "f8"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-0=-QQ0Ł",
+      "hex": "fb"
+    },
+    {
+      "input": "Q/Q9Ľ!=_",
+      "hex": "43f43d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n0Q😀AéŁ/",
+      "hex": "d1"
+    },
+    {
+      "input": " QĽĽ😀9Azz0/!9!+=",
+      "hex": ""
+    },
+    {
+      "input": "+_\n+9 =Ł!\n=ŁéQ😀😀",
+      "hex": "fbffbd"
+    },
+    {
+      "input": "zz/=-0😀Q",
+      "hex": "cf3f"
+    },
+    {
+      "input": "é\n-AA0ézĽ9=/A-9/",
+      "hex": "f80034"
+    },
+    {
+      "input": "😀+QéA_0!z009z!_Ł",
+      "hex": ""
+    },
+    {
+      "input": "9\nA\n\n!  ",
+      "hex": "f4"
+    },
+    {
+      "input": "=+=\n/_=Łé_QA=\n--",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/0zŁ😀😀! -/ é9ŁŁ_",
+      "hex": "ff4cc0"
+    },
+    {
+      "input": "A-!/\n-!!",
+      "hex": "03effe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": " !09éé+0/0Ł+!9 Ł",
+      "hex": "d3dfb4ff403ef4"
+    },
+    {
+      "input": "_😀AĽ9-Az",
+      "hex": ""
+    },
+    {
+      "input": "😀Qz+009Ł!😀=Ł\n-Ľ=",
+      "hex": ""
+    },
+    {
+      "input": "ŁzĽ =0/9A+😀ŁA009",
+      "hex": "03"
+    },
+    {
+      "input": "Ľ00-9z\nĽ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-\n/!éz=z",
+      "hex": "fbfc"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀QA\n!+QéŁQ=9é+Q_",
+      "hex": ""
+    },
+    {
+      "input": "!-AŁ9zŁQ",
+      "hex": "f8003dcc04"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀/Ľ9!\n\nA",
+      "hex": ""
+    },
+    {
+      "input": "Ľ!ĽAĽ- 0\nĽ999A=A",
+      "hex": ""
+    },
+    {
+      "input": "!Ľ_0/9 ĽĽ90!/_!0",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "/éA+/z_ŁAQ😀AA Ľ/",
+      "hex": "fc0fbfcff000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=é+!ŁzzŁz/éz9\n😀\n",
+      "hex": ""
+    },
+    {
+      "input": "0\n+_Łé 0",
+      "hex": "d3efc0"
+    },
+    {
+      "input": "=9ĽA +!0A!QĽ==Ľ!",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\nQ9_+\n/0",
+      "hex": "43dffeff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "=/0/Qz_=",
+      "hex": ""
+    },
+    {
+      "input": "ŁĽ😀ézz==",
+      "hex": ""
+    },
+    {
+      "input": "\n-\n+-+/Ł",
+      "hex": "fbefbefc"
+    },
+    {
+      "input": "9!0😀09z😀0é ŁŁé0-",
+      "hex": "f7"
+    },
+    {
+      "input": "Ł9=Q 😀AŁ_=+Q!0 é",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+ŁzĽ\nQ😀z",
+      "hex": "f80c"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "!_ĽĽ\n ++",
+      "hex": ""
+    },
+    {
+      "input": "!😀_Ł/z9+_-+Ł=0zA",
+      "hex": ""
+    },
+    {
+      "input": "AĽ!😀QéŁz",
+      "hex": ""
+    },
+    {
+      "input": "0+/\n9A  Ľ😀😀0\n\n-=",
+      "hex": "d3effd"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é!-- -!!",
+      "hex": "fbef"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł\n!+!😀ĽĽ0Ľéé!9é\n",
+      "hex": "03"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀=\n!A😀ŁĽ=Q9/ĽĽ\n ",
+      "hex": ""
+    },
+    {
+      "input": "zz!9!\n\n😀",
+      "hex": "cf3f"
+    },
+    {
+      "input": "9Ł\n\n=😀0z",
+      "hex": "f4"
+    },
+    {
+      "input": "z+ ++QĽ ",
+      "hex": "cfefbe"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "+Ľ\n😀0/9ĽĽ!z0ĽA_+",
+      "hex": ""
+    },
+    {
+      "input": " A!ŁQĽ\nQ/zŁ0ŁQ==",
+      "hex": "0004"
+    },
+    {
+      "input": "z!A!Q00Q",
+      "hex": "cc0434d1"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é😀-Ł-Ľ A",
+      "hex": ""
+    },
+    {
+      "input": "   _=é\n+/-Ł-😀 9é",
+      "hex": ""
+    },
+    {
+      "input": "/-Ľ9QŁ/!",
+      "hex": "ff"
+    },
+    {
+      "input": "9_Ł!-Ľ_Ł!éŁ=/_ =",
+      "hex": "f7f03e"
+    },
+    {
+      "input": "9+-_-=éé=!\n-_0Ł=",
+      "hex": "f7efbf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_-é😀Łz😀/é0 z\n\néz",
+      "hex": "ff"
+    },
+    {
+      "input": "=!z/\n/+/99 Ł! +_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ł! é!09-",
+      "hex": "034f7e"
+    },
+    {
+      "input": "=-_=Ľ9😀Ľ0/ +=!!é",
+      "hex": ""
+    },
+    {
+      "input": "Q0é/  Ł\n! é=Ł+A0",
+      "hex": "434fc0"
+    },
+    {
+      "input": " é!é !0é",
+      "hex": ""
+    },
+    {
+      "input": "!!+😀éŁ!Ł0é_ĽQA9+",
+      "hex": ""
+    },
+    {
+      "input": "\néĽ\n=0AA\n!9Q/_-_",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9+_Ł-0!!",
+      "hex": "f7efc0fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "zŁĽ+\n/!=éz-zé😀ŁŁ",
+      "hex": "cc"
+    },
+    {
+      "input": "A+!A=--Ł",
+      "hex": "03e0"
+    },
+    {
+      "input": "/é-AŁ😀z+",
+      "hex": "ffe000"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "z\n😀😀!-Ľ-",
+      "hex": ""
+    },
+    {
+      "input": "_0/ !++9Qz\n!ŁQ\nA",
+      "hex": "ff4ffefbd4330100"
+    },
+    {
+      "input": "_Łé9/Ł=z",
+      "hex": "fc0f7f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "é0!zQ_/_!Q /++😀-",
+      "hex": "d3343ffff43ffb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "ĽAéAéĽ!Ł9/=+😀=A9",
+      "hex": ""
+    },
+    {
+      "input": "A-/éQQŁŁ!/ \n😀!9/",
+      "hex": "03efd040003f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀-😀-éQ- ",
+      "hex": ""
+    },
+    {
+      "input": " QA=éA_Ł😀+!Ľ=\n9!",
+      "hex": "40"
+    },
+    {
+      "input": " /_ŁŁ++!",
+      "hex": "fff000fb"
+    },
+    {
+      "input": "=!+Ľz!Ł😀A=9_😀z9 ",
+      "hex": ""
+    },
+    {
+      "input": " !==Ľ 0zŁ/_9_0_Q",
+      "hex": ""
+    },
+    {
+      "input": "z-\n=Ľ/zŁ",
+      "hex": "cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-0\n \nA0/ééé=9-+Q",
+      "hex": "fb4034"
+    },
+    {
+      "input": "Az/\n\n😀_/zŁ=!éz/_",
+      "hex": "033f"
+    },
+    {
+      "input": "==zĽ\n/\n9",
+      "hex": ""
+    },
+    {
+      "input": "+\n_ĽéĽ=Ľ",
+      "hex": "fb"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A\nAQ9Az_Ł+-é!=/\n",
+      "hex": "00043d033fc0fb"
+    },
+    {
+      "input": "!éŁ\néé😀é/Q//9=é ",
+      "hex": ""
+    },
+    {
+      "input": "0Ł0!Ł 9 ",
+      "hex": "d00d00"
+    },
+    {
+      "input": "Ľ!éA😀_Qé",
+      "hex": ""
+    },
+    {
+      "input": "+\n😀!Ł_0A",
+      "hex": ""
+    },
+    {
+      "input": "-0\n0- é_é_ Q/\nA=",
+      "hex": "fb4d3efff43f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "-+!z=Q_z",
+      "hex": "fbec"
+    },
+    {
+      "input": "Ľz😀+Q !9z0Ł😀9!99",
+      "hex": ""
+    },
+    {
+      "input": " Qé😀_/0-",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "😀Ł\n0😀//0/Q/z\n+_9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "A=A zĽ!😀Q=\nz!/-!",
+      "hex": ""
+    },
+    {
+      "input": "/😀-! 9Az",
+      "hex": ""
+    },
+    {
+      "input": "\nzŁ0é--\n",
+      "hex": "cc0d3e"
+    },
+    {
+      "input": "Q !/zĽ\n\n",
+      "hex": "43fc"
+    },
+    {
+      "input": "=!é Q z+",
+      "hex": ""
+    },
+    {
+      "input": "é /😀=Łz-/!ĽA!😀\nŁ",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "9=/QĽ😀 9",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ9A0/9😀_",
+      "hex": ""
+    },
+    {
+      "input": "😀 /Q!Ľ-Q!/=__ +Ł",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_!/_0_Qz",
+      "hex": "fffff4fd0c"
+    },
+    {
+      "input": "😀/-Ľ!+Ł ",
+      "hex": ""
+    },
+    {
+      "input": "9-Ł _Q😀zĽ0ĽzĽ+😀+\n",
+      "hex": "f7e03f"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "Ľ-z😀0é--",
+      "hex": ""
+    },
+    {
+      "input": "-/ \n=ĽQ\n!Q!Ľ\nQé\n",
+      "hex": "fb"
+    },
+    {
+      "input": "Q😀= zQ++",
+      "hex": ""
+    },
+    {
+      "input": "Ł-A9Q0-_",
+      "hex": "03e03d434fbf"
+    },
+    {
+      "input": "+Q =-éĽ_Ł99_/Ł+Ľ",
+      "hex": "f9"
+    },
+    {
+      "input": "é!-Ł\nŁzŁ _Ľ0😀\nĽĽ",
+      "hex": "f8003303"
+    },
+    {
+      "input": "0+é😀=z😀- _+/-!\n+",
+      "hex": "d3"
+    },
+    {
+      "input": "QA+++Q\nA",
+      "hex": "400fbef900"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "_\nQé_é!/",
+      "hex": "fd0fff"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "! é_-+=z0ézA+-😀Ł",
+      "hex": "ffef"
+    },
+    {
+      "input": "A9Ł9 😀-😀",
+      "hex": "03d03d"
+    },
+    {
+      "input": "",
+      "hex": ""
+    },
+    {
+      "input": "\n\n0_Q//0z9AQ z0/",
+      "hex": "d3f43fff4cfd010cf4"
+    },
+    {
+      "input": "\n  ! z_\n",
+      "hex": "cf"
+    },
+    {
+      "input": "",
+      "hex": ""
+    }
+  ]
+}

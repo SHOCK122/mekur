@@ -33,6 +33,8 @@ pub struct Config {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {
+    #[error("JWT_SECRET must not be empty")]
+    EmptyJwtSecret,
     #[error("JWT_SECRET must be set to a real secret in production (NODE_ENV=production)")]
     DevJwtSecretInProduction,
     #[error(
@@ -86,6 +88,10 @@ impl Config {
             vapid_subject: or("VAPID_SUBJECT", DEV_VAPID_SUBJECT),
         };
 
+        // `@fastify/jwt` refused to start with an empty secret.
+        if config.jwt_secret.is_empty() {
+            return Err(ConfigError::EmptyJwtSecret);
+        }
         if config.node_env == "production" {
             if config.jwt_secret.starts_with("dev-only-") {
                 return Err(ConfigError::DevJwtSecretInProduction);
@@ -186,6 +192,14 @@ mod tests {
             ("VAPID_PRIVATE_KEY", "real"),
         ]);
         assert_eq!(err.err(), Some(ConfigError::DevJwtSecretInProduction));
+    }
+
+    #[test]
+    fn refuses_an_empty_jwt_secret_anywhere() {
+        assert_eq!(
+            config(&[("JWT_SECRET", "")]).err(),
+            Some(ConfigError::EmptyJwtSecret)
+        );
     }
 
     #[test]
