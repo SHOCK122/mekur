@@ -1,36 +1,126 @@
 //! The router and the behaviour every response shares -- the port of
 //! `buildApp` in `apps/api/src/app.ts`, route group by route group.
 
-use std::sync::LazyLock;
+use std::{sync::Arc, sync::LazyLock, time::Duration};
 
 use axum::{
     Router,
     body::Body,
-    extract::OriginalUri,
+    extract::{OriginalUri, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
-    middleware,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
+use mekur_shared::ValidationError;
+use serde::Serialize;
 use sqlx::PgPool;
+
+use crate::{
+    rate_limit::{self, RateLimiter},
+    routes,
+    users::UserRepository,
+};
 
 /// What the routes share. Route groups take their repositories from here
 /// as they are ported.
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    pub users: UserRepository,
+    pub jwt_secret: Arc<str>,
+    pub limits: Limits,
 }
 
-/// Paths and methods this server answers (beyond 404s). Everything else is
-/// still served by the TS server: nginx and the Vite dev proxy send exactly
-/// these paths here, and `apps/api/test/openapi.test.ts` checks that the
-/// two servers' routes together are what `openapi.json` documents.
-pub const ROUTES: &[(&str, &str)] = &[("get", "/health"), ("get", "/openapi.json")];
+/// The rate limiters. Each keeps its own per-client counts, as each
+/// `@fastify/rate-limit` store did.
+#[derive(Clone)]
+pub struct Limits {
+    /// Every route without a limit of its own.
+    pub global: Arc<RateLimiter>,
+    /// `POST /users`.
+    pub register: Arc<RateLimiter>,
+    /// `POST /sessions`.
+    pub login: Arc<RateLimiter>,
+}
+
+/// The settings `buildApp` took besides the database (`BuildAppOptions`).
+pub struct AppOptions {
+    pub jwt_secret: String,
+    /// Requests per client per minute on routes without their own limit:
+    /// a backstop against abuse and runaway agent clients.
+    pub rate_limit_max: u64,
+    /// Requests per client per minute on login and registration, each:
+    /// an unthrottled login endpoint is brute-forceable, and registration
+    /// is the obvious spam target.
+    pub auth_rate_limit_max: u64,
+    /// Reverse-proxy hops to trust when deriving the client IP.
+    pub trust_proxy: u32,
+}
+
+impl AppOptions {
+    /// The production limits (300 and 10 a minute) and no trusted proxy.
+    pub fn new(jwt_secret: impl Into<String>) -> Self {
+        Self {
+            jwt_secret: jwt_secret.into(),
+            rate_limit_max: 300,
+            auth_rate_limit_max: 10,
+            trust_proxy: 0,
+        }
+    }
+}
+
+impl AppState {
+    pub fn new(db: PgPool, options: AppOptions) -> Self {
+        let minute = Duration::from_secs(60);
+        let limiter = |max| RateLimiter::new(max, minute, options.trust_proxy);
+        Self {
+            users: UserRepository::new(db.clone()),
+            db,
+            jwt_secret: options.jwt_secret.into(),
+            limits: Limits {
+                global: limiter(options.rate_limit_max),
+                register: limiter(options.auth_rate_limit_max),
+                login: limiter(options.auth_rate_limit_max),
+            },
+        }
+    }
+}
+
+/// Paths and methods this server answers (beyond 404s), with path
+/// parameters in OpenAPI's `{name}` form. Everything else is still served
+/// by the TS server: nginx and the Vite dev proxy send exactly these paths
+/// here, and `apps/api/test/openapi.test.ts` checks that the two servers'
+/// routes together are what `openapi.json` documents.
+pub const ROUTES: &[(&str, &str)] = &[
+    ("get", "/health"),
+    ("get", "/openapi.json"),
+    ("post", "/users"),
+    ("post", "/sessions"),
+    ("get", "/users/{username}/salt"),
+];
 
 pub fn build_app(state: AppState) -> Router {
+    let limited = |limiter: &Arc<RateLimiter>| {
+        middleware::from_fn_with_state(limiter.clone(), rate_limit::limit)
+    };
+    let limits = state.limits.clone();
+    let salt = get(routes::auth::salt).route_layer(limited(&limits.global));
     let routes = Router::new()
+        // `/health` and `/openapi.json` were never rate-limited.
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
+        .route(
+            "/users",
+            post(routes::auth::register).route_layer(limited(&limits.register)),
+        )
+        .route(
+            "/sessions",
+            post(routes::auth::login).route_layer(limited(&limits.login)),
+        )
+        .route("/users/{username}/salt", salt.clone())
+        // Fastify's parameters may be empty; axum's may not.
+        .route("/users//salt", salt)
         // Fastify answers an unknown path *and* a known path with the wrong
         // method with the same 404 (never 405).
         .fallback(not_found)
@@ -43,6 +133,140 @@ pub fn build_app(state: AppState) -> Router {
         .fallback_service(routes)
         .layer(middleware::map_response(drop_allow_on_404))
         .layer(middleware::map_response(security_headers))
+        .layer(middleware::from_fn(reject_bad_url))
+}
+
+/// Fastify (find-my-way) refuses a path it can't percent-decode -- a `%`
+/// not followed by two hex digits, or escapes that aren't UTF-8 -- before
+/// routing, whatever the path or method, with this raw 400: plain
+/// `application/json`, the request target (query included) in the message,
+/// and none of the security headers or rate limiting other replies get.
+async fn reject_bad_url(request: Request, next: Next) -> Response {
+    if is_percent_decodable(request.uri().path()) {
+        return next.run(request).await;
+    }
+    let target = request.uri().path_and_query().map_or_else(
+        || request.uri().path().to_owned(),
+        |pq| pq.as_str().to_owned(),
+    );
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BadUrl {
+        error: &'static str,
+        code: &'static str,
+        message: String,
+        status_code: u16,
+    }
+    let body = BadUrl {
+        error: "Bad Request",
+        code: "FST_ERR_BAD_URL",
+        message: format!("'{target}' is not a valid url component"),
+        status_code: 400,
+    };
+    let body = serde_json::to_string(&body).expect("serializes");
+    let mut response = (StatusCode::BAD_REQUEST, body).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    response.extensions_mut().insert(RawReply);
+    response
+}
+
+/// Marks a reply Fastify wrote straight to the socket, bypassing its hooks
+/// (so no security headers).
+#[derive(Clone, Copy)]
+struct RawReply;
+
+/// Fastify's error reply body, keys in its order: `{ statusCode, code?,
+/// error, message }`.
+pub fn fastify_error(status: StatusCode, code: Option<&'static str>, message: &str) -> Response {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FastifyError<'a> {
+        status_code: u16,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        code: Option<&'static str>,
+        error: &'static str,
+        message: &'a str,
+    }
+    json_value(
+        status,
+        &FastifyError {
+            status_code: status.as_u16(),
+            code,
+            error: status.canonical_reason().unwrap_or("Error"),
+            message,
+        },
+    )
+}
+
+/// Whether [`percent_decode`] succeeds, without allocating for the usual
+/// path with no `%` in it.
+fn is_percent_decodable(s: &str) -> bool {
+    !s.contains('%') || percent_decode(s).is_some()
+}
+
+/// `decodeURIComponent`: every `%XX` escape decoded, `None` if an escape is
+/// malformed or the bytes aren't UTF-8.
+pub fn percent_decode(s: &str) -> Option<String> {
+    if !s.contains('%') {
+        return Some(s.to_owned());
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = bytes.get(i + 1..i + 3)?;
+            let hex = std::str::from_utf8(hex).ok()?;
+            if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// A JSON reply serialized from `value` (struct fields keep their order).
+pub fn json_value(status: StatusCode, value: &impl Serialize) -> Response {
+    json(
+        status,
+        serde_json::to_string(value).expect("reply bodies serialize"),
+    )
+}
+
+/// The 400 every route sends for a body that fails its schema.
+pub fn invalid_request(err: &ValidationError) -> Response {
+    #[derive(Serialize)]
+    struct Invalid<'a> {
+        error: &'static str,
+        details: &'a [mekur_shared::Issue],
+    }
+    json_value(
+        StatusCode::BAD_REQUEST,
+        &Invalid {
+            error: "Invalid request",
+            details: &err.issues,
+        },
+    )
+}
+
+/// An unexpected failure (the database is down, say): logged here, and
+/// answered in Fastify's 500 shape without the underlying message, which
+/// the TS server echoed to the client.
+pub fn internal_error(err: &dyn std::error::Error) -> Response {
+    eprintln!("internal error: {err}");
+    fastify_error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        None,
+        "Internal Server Error",
+    )
 }
 
 async fn health() -> Response {
@@ -125,6 +349,9 @@ pub const SECURITY_HEADERS: &[(&str, &str)] = &[
 /// Adds [`SECURITY_HEADERS`] to every response, 404s included, as helmet's
 /// global `onRequest` hook does. A header a handler set itself is kept.
 async fn security_headers(mut response: Response) -> Response {
+    if response.extensions().get::<RawReply>().is_some() {
+        return response;
+    }
     let headers = response.headers_mut();
     for &(name, value) in SECURITY_HEADERS {
         headers

@@ -16,7 +16,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use mekur_api::{
-    AppState, build_app,
+    AppOptions, AppState, build_app,
     db::{create_pool, run_migrations},
 };
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection, PgPool};
@@ -122,8 +122,25 @@ pub struct TestApp {
     _exclusive: MutexGuard<'static, bool>,
 }
 
+/// The JWT secret test apps sign with (the TS suite's too).
+pub const JWT_SECRET: &str = "test-secret";
+
+/// Options for a test app: limits raised far above production's, since a
+/// suite fires many requests in seconds and would otherwise trip them.
+pub fn test_options() -> AppOptions {
+    AppOptions {
+        rate_limit_max: 100_000,
+        auth_rate_limit_max: 100_000,
+        ..AppOptions::new(JWT_SECRET)
+    }
+}
+
 impl TestApp {
     pub async fn new() -> Self {
+        Self::with_options(test_options()).await
+    }
+
+    pub async fn with_options(options: AppOptions) -> Self {
         let mut migrated = SHARED_DATABASE.lock().await;
         let url = database_url();
         let db = create_pool(&url).expect("valid database URL");
@@ -135,7 +152,7 @@ impl TestApp {
         }
         truncate_all(&db).await;
         TestApp {
-            app: build_app(AppState { db: db.clone() }),
+            app: build_app(AppState::new(db.clone(), options)),
             db,
             _exclusive: migrated,
         }
@@ -193,4 +210,81 @@ pub fn request(method: &str, uri: &str) -> Request<Body> {
         .uri(uri)
         .body(Body::empty())
         .expect("valid request")
+}
+
+/// A request with headers and a body. A body gets a `content-length`, as
+/// any HTTP client (and Fastify's `inject`) sends.
+pub fn request_with(
+    method: &str,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: Option<Vec<u8>>,
+) -> Request<Body> {
+    let mut builder = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    match body {
+        Some(bytes) => builder
+            .header("content-length", bytes.len())
+            .body(Body::from(bytes)),
+        None => builder.body(Body::empty()),
+    }
+    .expect("valid request")
+}
+
+/// A JSON request.
+pub fn json_request(method: &str, uri: &str, value: &serde_json::Value) -> Request<Body> {
+    request_with(
+        method,
+        uri,
+        &[("content-type", "application/json")],
+        Some(value.to_string().into_bytes()),
+    )
+}
+
+/// A registered account, as the TS suite's `registerUser` returned it.
+pub struct Registered {
+    pub user_id: String,
+    pub token: String,
+    pub auth_key: String,
+    pub public_key: String,
+}
+
+/// Registers `username` through `POST /users`. Random bytes stand in for
+/// the auth key: the API only ever sees an auth key, never a password, so
+/// tests skip the (deliberately slow) scrypt derivation.
+pub async fn register_user(t: &TestApp, username: &str) -> Registered {
+    let auth_key = mekur_crypto::to_base64(&mekur_crypto::random_bytes(32).unwrap());
+    let public_key = mekur_crypto::generate_key_pair().unwrap().public_key;
+    let reply = t
+        .send(json_request(
+            "POST",
+            "/users",
+            &serde_json::json!({
+                "username": username,
+                "displayName": username,
+                "publicKey": public_key,
+                "authKey": auth_key,
+                "authSalt": mekur_crypto::to_base64(&mekur_crypto::random_bytes(16).unwrap()),
+            }),
+        ))
+        .await;
+    assert_eq!(reply.status, 201, "{}", reply.text());
+    let body = reply.json();
+    Registered {
+        user_id: body["user"]["id"].as_str().unwrap().to_owned(),
+        token: body["token"].as_str().unwrap().to_owned(),
+        auth_key,
+        public_key,
+    }
+}
+
+/// The public key stored for `username`.
+pub async fn stored_public_key(db: &PgPool, username: &str) -> String {
+    sqlx::query_scalar("SELECT public_key FROM users WHERE username = $1")
+        .bind(username)
+        .fetch_one(db)
+        .await
+        .expect("user exists")
 }

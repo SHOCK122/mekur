@@ -195,6 +195,63 @@
         "x-xss-protection": "0"
       },
       "body": "{\"message\":\"Route GET:/Health not found\",\"error\":\"Not Found\",\"statusCode\":404}"
+    },
+    {
+      "method": "GET",
+      "url": "/nope/%zz",
+      "status": 400,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Bad Request\",\"code\":\"FST_ERR_BAD_URL\",\"message\":\"'/nope/%zz' is not a valid url component\",\"statusCode\":400}"
+    },
+    {
+      "method": "POST",
+      "url": "/users/%zz/salt?q=%zz",
+      "status": 400,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Bad Request\",\"code\":\"FST_ERR_BAD_URL\",\"message\":\"'/users/%zz/salt?q=%zz' is not a valid url component\",\"statusCode\":400}"
+    },
+    {
+      "method": "GET",
+      "url": "/users/%E2%82/salt",
+      "status": 400,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Bad Request\",\"code\":\"FST_ERR_BAD_URL\",\"message\":\"'/users/%E2%82/salt' is not a valid url component\",\"statusCode\":400}"
+    },
+    {
+      "method": "GET",
+      "url": "/health%",
+      "status": 400,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Bad Request\",\"code\":\"FST_ERR_BAD_URL\",\"message\":\"'/health%' is not a valid url component\",\"statusCode\":400}"
+    },
+    {
+      "method": "GET",
+      "url": "/nope%2F%25",
+      "status": 404,
+      "headers": {
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'none';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self'",
+        "content-type": "application/json; charset=utf-8",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-resource-policy": "same-origin",
+        "origin-agent-cluster": "?1",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-dns-prefetch-control": "off",
+        "x-download-options": "noopen",
+        "x-frame-options": "SAMEORIGIN",
+        "x-permitted-cross-domain-policies": "none",
+        "x-xss-protection": "0"
+      },
+      "body": "{\"message\":\"Route GET:/nope%2F%25 not found\",\"error\":\"Not Found\",\"statusCode\":404}"
     }
   ]
 }

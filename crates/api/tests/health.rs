@@ -59,8 +59,16 @@ async fn every_route_this_server_answers_is_documented_and_answers() {
             doc["paths"][path][method].is_object(),
             "{method} {path} is not documented"
         );
-        let reply = t.send(request(&method.to_uppercase(), path)).await;
-        assert_eq!(reply.status, 200, "{method} {path}");
+        // Answered by a route (whatever it makes of an empty request), not
+        // by the not-found handler.
+        let sample = path.replace("{username}", "ada");
+        let reply = t.send(request(&method.to_uppercase(), &sample)).await;
+        assert!(
+            !reply.text().contains("\"error\":\"Not Found\""),
+            "{method} {path}: {}",
+            reply.text()
+        );
+        assert!(!sample.contains('{'), "{path}: fill in its parameters");
     }
 }
 

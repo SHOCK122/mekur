@@ -159,6 +159,16 @@ pub(crate) struct StrChecks {
     pub min: Option<usize>,
     pub max: Option<usize>,
     pub datetime: bool,
+    /// `.regex(re, message)`, checked after the lengths.
+    pub pattern: Option<Pattern>,
+}
+
+/// A `.regex()` check: a predicate standing in for the regular expression
+/// (so no regex engine is needed) and the schema's custom message.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Pattern {
+    pub matches: fn(&str) -> bool,
+    pub message: &'static str,
 }
 
 impl StrChecks {
@@ -167,6 +177,7 @@ impl StrChecks {
         min: None,
         max: None,
         datetime: true,
+        pattern: None,
     };
 
     /// `.min(min).max(max)`
@@ -175,6 +186,7 @@ impl StrChecks {
             min: Some(min),
             max: Some(max),
             datetime: false,
+            pattern: None,
         }
     }
 
@@ -184,6 +196,7 @@ impl StrChecks {
             min: Some(min),
             max: None,
             datetime: false,
+            pattern: None,
         }
     }
 
@@ -193,6 +206,7 @@ impl StrChecks {
             min: None,
             max: Some(max),
             datetime: false,
+            pattern: None,
         }
     }
 }
@@ -227,6 +241,16 @@ pub(crate) fn string(ctx: &mut Ctx, input: Option<&Value>, checks: StrChecks) ->
                 inclusive: true,
             },
             format!("String must contain at most {max} character(s)"),
+        );
+    }
+    if let Some(pattern) = checks.pattern
+        && !(pattern.matches)(s)
+    {
+        ctx.add(
+            IssueKind::InvalidString {
+                validation: "regex",
+            },
+            pattern.message,
         );
     }
     if checks.datetime && !is_zod_datetime(s) {

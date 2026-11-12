@@ -1,29 +1,44 @@
 import type { FastifyInstance } from "fastify";
-import { generateKeyPair, randomBytes, toBase64 } from "@schedule-app/crypto";
+import { generateKeyPair, randomBytes, sha256Base64, toBase64 } from "@schedule-app/crypto";
 import { createPool, type Database } from "../src/db/pool.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { buildApp } from "../src/app.js";
+import { createUserRepository } from "../src/repositories/userRepository.js";
 
-const TEST_DATABASE_URL =
+export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/scheduleapp_test";
 
-export async function setupTestApp() {
-  const db = createPool(TEST_DATABASE_URL);
-  await runMigrations(db);
+export const TEST_VAPID = {
+  vapidPublicKey:
+    "BAHQnCgvhlb0-G5wOocrFTe7zK7ewUJ7AR7ZCYGA2rfaGlueYTazRM-fTiZUrkJUlM2SmKbdUALS1FzUnSiFbUI",
+  vapidPrivateKey: "qUFTF3lXxouxuo_n0kPvwpMn2Ehl3W51M8Aw3vap5QQ",
+  vapidSubject: "mailto:test@example.com",
+};
+
+/** Each test app's database, so registerUser can create accounts directly. */
+const databases = new WeakMap<FastifyInstance, Database>();
+
+/** Builds an app on the test database. Remembers the pairing for
+ * registerUser; options override the defaults. */
+export function buildTestApp(db: Database, options: { rateLimitMax?: number } = {}) {
   const app = buildApp({
     db,
     jwtSecret: "test-secret",
-    vapidPublicKey:
-      "BAHQnCgvhlb0-G5wOocrFTe7zK7ewUJ7AR7ZCYGA2rfaGlueYTazRM-fTiZUrkJUlM2SmKbdUALS1FzUnSiFbUI",
-    vapidPrivateKey: "qUFTF3lXxouxuo_n0kPvwpMn2Ehl3W51M8Aw3vap5QQ",
-    vapidSubject: "mailto:test@example.com",
+    ...TEST_VAPID,
     // Raised well above production defaults: the suite fires hundreds of
     // requests in seconds, which would otherwise trip the limiter and
     // produce confusing flakes unrelated to what's being tested.
     rateLimitMax: 100_000,
-    authRateLimitMax: 100_000,
+    ...options,
   });
-  return { app, db };
+  databases.set(app, db);
+  return app;
+}
+
+export async function setupTestApp() {
+  const db = createPool(TEST_DATABASE_URL);
+  await runMigrations(db);
+  return { app: buildTestApp(db), db };
 }
 
 export async function truncateAll(db: Database) {
@@ -44,27 +59,28 @@ export const ENVELOPE = {
 export const SEALED_ENVELOPE = { ...ENVELOPE, keyId: "sealed", epk: "ZXBoZW1lcmFs" };
 
 /**
- * Registers an account directly. The API only ever sees an auth key, never
- * a password, so tests skip the (deliberately slow) scrypt derivation and
- * use random bytes -- the server can't tell the difference, and the suite
- * stops timing out under parallel load.
+ * Creates an account and a session token directly. Registration and login
+ * are served by the Rust server now (crates/api, step 3b of
+ * docs/RUST_MIGRATION.md), so this writes the row POST /users wrote and
+ * signs the token it issued. The API only ever sees an auth key, never a
+ * password, so tests skip the (deliberately slow) scrypt derivation and
+ * use random bytes.
  */
 export async function registerUser(app: FastifyInstance, username: string) {
+  const db = databases.get(app);
+  if (!db) throw new Error("registerUser needs an app from buildTestApp/setupTestApp");
   const keyPair = generateKeyPair();
   const authKey = toBase64(randomBytes(32));
-  const response = await app.inject({
-    method: "POST",
-    url: "/users",
-    payload: {
-      username,
-      displayName: username,
-      publicKey: keyPair.publicKey,
-      authKey,
-      authSalt: toBase64(randomBytes(16)),
-    },
+  const user = await createUserRepository(db).create({
+    username,
+    displayName: username,
+    publicKey: keyPair.publicKey,
+    authSalt: toBase64(randomBytes(16)),
+    authHash: sha256Base64(authKey),
   });
-  const body = response.json();
-  return { userId: body.user.id as string, token: body.token as string, keyPair, authKey };
+  await app.ready();
+  const token = app.jwt.sign({ userId: user.id }, { expiresIn: "30d" });
+  return { userId: user.id, token, keyPair, authKey };
 }
 
 export function auth(token: string, capability?: string) {
