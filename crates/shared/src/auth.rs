@@ -1,5 +1,8 @@
-//! Account requests: registration and login bodies. Mirrors
-//! `RegisterRequestSchema` and `LoginRequestSchema` in `apps/api/src/schemas.ts`.
+//! Account requests: registration and login bodies. Ports of the Zod
+//! `RegisterRequestSchema` and `LoginRequestSchema` that lived in
+//! `apps/api/src/schemas.ts` until step 3b; their issues are checked
+//! against the TS server's recorded replies in
+//! `crates/api/tests/fixtures/ts_auth_responses.json`.
 
 use serde::Serialize;
 use serde_json::Value;

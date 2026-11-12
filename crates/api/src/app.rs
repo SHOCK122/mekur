@@ -142,7 +142,7 @@ pub fn build_app(state: AppState) -> Router {
 /// `application/json`, the request target (query included) in the message,
 /// and none of the security headers or rate limiting other replies get.
 async fn reject_bad_url(request: Request, next: Next) -> Response {
-    if percent_decode(request.uri().path()).is_some() {
+    if is_percent_decodable(request.uri().path()) {
         return next.run(request).await;
     }
     let target = request.uri().path_and_query().map_or_else(
@@ -199,6 +199,12 @@ pub fn fastify_error(status: StatusCode, code: Option<&'static str>, message: &s
             message,
         },
     )
+}
+
+/// Whether [`percent_decode`] succeeds, without allocating for the usual
+/// path with no `%` in it.
+fn is_percent_decodable(s: &str) -> bool {
+    !s.contains('%') || percent_decode(s).is_some()
 }
 
 /// `decodeURIComponent`: every `%XX` escape decoded, `None` if an escape is

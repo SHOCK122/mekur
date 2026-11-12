@@ -6,6 +6,9 @@
 //! Like the TS server, each limiter keeps its own counts: the global
 //! limit is one bucket per client shared by every route that uses it, and
 //! each route with its own limit (login, registration) has a separate one.
+//! While both servers run, each also has its own global bucket, so a
+//! client's global allowance is briefly the sum of the two (accepted until
+//! step 3g; see `docs/RUST_MIGRATION.md`).
 
 use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -70,30 +73,25 @@ impl RateLimiter {
     pub fn hit_at(&self, key: &str, now: Instant) -> Decision {
         let window_ms = self.window.as_millis();
         let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
-        let ttl_ms = match clients.get_mut(key) {
+        let fresh = Window {
+            count: 1,
+            started: now,
+        };
+        let (count, ttl_ms) = match clients.get_mut(key) {
             Some(w) if now.saturating_duration_since(w.started) < self.window => {
                 w.count += 1;
-                window_ms - now.saturating_duration_since(w.started).as_millis()
+                let elapsed = now.saturating_duration_since(w.started).as_millis();
+                (w.count, window_ms - elapsed)
             }
             Some(w) => {
-                *w = Window {
-                    count: 1,
-                    started: now,
-                };
-                window_ms
+                *w = fresh;
+                (1, window_ms)
             }
             None => {
-                clients.put(
-                    key.to_owned(),
-                    Window {
-                        count: 1,
-                        started: now,
-                    },
-                );
-                window_ms
+                clients.put(key.to_owned(), fresh);
+                (1, window_ms)
             }
         };
-        let count = clients.get(key).map_or(1, |w| w.count);
         Decision {
             limit: self.max,
             remaining: self.max.saturating_sub(count),

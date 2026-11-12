@@ -312,7 +312,13 @@ routes, repository and tests for that group are deleted.
   - Proxies: nginx and Vite send `/users`, `/sessions` and
     `/users/{username}/salt` to Rust. Parameterised paths use a regex
     location in nginx; `openapi.test.ts` checks it covers each Rust path
-    and no TS one.
+    and no TS one. nginx matches the normalised URI (slashes merged,
+    `%2F` decoded), so `/api/users//salt` and `/api/users/a%2Fb/salt` fall
+    through to the TS server's 404 -- as they did before this step, when
+    nginx normalised them the same way on their way to Fastify. The Rust
+    server handles them as Fastify did when reached directly.
+  - The TS repository's `updatePublicKey` is deleted with its only caller:
+    only login may rewrite a public key.
   - **Moved to 3c, with its first consumer**: the auth extractor (JWT and
     `sak_` API keys). No Rust route requires authentication yet. Found
     while reading `fast-jwt`: it accepts a token *without* `exp`, so tokens
