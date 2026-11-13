@@ -395,6 +395,10 @@ routes, repository and tests for that group are deleted.
   - Found, not changed (roadmap items): tokens without `exp`, above; and
     `GET /api-keys` is the one unbounded list (a user's own hand-minted
     keys).
+  - For 3d onward (from review): each parametric route still needs a
+    second, empty-parameter route and its handler strips its own prefix
+    from the raw URI (`/users//salt`, `/api-keys/`). With events and keyring
+    adding several `{id}` routes, factor that into one helper first.
 - [ ] **3d. Events & capabilities**: repository + routes incl. batch read
   (one query per request, max 500). Port `capabilities.test.ts`.
 - [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict,

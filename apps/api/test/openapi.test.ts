@@ -124,9 +124,12 @@ describe("the proxies' route split", () => {
     const pattern = new RegExp(JSON.parse(`"${key[1]}"`));
     // A longer path is the Rust server's only if it is itself a Rust path
     // (`/api-keys/more` is `/api-keys/{id}`).
-    const isRustPath = (path: string) =>
-      rustPaths().some((p) => new RegExp(`^${p.replace(/\./g, "\\.").replace(/\{\w+\}/g, "[^/?]*")}$`).test(path));
-    for (const path of rustPaths().map(sample)) {
+    const paths = rustPaths();
+    const rustPathPatterns = paths.map(
+      (p) => new RegExp(`^${p.replace(/\./g, "\\.").replace(/\{\w+\}/g, "[^/?]*")}$`)
+    );
+    const isRustPath = (path: string) => rustPathPatterns.some((re) => re.test(path));
+    for (const path of paths.map(sample)) {
       expect(pattern.test(`/api${path}`), path).toBe(true);
       expect(pattern.test(`/api${path}?x=1`), path).toBe(true);
       expect(pattern.test(`/api${path}/more`), path).toBe(isRustPath(`${path}/more`));

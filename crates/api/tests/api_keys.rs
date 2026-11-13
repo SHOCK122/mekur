@@ -10,7 +10,6 @@ mod common;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use common::{JWT_SECRET, Registered, TestApp, json_request, register_user, request_with};
 use hmac::{Hmac, KeyInit, Mac};
-use mekur_api::api_keys::hash_api_key;
 use serde_json::{Value, json};
 use sha2::Sha256;
 
@@ -95,8 +94,8 @@ async fn stores_only_the_hash_in_the_ts_format() {
             .await
             .unwrap();
     assert_eq!(prefix, raw_key[..12]);
-    assert_eq!(hash, hash_api_key(&raw_key));
-    // base64(sha256(utf8 key)), which the TS auth check looks up.
+    // base64(sha256(utf8 key)), which the TS auth check looks up --
+    // computed here independently of `api_keys::hash_api_key`.
     use sha2::Digest;
     assert_eq!(
         hash,
