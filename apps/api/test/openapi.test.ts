@@ -122,10 +122,15 @@ describe("the proxies' route split", () => {
     if (!key) throw new Error(`Rust proxy entry not found in ${VITE_CONFIG_PATH}`);
     // The key as written in the source is a JS string literal.
     const pattern = new RegExp(JSON.parse(`"${key[1]}"`));
+    // A longer path is the Rust server's only if it is itself a Rust path
+    // (`/api-keys/more` is `/api-keys/{id}`).
+    const isRustPath = (path: string) =>
+      rustPaths().some((p) => new RegExp(`^${p.replace(/\./g, "\\.").replace(/\{\w+\}/g, "[^/?]*")}$`).test(path));
     for (const path of rustPaths().map(sample)) {
       expect(pattern.test(`/api${path}`), path).toBe(true);
       expect(pattern.test(`/api${path}?x=1`), path).toBe(true);
-      expect(pattern.test(`/api${path}/more`), path).toBe(false);
+      expect(pattern.test(`/api${path}/more`), path).toBe(isRustPath(`${path}/more`));
+      expect(pattern.test(`/api${path}/more/more`), path).toBe(false);
     }
     for (const ts of tsRoutePaths) expect(pattern.test(`/api${sample(ts)}`), ts).toBe(false);
     expect(pattern.test("/api/keyring")).toBe(false);

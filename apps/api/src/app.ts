@@ -12,7 +12,6 @@ import { createKeyringRepository } from "./repositories/keyringRepository.js";
 import { createInboxRepository } from "./repositories/inboxRepository.js";
 import { createNotificationService } from "./services/notificationService.js";
 import { registerEventRoutes } from "./routes/eventRoutes.js";
-import { registerApiKeyRoutes } from "./routes/apiKeyRoutes.js";
 import { registerPushRoutes } from "./routes/pushRoutes.js";
 import { registerSocialRoutes } from "./routes/socialRoutes.js";
 import { registerKeyringRoutes } from "./routes/keyringRoutes.js";
@@ -101,13 +100,14 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
 
   app.register(authPlugin, { secret: opts.jwtSecret, apiKeys });
 
-  // GET /health, GET /openapi.json (step 3a) and POST /users, POST
-  // /sessions, GET /users/:username/salt (step 3b) are served by the Rust
-  // server (crates/api) -- see docs/RUST_MIGRATION.md.
+  // GET /health, GET /openapi.json (step 3a), POST /users, POST
+  // /sessions, GET /users/:username/salt (step 3b) and POST/GET /api-keys,
+  // DELETE /api-keys/:id (step 3c) are served by the Rust server
+  // (crates/api) -- see docs/RUST_MIGRATION.md. The auth plugin stays until
+  // the last TS route goes: it still authenticates API keys for them.
 
   app.register(async (instance) => {
     registerEventRoutes(instance, events);
-    registerApiKeyRoutes(instance, apiKeys);
     registerPushRoutes(instance, pushSubscriptions, opts.vapidPublicKey);
     registerSocialRoutes(instance, users, friendCodes);
     registerKeyringRoutes(instance, keyrings);

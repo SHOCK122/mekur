@@ -1157,6 +1157,8 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "futures-core",
+ "getrandom 0.4.3",
+ "hmac 0.13.0",
  "http-body-util",
  "jsonwebtoken",
  "lru",

@@ -10,7 +10,7 @@ export default defineConfig({
       // (`PORT=3001 cargo run -p mekur-api`), the rest to the TS one -- the
       // same split nginx makes (infra/nginx.conf). Listed before "/api",
       // since the first matching entry wins.
-      "^/api/(health|openapi\\.json|users|sessions|users/[^/?]+/salt)(\\?|$)": {
+      "^/api/(health|openapi\\.json|users|sessions|users/[^/?]+/salt|api-keys|api-keys/[^/?]*)(\\?|$)": {
         target: "http://localhost:3001",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),

@@ -714,6 +714,15 @@ re-decrypted.
 - [ ] Real end-to-end push delivery in a browser against a real push
       service (backend, service worker and UI are tested; the last mile
       is not).
+- [ ] Session tokens without an `exp` claim never expire: `fast-jwt` (and,
+      for parity, the Rust port -- `docs/RUST_MIGRATION.md`, step 3c) only
+      checks `exp` when present, and tokens issued before expiry was added
+      carry none. Refuse them (and so sign those users out once), in its
+      own PR after the TS server is gone.
+- [ ] `GET /api-keys` returns all of a user's keys unpaged -- the one list
+      not capped as ARCHITECTURE.md's "every list is bounded" asks. Keys
+      are minted by hand from a session, so it stays small in practice;
+      cap keys per user (or page the list) after the Rust port settles.
 
 ## Backlog (optional, deliberately deferred)
 

@@ -61,7 +61,18 @@ async fn every_route_this_server_answers_is_documented_and_answers() {
         );
         // Answered by a route (whatever it makes of an empty request), not
         // by the not-found handler.
-        let sample = path.replace("{username}", "ada");
+        // Each `{param}` filled in.
+        let sample = path
+            .split('/')
+            .map(|segment| {
+                if segment.starts_with('{') {
+                    "ada"
+                } else {
+                    segment
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("/");
         let reply = t.send(request(&method.to_uppercase(), &sample)).await;
         assert!(
             !reply.text().contains("\"error\":\"Not Found\""),
