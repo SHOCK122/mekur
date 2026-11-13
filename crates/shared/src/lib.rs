@@ -25,7 +25,7 @@ mod recurrence;
 mod time_zone;
 mod zod;
 
-pub use auth::{LoginRequest, RegisterRequest};
+pub use auth::{CreateApiKeyRequest, LoginRequest, RegisterRequest};
 pub use envelope::{
     ENVELOPE_ALGO, ENVELOPE_VERSION, EncryptedEnvelope, KeyringEnvelope, MAX_EVENT_CIPHERTEXT,
     MAX_KEYRING_CIPHERTEXT, SealedEnvelope,

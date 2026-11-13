@@ -10,13 +10,14 @@ use axum::{
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use mekur_shared::ValidationError;
 use serde::Serialize;
 use sqlx::PgPool;
 
 use crate::{
+    api_keys::ApiKeyRepository,
     rate_limit::{self, RateLimiter},
     routes,
     users::UserRepository,
@@ -28,6 +29,7 @@ use crate::{
 pub struct AppState {
     pub db: PgPool,
     pub users: UserRepository,
+    pub api_keys: ApiKeyRepository,
     pub jwt_secret: Arc<str>,
     pub limits: Limits,
 }
@@ -76,6 +78,7 @@ impl AppState {
         let limiter = |max| RateLimiter::new(max, minute, options.trust_proxy);
         Self {
             users: UserRepository::new(db.clone()),
+            api_keys: ApiKeyRepository::new(db.clone()),
             db,
             jwt_secret: options.jwt_secret.into(),
             limits: Limits {
@@ -98,6 +101,9 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("post", "/users"),
     ("post", "/sessions"),
     ("get", "/users/{username}/salt"),
+    ("post", "/api-keys"),
+    ("get", "/api-keys"),
+    ("delete", "/api-keys/{id}"),
 ];
 
 pub fn build_app(state: AppState) -> Router {
@@ -106,6 +112,7 @@ pub fn build_app(state: AppState) -> Router {
     };
     let limits = state.limits.clone();
     let salt = get(routes::auth::salt).route_layer(limited(&limits.global));
+    let revoke_api_key = delete(routes::api_keys::revoke).route_layer(limited(&limits.global));
     let routes = Router::new()
         // `/health` and `/openapi.json` were never rate-limited.
         .route("/health", get(health))
@@ -121,6 +128,14 @@ pub fn build_app(state: AppState) -> Router {
         .route("/users/{username}/salt", salt.clone())
         // Fastify's parameters may be empty; axum's may not.
         .route("/users//salt", salt)
+        .route(
+            "/api-keys",
+            post(routes::api_keys::create)
+                .get(routes::api_keys::list)
+                .route_layer(limited(&limits.global)),
+        )
+        .route("/api-keys/{id}", revoke_api_key.clone())
+        .route("/api-keys/", revoke_api_key)
         // Fastify answers an unknown path *and* a known path with the wrong
         // method with the same 404 (never 405).
         .fallback(not_found)

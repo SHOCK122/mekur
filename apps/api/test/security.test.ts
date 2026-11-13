@@ -157,13 +157,8 @@ describe("security hardening", () => {
         headers: auth,
       });
       expect(deleteResponse.statusCode).toBe(404);
-
-      const apiKeyResponse = await app.inject({
-        method: "DELETE",
-        url: "/api-keys/still-not-a-uuid",
-        headers: auth,
-      });
-      expect(apiKeyResponse.statusCode).toBe(404);
+      // DELETE /api-keys/:id is served by the Rust server now (step 3c);
+      // its 404 is in crates/api/tests/fixtures/ts_api_key_responses.json.
     }, 20_000);
 
     it("accepts a keyring larger than the global body limit, up to its own cap", async () => {

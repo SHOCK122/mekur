@@ -1,9 +1,28 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../src/db/pool.js";
 import { setupTestApp, truncateAll, registerUser, ENVELOPE } from "./testHelpers.js";
 
-describe("API keys", () => {
+// The API-key routes (mint, list, revoke) are served by the Rust server now
+// -- crates/api/tests/api_keys.rs ported their tests, step 3c of
+// docs/RUST_MIGRATION.md. What stays here is the TS server's side of the
+// contract: its auth plugin accepts a key in the format the Rust server
+// mints and stores, on the routes it still serves, until that key is
+// revoked.
+
+/** Inserts a key as the Rust server's POST /api-keys stores it. */
+async function mintKey(db: Database, userId: string) {
+  const rawKey = "sak_" + randomBytes(24).toString("base64url");
+  const keyHash = createHash("sha256").update(rawKey, "utf8").digest("base64");
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO api_keys (user_id, name, key_prefix, key_hash) VALUES ($1, 'agent', $2, $3) RETURNING id`,
+    [userId, rawKey.slice(0, 12), keyHash]
+  );
+  return { rawKey, id: rows[0]!.id };
+}
+
+describe("API keys on the TS server's routes", () => {
   let app: FastifyInstance;
   let db: Database;
 
@@ -20,39 +39,15 @@ describe("API keys", () => {
     await db.end();
   });
 
-  it("mints a key and returns the raw value exactly once", async () => {
-    const { token } = await registerUser(app, "alice");
-    const response = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "my agent" },
-    });
-    expect(response.statusCode).toBe(201);
-    const body = response.json();
-    expect(body.rawKey).toMatch(/^sak_/);
-    expect(body.apiKey.keyPrefix).toBe(body.rawKey.slice(0, body.apiKey.keyPrefix.length));
-    // The stored record never includes the raw key or its hash.
-    expect(body.apiKey).not.toHaveProperty("rawKey");
-    expect(body.apiKey).not.toHaveProperty("keyHash");
-  });
+  it("authenticates ordinary API requests using an API key, same as a JWT would", async () => {
+    const { userId } = await registerUser(app, "bob");
+    const { rawKey } = await mintKey(db, userId);
 
-  it("authenticates ordinary API requests using a minted API key, same as a JWT would", async () => {
-    const { token } = await registerUser(app, "bob");
-    const mintResp = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "agent key" },
-    });
-    const rawKey = mintResp.json().rawKey;
-
-    const envelope = ENVELOPE;
     const createResp = await app.inject({
       method: "POST",
       url: "/events",
       headers: { authorization: `Bearer ${rawKey}` },
-      payload: { envelope },
+      payload: { envelope: ENVELOPE },
     });
     expect(createResp.statusCode).toBe(201);
     const { event, viewToken } = createResp.json();
@@ -65,6 +60,9 @@ describe("API keys", () => {
       headers: { authorization: `Bearer ${rawKey}`, "x-event-capability": viewToken },
     });
     expect(readResp.statusCode).toBe(200);
+
+    const { rows } = await db.query("SELECT last_used_at FROM api_keys");
+    expect(rows[0].last_used_at).not.toBeNull();
   });
 
   it("rejects an unknown or malformed API key", async () => {
@@ -77,82 +75,14 @@ describe("API keys", () => {
   });
 
   it("stops working immediately after revocation", async () => {
-    const { token } = await registerUser(app, "carol");
-    const mintResp = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "temp key" },
-    });
-    const { rawKey, apiKey } = mintResp.json();
+    const { userId } = await registerUser(app, "carol");
+    const { rawKey, id } = await mintKey(db, userId);
+    const keyring = () =>
+      app.inject({ method: "GET", url: "/keyring", headers: { authorization: `Bearer ${rawKey}` } });
 
-    const beforeRevoke = await app.inject({
-      method: "GET",
-      url: "/keyring",
-      headers: { authorization: `Bearer ${rawKey}` },
-    });
-    expect(beforeRevoke.statusCode).toBe(200);
-
-    const revokeResp = await app.inject({
-      method: "DELETE",
-      url: `/api-keys/${apiKey.id}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(revokeResp.statusCode).toBe(204);
-
-    const afterRevoke = await app.inject({
-      method: "GET",
-      url: "/keyring",
-      headers: { authorization: `Bearer ${rawKey}` },
-    });
-    expect(afterRevoke.statusCode).toBe(401);
-  });
-
-  it("lists only the authenticated user's own keys, and cannot revoke someone else's", async () => {
-    const alice = await registerUser(app, "alice2");
-    const bob = await registerUser(app, "bob2");
-
-    const aliceKeyResp = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${alice.token}` },
-      payload: { name: "alice's key" },
-    });
-    const aliceKeyId = aliceKeyResp.json().apiKey.id;
-
-    const bobList = await app.inject({
-      method: "GET",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${bob.token}` },
-    });
-    expect(bobList.json().apiKeys).toHaveLength(0);
-
-    const bobRevokeAttempt = await app.inject({
-      method: "DELETE",
-      url: `/api-keys/${aliceKeyId}`,
-      headers: { authorization: `Bearer ${bob.token}` },
-    });
-    expect(bobRevokeAttempt.statusCode).toBe(404);
-  });
-
-  it("will not mint a new API key when authenticated with an API key", async () => {
-    // Otherwise one leaked key becomes a self-renewing set that survives
-    // its own revocation.
-    const { token } = await registerUser(app, "dave");
-    const mintResp = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "agent" },
-    });
-    const { rawKey } = mintResp.json();
-
-    const attempt = await app.inject({
-      method: "POST",
-      url: "/api-keys",
-      headers: { authorization: `Bearer ${rawKey}` },
-      payload: { name: "escalation" },
-    });
-    expect(attempt.statusCode).toBe(403);
+    expect((await keyring()).statusCode).toBe(200);
+    // What the Rust server's DELETE /api-keys/:id does.
+    await db.query("DELETE FROM api_keys WHERE id = $1", [id]);
+    expect((await keyring()).statusCode).toBe(401);
   });
 });

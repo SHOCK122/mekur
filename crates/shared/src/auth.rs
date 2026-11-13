@@ -141,6 +141,35 @@ impl LoginRequest {
     }
 }
 
+/// `POST /api-keys` (`CreateApiKeyRequestSchema`, which lived in
+/// `apps/api/src/routes/apiKeyRoutes.ts` until step 3c): a label so a user
+/// can tell their keys apart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CreateApiKeyRequest {
+    /// 1-200 UTF-16 code units.
+    pub name: String,
+}
+
+impl CreateApiKeyRequest {
+    /// Validates a JSON value. Unknown keys are ignored.
+    pub fn parse(value: &Value) -> Result<Self, ValidationError> {
+        Self::parse_optional(Some(value))
+    }
+
+    /// As [`parse`](Self::parse), where `None` is a request without a body.
+    pub fn parse_optional(value: Option<&Value>) -> Result<Self, ValidationError> {
+        let mut ctx = Ctx::new();
+        let out = (|| {
+            let obj = zod::object(&mut ctx, value)?;
+            let name = zod::field(&mut ctx, obj, "name", |ctx, v| {
+                zod::string(ctx, v, StrChecks::between(1, 200))
+            });
+            Some(Self { name: name? })
+        })();
+        finish(ctx, out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

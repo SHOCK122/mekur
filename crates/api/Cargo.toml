@@ -13,6 +13,8 @@ mekur-shared = { path = "../shared" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "original-uri", "tokio"] }
 base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+getrandom = "0.4.3"
+hmac = "0.13.0"
 http-body-util = "0.1.5"
 # HS256 only; `rust_crypto` is the RustCrypto backend (no C toolchain).
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }

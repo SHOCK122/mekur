@@ -340,8 +340,65 @@ routes, repository and tests for that group are deleted.
     - `find_by_id`/`update_public_key` treat a string that isn't a UUID as
       no such user rather than a database error (every caller passes an
       id from the database or a token).
-- [ ] **3c. API keys**: repository + routes, and the auth extractor (JWT +
-  `sak_` API keys, `authMethod`) moved here from 3b. Port `apiKeys.test.ts`.
+- [x] **3c. API keys**: repository + routes (`POST`/`GET /api-keys`,
+  `DELETE /api-keys/{id}`), and the auth check (JWT + `sak_` API keys,
+  `authMethod`) moved here from 3b. `CreateApiKeyRequest` is a
+  `mekur-shared` type with Zod's issues. Ported `apiKeys.test.ts`
+  (`tests/api_keys.rs`) and the API-key half of `security.test.ts`'s
+  malformed-UUID test; TS `apiKeyRoutes.ts` and `generateApiKey` deleted.
+  The TS auth plugin, `hashApiKey`/`looksLikeApiKey` and the repository's
+  `findUserIdByHash` stay until the last TS route goes (3g): the TS
+  routes still authenticate keys. `apiKeys.test.ts` now checks just that,
+  with keys inserted in the Rust server's format.
+  - **Frozen fixture of the TS replies**:
+    `tests/fixtures/ts_api_key_responses.json`, 97 replies of the TS
+    routes recorded before deletion, replayed by `tests/ts_parity.rs` with
+    new ids, keys and timestamps normalised away, and which keys were left
+    and marked used afterwards. It covers 30 JWT variants (HS384/512,
+    without `exp`/`iat`/`typ`, `nbf`, fractional and non-numeric `exp`,
+    `crit`, `alg: none`, wrong secret, tampering, padding, extra segments),
+    16 `Authorization` spellings, validation and body errors, 403, 404s,
+    204s, paths around the routes and the global limit.
+  - **What `fast-jwt` accepted** (`jwt::verify`, by reading `fast-jwt` 6
+    and `@fastify/jwt` 10, then the fixture): any of HS256/384/512 (the
+    HMAC family for a string secret); `exp`/`nbf` checked only when
+    present, as numbers, at millisecond precision; no truthy `crit`; `typ`
+    and `iat` ignored; segments decoded with Node's lenient decoder (so
+    `node_base64` again). The HMAC is RustCrypto's, compared in constant
+    time; `jsonwebtoken` still signs.
+  - **Decided: tokens without `exp` stay valid** (parity). Refusing them
+    is a behaviour change that would sign out those users on one server
+    but not the other; it is a Phase 11 roadmap item instead.
+  - **Header parsing** has two rules, kept as they were: an API key needs
+    exactly `Bearer ` (case-sensitive, one space) and everything after it
+    is the key; a JWT needs `/^Bearer\s/i` and exactly one space in the
+    header (so `bearer <jwt>` works, `Bearer  <jwt>` and a trailing space
+    don't). The header is read as Latin-1, as Node did.
+  - **Order**: handlers read the body before authenticating, since Fastify
+    parsed bodies before `preHandler` hooks: a malformed body is a 400 or
+    415 even without credentials. `GET` reads no body.
+  - **User ids from tokens** are bound as text and cast by Postgres, as
+    node-pg sent them, so an uppercase id still matches and a non-UUID is
+    a 500, as before. `DELETE`'s id is checked with Zod's UUID rule
+    (`is_zod_uuid`: hyphenated hex only, no braces or URNs) after
+    percent-decoding; an empty id (`/api-keys/`) is a route, as in Fastify.
+  - Proxies: nginx sends `/api/api-keys` and `/api/api-keys/<id>` (empty id
+    included) to Rust; Vite likewise. `openapi.test.ts`'s "longer path"
+    check now knows a Rust path can extend another (`/api-keys/{id}`).
+  - Divergences, only reachable with a token signed with `JWT_SECRET`
+    that neither server issues:
+    - a `userId` that isn't a string (missing, `null`, a number, an array
+      payload) is a 401; the TS server let the query fail (500) or match
+      nothing (an empty list, or a 500 on insert);
+    - claims `serde_json` can't parse (numbers past `f64`, lone surrogate
+      escapes) are refused; `JSON.parse` took them.
+  - Found, not changed (roadmap items): tokens without `exp`, above; and
+    `GET /api-keys` is the one unbounded list (a user's own hand-minted
+    keys).
+  - For 3d onward (from review): each parametric route still needs a
+    second, empty-parameter route and its handler strips its own prefix
+    from the raw URI (`/users//salt`, `/api-keys/`). With events and keyring
+    adding several `{id}` routes, factor that into one helper first.
 - [ ] **3d. Events & capabilities**: repository + routes incl. batch read
   (one query per request, max 500). Port `capabilities.test.ts`.
 - [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict,
@@ -538,3 +595,10 @@ tests are ported to Rust (`cargo test` for pure logic,
   auth extractor moved to 3c, where the first authenticated Rust route
   lands; reading `fast-jwt` for it showed that tokens without `exp` are
   accepted.
+- Step 3c (API keys). Minting, listing and revoking keys moved to the Rust
+  server, with the auth check every later route group will use. Found by
+  probing the TS server before porting: JWTs signed HS384/HS512 and with a
+  fractional `exp` were accepted, `bearer` was case-insensitive for JWTs
+  but not for API keys, and a body error beat a missing token. The
+  fixture's per-case "keys afterwards" also pins that only API-key
+  requests touch `last_used_at`.
