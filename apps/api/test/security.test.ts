@@ -101,65 +101,8 @@ describe("security hardening", () => {
       expect(response.headers["x-content-type-options"]).toBe("nosniff");
     });
 
-    it("rejects an oversized encrypted payload instead of storing unbounded blobs", async () => {
-      const { token } = await registerUser(app, "bigpayload");
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/events",
-        headers: { authorization: `Bearer ${token}` },
-        payload: {
-          envelope: {
-            v: 1,
-            algo: "xchacha20poly1305",
-            keyId: "k",
-            nonce: "bm9uY2U=",
-            ciphertext: "A".repeat(200 * 1024), // over the 128KB event cap
-          },
-        },
-      });
-      // Either schema validation (400) or the body limit (413) stops it --
-      // what matters is that it does not succeed.
-      expect([400, 413]).toContain(response.statusCode);
-    }, 20_000);
-
-    it("still accepts a normally-sized encrypted event", async () => {
-      const { token } = await registerUser(app, "normalpayload");
-
-      const response = await app.inject({
-        method: "POST",
-        url: "/events",
-        headers: { authorization: `Bearer ${token}` },
-        payload: {
-          envelope: ENVELOPE,
-        },
-      });
-      expect(response.statusCode).toBe(201);
-    }, 20_000);
-
-    it("returns 404, not a 500, for a malformed UUID path param (found during bughunt)", async () => {
-      // Previously the malformed id reached Postgres, which throws on the
-      // invalid uuid cast, surfacing as an unhandled 500 -- both the wrong
-      // status (the resource simply isn't there) and a hint about internals.
-      const { token } = await registerUser(app, "uuidguard");
-      const auth = { authorization: `Bearer ${token}` };
-
-      const getResponse = await app.inject({
-        method: "GET",
-        url: "/events/not-a-uuid",
-        headers: { ...auth, "x-event-capability": "anything" },
-      });
-      expect(getResponse.statusCode).toBe(404);
-
-      const deleteResponse = await app.inject({
-        method: "DELETE",
-        url: "/events/also-not-a-uuid",
-        headers: auth,
-      });
-      expect(deleteResponse.statusCode).toBe(404);
-      // DELETE /api-keys/:id is served by the Rust server now (step 3c);
-      // its 404 is in crates/api/tests/fixtures/ts_api_key_responses.json.
-    }, 20_000);
+    // The event payload caps and the malformed-UUID 404s moved to the Rust
+    // server with the event routes (crates/api/tests/events.rs, step 3d).
 
     it("accepts a keyring larger than the global body limit, up to its own cap", async () => {
       const { token } = await registerUser(app, "bigkeyring");

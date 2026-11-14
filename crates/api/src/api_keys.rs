@@ -10,11 +10,13 @@ use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
+
+use crate::app::iso_millis;
 
 /// Every API key starts with this ("schedule app key"), which is how the
 /// auth check tells one from a session token.
@@ -88,12 +90,6 @@ struct ApiKeyRow {
     last_used_at: Option<DateTime<Utc>>,
 }
 
-/// node-pg read `timestamptz` into a millisecond `Date`; `toISOString`
-/// printed it.
-fn iso(at: DateTime<Utc>) -> String {
-    at.to_rfc3339_opts(SecondsFormat::Millis, true)
-}
-
 impl From<ApiKeyRow> for ApiKeyRecord {
     fn from(row: ApiKeyRow) -> Self {
         Self {
@@ -101,8 +97,8 @@ impl From<ApiKeyRow> for ApiKeyRecord {
             user_id: row.user_id.to_string(),
             name: row.name,
             key_prefix: row.key_prefix,
-            created_at: iso(row.created_at),
-            last_used_at: row.last_used_at.map(iso),
+            created_at: iso_millis(row.created_at),
+            last_used_at: row.last_used_at.map(iso_millis),
         }
     }
 }

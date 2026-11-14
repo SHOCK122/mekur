@@ -17,15 +17,21 @@
 //! own verdicts, which the tests replay.
 
 mod auth;
+mod capability;
 pub mod datetime;
 mod envelope;
 mod event;
 pub mod issue;
 mod recurrence;
 mod time_zone;
+mod uuid;
 mod zod;
 
 pub use auth::{CreateApiKeyRequest, LoginRequest, RegisterRequest};
+pub use capability::{
+    BATCH_READ_LIMIT, BatchReadRequest, CapabilityLevel, EventEnvelopeRequest,
+    MintCapabilityRequest, PresentedCapability, RevokeCapabilityRequest,
+};
 pub use envelope::{
     ENVELOPE_ALGO, ENVELOPE_VERSION, EncryptedEnvelope, KeyringEnvelope, MAX_EVENT_CIPHERTEXT,
     MAX_KEYRING_CIPHERTEXT, SealedEnvelope,
@@ -34,3 +40,4 @@ pub use event::{EventContent, MAX_OCCURRENCE_OVERRIDES, OccurrenceOverride};
 pub use issue::{Issue, IssueKind, PathSegment, ValidationError};
 pub use recurrence::{RecurrenceFrequency, RecurrenceRule, Weekday};
 pub use time_zone::is_valid_time_zone;
+pub use uuid::is_zod_uuid;

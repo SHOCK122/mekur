@@ -7,7 +7,8 @@
 //! `GET /openapi.json`, security headers and 404s (step 3a of
 //! `docs/RUST_MIGRATION.md`); registration, login, the salt lookup, rate
 //! limiting and request bodies (step 3b); API keys and the auth check every
-//! signed-in route uses (step 3c).
+//! signed-in route uses (step 3c); events and their capabilities
+//! (step 3d).
 
 pub mod api_keys;
 pub mod app;
@@ -15,6 +16,7 @@ pub mod auth;
 pub mod body;
 pub mod config;
 pub mod db;
+pub mod events;
 pub mod jwt;
 pub mod node_base64;
 pub mod rate_limit;

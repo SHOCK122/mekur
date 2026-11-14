@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 
 use crate::datetime::is_zod_datetime;
 use crate::issue::{Issue, IssueKind, PathSegment, SizeType, ValidationError};
+use crate::uuid::is_zod_uuid;
 
 /// Collects issues while a value is parsed.
 #[derive(Debug, Default)]
@@ -159,6 +160,8 @@ pub(crate) struct StrChecks {
     pub min: Option<usize>,
     pub max: Option<usize>,
     pub datetime: bool,
+    /// `.uuid()`, checked after the lengths.
+    pub uuid: bool,
     /// `.regex(re, message)`, checked after the lengths.
     pub pattern: Option<Pattern>,
 }
@@ -177,6 +180,16 @@ impl StrChecks {
         min: None,
         max: None,
         datetime: true,
+        uuid: false,
+        pattern: None,
+    };
+
+    /// `.uuid()`
+    pub const UUID: Self = Self {
+        min: None,
+        max: None,
+        datetime: false,
+        uuid: true,
         pattern: None,
     };
 
@@ -186,6 +199,7 @@ impl StrChecks {
             min: Some(min),
             max: Some(max),
             datetime: false,
+            uuid: false,
             pattern: None,
         }
     }
@@ -196,6 +210,7 @@ impl StrChecks {
             min: Some(min),
             max: None,
             datetime: false,
+            uuid: false,
             pattern: None,
         }
     }
@@ -206,6 +221,7 @@ impl StrChecks {
             min: None,
             max: Some(max),
             datetime: false,
+            uuid: false,
             pattern: None,
         }
     }
@@ -251,6 +267,12 @@ pub(crate) fn string(ctx: &mut Ctx, input: Option<&Value>, checks: StrChecks) ->
                 validation: "regex",
             },
             pattern.message,
+        );
+    }
+    if checks.uuid && !is_zod_uuid(s) {
+        ctx.add(
+            IssueKind::InvalidString { validation: "uuid" },
+            "Invalid uuid",
         );
     }
     if checks.datetime && !is_zod_datetime(s) {
