@@ -7,10 +7,10 @@ use axum::{
     Router,
     body::Body,
     extract::{OriginalUri, Request},
-    http::{HeaderName, HeaderValue, Method, StatusCode, header},
+    http::{HeaderName, HeaderValue, Method, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{MethodRouter, delete, get, post},
 };
 use mekur_shared::ValidationError;
 use serde::Serialize;
@@ -18,6 +18,7 @@ use sqlx::PgPool;
 
 use crate::{
     api_keys::ApiKeyRepository,
+    events::EventRepository,
     rate_limit::{self, RateLimiter},
     routes,
     users::UserRepository,
@@ -30,6 +31,7 @@ pub struct AppState {
     pub db: PgPool,
     pub users: UserRepository,
     pub api_keys: ApiKeyRepository,
+    pub events: EventRepository,
     pub jwt_secret: Arc<str>,
     pub limits: Limits,
 }
@@ -79,6 +81,7 @@ impl AppState {
         Self {
             users: UserRepository::new(db.clone()),
             api_keys: ApiKeyRepository::new(db.clone()),
+            events: EventRepository::new(db.clone()),
             db,
             jwt_secret: options.jwt_secret.into(),
             limits: Limits {
@@ -104,6 +107,13 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("post", "/api-keys"),
     ("get", "/api-keys"),
     ("delete", "/api-keys/{id}"),
+    ("post", "/events"),
+    ("post", "/events/batch-read"),
+    ("get", "/events/{id}"),
+    ("put", "/events/{id}"),
+    ("delete", "/events/{id}"),
+    ("post", "/events/{id}/capabilities"),
+    ("post", "/events/{id}/capabilities/revoke"),
 ];
 
 pub fn build_app(state: AppState) -> Router {
@@ -111,9 +121,15 @@ pub fn build_app(state: AppState) -> Router {
         middleware::from_fn_with_state(limiter.clone(), rate_limit::limit)
     };
     let limits = state.limits.clone();
-    let salt = get(routes::auth::salt).route_layer(limited(&limits.global));
-    let revoke_api_key = delete(routes::api_keys::revoke).route_layer(limited(&limits.global));
-    let routes = Router::new()
+    let global = || limited(&limits.global);
+    // `GET`/`PUT`/`DELETE /events/{id}`, without its layer (added once per
+    // path below, so no request is counted twice).
+    let event = || {
+        get(routes::events::read)
+            .put(routes::events::update)
+            .delete(routes::events::remove)
+    };
+    let mut routes = Router::new()
         // `/health` and `/openapi.json` were never rate-limited.
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
@@ -125,17 +141,38 @@ pub fn build_app(state: AppState) -> Router {
             "/sessions",
             post(routes::auth::login).route_layer(limited(&limits.login)),
         )
-        .route("/users/{username}/salt", salt.clone())
-        // Fastify's parameters may be empty; axum's may not.
-        .route("/users//salt", salt)
         .route(
             "/api-keys",
             post(routes::api_keys::create)
                 .get(routes::api_keys::list)
-                .route_layer(limited(&limits.global)),
+                .route_layer(global()),
         )
-        .route("/api-keys/{id}", revoke_api_key.clone())
-        .route("/api-keys/", revoke_api_key)
+        .route(
+            "/events",
+            post(routes::events::create).route_layer(global()),
+        )
+        // In Fastify, `GET /events/batch-read` reached `/events/:id` (its
+        // routes are per method); in axum the static path shadows the
+        // parameter for every method, so it routes the others there itself.
+        .route(
+            "/events/batch-read",
+            event()
+                .post(routes::events::batch_read)
+                .route_layer(global()),
+        );
+    for (path, handler) in [
+        ("/users/{username}/salt", get(routes::auth::salt)),
+        ("/api-keys/{id}", delete(routes::api_keys::revoke)),
+        ("/events/{id}", event()),
+        ("/events/{id}/capabilities", post(routes::events::mint)),
+        (
+            "/events/{id}/capabilities/revoke",
+            post(routes::events::revoke),
+        ),
+    ] {
+        routes = route_with_empty_param(routes, path, handler.route_layer(global()));
+    }
+    let routes = routes
         // Fastify answers an unknown path *and* a known path with the wrong
         // method with the same 404 (never 405).
         .fallback(not_found)
@@ -246,6 +283,53 @@ pub fn percent_decode(s: &str) -> Option<String> {
         }
     }
     String::from_utf8(out).ok()
+}
+
+/// The path parameter between `prefix` and `suffix` in a request's raw
+/// path, percent-decoded as Fastify decoded route parameters (`a%2Fb` is
+/// `a/b`). Empty when the parameter is (Fastify allowed empty parameters;
+/// each parametric route is also registered with an empty one) or when the
+/// path doesn't have that shape.
+pub fn path_param(uri: &Uri, prefix: &str, suffix: &str) -> String {
+    let raw = uri
+        .path()
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_suffix(suffix))
+        .unwrap_or_default();
+    // `reject_bad_url` has already refused undecodable paths.
+    percent_decode(raw).unwrap_or_default()
+}
+
+/// The TS routes' own 404: `{"error":"Not found"}` -- for a missing or
+/// unreachable resource, as opposed to an unknown route.
+pub fn resource_not_found() -> Response {
+    json(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#)
+}
+
+/// A 204 with no body.
+pub fn no_content() -> Response {
+    (StatusCode::NO_CONTENT, Body::empty()).into_response()
+}
+
+/// Registers `path` and, because Fastify's parameters may be empty and
+/// axum's may not, `path` with its `{param}` emptied (`/events/{id}` is also
+/// `/events/`). Every parametric route goes through here, so none forgets
+/// its empty form. (Fastify allowed one parameter per path here.)
+fn route_with_empty_param(
+    router: Router<AppState>,
+    path: &str,
+    handler: MethodRouter<AppState>,
+) -> Router<AppState> {
+    let open = path.find('{').expect("a parametric path");
+    let close = open + path[open..].find('}').expect("a closed parameter");
+    let empty = format!("{}{}", &path[..open], &path[close + 1..]);
+    router.route(path, handler.clone()).route(&empty, handler)
+}
+
+/// A timestamp as node-pg read it (a millisecond `Date`) and
+/// `toISOString` printed it: UTC, milliseconds (truncated), `Z`.
+pub fn iso_millis(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 /// A JSON reply serialized from `value` (struct fields keep their order).
@@ -379,7 +463,7 @@ async fn security_headers(mut response: Response) -> Response {
 /// Drops the whitespace between JSON tokens, leaving strings untouched. For
 /// a document written by `JSON.stringify(value, null, 2)` this gives exactly
 /// `JSON.stringify(value)`.
-fn minify_json(source: &str) -> String {
+pub(crate) fn minify_json(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let (mut in_string, mut escaped) = (false, false);
     for c in source.chars() {

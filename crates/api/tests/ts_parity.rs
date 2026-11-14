@@ -13,6 +13,12 @@
 //!   a bearer token or key -- frozen likewise. Each case ran on a fresh app
 //!   with the production limits and the `seed` accounts and keys; what
 //!   varies between runs (new ids, keys, timestamps) is normalised away;
+//! - `fixtures/ts_event_responses.json`: the event and capability routes'
+//!   replies (step 3d), frozen likewise, with the events and capabilities
+//!   left in the database afterwards. Each case ran on a fresh app with the
+//!   production limits and the `seed` accounts, events and capabilities;
+//!   new ids, tokens, hashes and timestamps are normalised away, and runs
+//!   of 64+ identical characters are written `⟪c×n⟫`;
 //! - `fixtures/node_base64.json`: what Node's base64 decoder makes of
 //!   tricky strings, which stored auth hashes depend on.
 
@@ -213,7 +219,7 @@ fn normalise(value: &Value, seeded: &[&str]) -> Value {
                 && s.ends_with('Z')
                 && chrono::DateTime::parse_from_rfc3339(s).is_ok()
                 && s.as_bytes()[19] == b'.';
-            let uuid = mekur_api::routes::api_keys::is_zod_uuid(s) && s.to_lowercase() == *s;
+            let uuid = mekur_shared::is_zod_uuid(s) && s.to_lowercase() == *s;
             Value::String(
                 if tail(32) {
                     "<rawKey>"
@@ -354,4 +360,341 @@ async fn reproduces_the_ts_servers_api_key_replies() {
         let expected = by_id(case["keysAfter"].as_array().unwrap().clone());
         assert_eq!(actual, expected, "{what}: keys afterwards");
     }
+}
+
+// --- Events and capabilities (step 3d) -----------------------------------------
+
+/// Runs of 64 or more of one character, written `⟪c×n⟫` in
+/// `ts_event_responses.json` to keep it small (the 128 KB ciphertexts).
+fn squeeze(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let run = chars[i..].iter().take_while(|&&c| c == chars[i]).count();
+        if run >= 64 {
+            out.push_str(&format!("\u{27ea}{}\u{d7}{run}\u{27eb}", chars[i]));
+        } else {
+            out.extend(&chars[i..i + run]);
+        }
+        i += run;
+    }
+    out
+}
+
+/// The inverse of [`squeeze`], for request bodies.
+fn expand(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find('\u{27ea}') {
+        out.push_str(&rest[..start]);
+        let marker = &rest[start + '\u{27ea}'.len_utf8()..];
+        let end = marker.find('\u{27eb}').expect("closed marker");
+        let mut parts = marker[..end].splitn(2, '\u{d7}');
+        let c = parts.next().unwrap();
+        let n: usize = parts.next().unwrap().parse().unwrap();
+        out.push_str(&c.repeat(n));
+        rest = &marker[end + '\u{27eb}'.len_utf8()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn squeeze_value(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(squeeze_value).collect()),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), squeeze_value(v)))
+                .collect(),
+        ),
+        Value::String(s) => Value::String(squeeze(s)),
+        other => other.clone(),
+    }
+}
+
+/// Replaces what varies between runs with placeholders, as the recorder
+/// did: new event ids, tokens, token hashes and timestamps of today.
+fn normalise_event_value(value: &Value, keep: &[String]) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|v| normalise_event_value(v, keep))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), normalise_event_value(v, keep)))
+                .collect(),
+        ),
+        Value::String(s) if !keep.contains(s) => {
+            let b64 = |c: u8, url: bool| {
+                c.is_ascii_alphanumeric()
+                    || if url {
+                        b"-_".contains(&c)
+                    } else {
+                        b"+/".contains(&c)
+                    }
+            };
+            let placeholder = if mekur_shared::is_zod_uuid(s) && s.to_lowercase() == *s {
+                Some("<uuid>")
+            } else if s.len() == 43 && s.bytes().all(|c| b64(c, true)) {
+                Some("<token>")
+            } else if s.len() == 44 && s.ends_with('=') && s[..43].bytes().all(|c| b64(c, false)) {
+                Some("<hash>")
+            } else if s.len() == 24
+                && s.as_bytes()[19] == b'.'
+                && s.ends_with('Z')
+                && chrono::DateTime::parse_from_rfc3339(s).is_ok_and(|t| {
+                    (t.with_timezone(&chrono::Utc) - chrono::Utc::now())
+                        .num_seconds()
+                        .abs()
+                        < 86_400
+                })
+            {
+                Some("<now>")
+            } else {
+                None
+            };
+            Value::String(placeholder.map_or_else(|| s.clone(), str::to_owned))
+        }
+        other => other.clone(),
+    }
+}
+
+/// The events and capabilities in the database, as the recorder listed
+/// them: normalised, long runs squeezed, in a canonical order.
+async fn event_state(db: &sqlx::PgPool, keep: &[String]) -> (Vec<Value>, Vec<Value>) {
+    // Timestamps as `toISOString` printed node-pg's millisecond `Date`s.
+    const ISO: &str = r#"'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'"#;
+    let rows = |sql: String| async move {
+        sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql))
+            .fetch_all(db)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| serde_json::from_str::<Value>(row).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let events = rows(format!(
+        "SELECT json_build_object('id', id::text, 'envelope', envelope,
+           'createdAt', to_char(created_at AT TIME ZONE 'UTC', {ISO}),
+           'updatedAt', to_char(updated_at AT TIME ZONE 'UTC', {ISO}))::text
+         FROM events"
+    ))
+    .await;
+    let capabilities = rows(format!(
+        "SELECT json_build_object('eventId', event_id::text, 'tokenHash', token_hash,
+           'level', level, 'expiresAt', to_char(expires_at AT TIME ZONE 'UTC', {ISO}),
+           'revoked', revoked_at IS NOT NULL)::text
+         FROM event_capabilities"
+    ))
+    .await;
+    let canonical = |items: Vec<Value>| {
+        let mut items: Vec<Value> = items
+            .iter()
+            .map(|v| squeeze_value(&normalise_event_value(v, keep)))
+            .collect();
+        items.sort_by_key(|v| v.to_string());
+        items
+    };
+    (canonical(events), canonical(capabilities))
+}
+
+fn sorted(items: &Value) -> Vec<Value> {
+    let mut items = items.as_array().unwrap().clone();
+    items.sort_by_key(|v| v.to_string());
+    items
+}
+
+#[tokio::test]
+async fn reproduces_the_ts_servers_event_replies() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/ts_event_responses.json"))
+        .expect("fixture parses");
+    assert_eq!(fixture["secret"], common::JWT_SECRET);
+    let uncompared: Vec<&str> = fixture["uncomparedHeaders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h.as_str().unwrap())
+        .collect();
+    let security = fixture["securityHeaders"].as_object().unwrap();
+    let seed = &fixture["seed"];
+
+    // What the recorder kept as is: everything seeded.
+    let mut keep: Vec<String> = Vec::new();
+    for user in seed["users"].as_array().unwrap() {
+        keep.push(user["id"].as_str().unwrap().to_owned());
+    }
+    for event in seed["events"].as_array().unwrap() {
+        for field in ["id", "createdAt", "updatedAt"] {
+            keep.push(event[field].as_str().unwrap().to_owned());
+        }
+    }
+    for cap in seed["capabilities"].as_array().unwrap() {
+        let token = cap["token"].as_str().unwrap();
+        keep.push(token.to_owned());
+        keep.push(mekur_api::events::hash_capability_token(token));
+    }
+    for key in seed["apiKeys"].as_array().unwrap() {
+        keep.push(key["id"].as_str().unwrap().to_owned());
+        keep.push(key["rawKey"].as_str().unwrap().to_owned());
+    }
+    let seed_events = sorted(&fixture["seedState"]["events"]);
+    let seed_capabilities = sorted(&fixture["seedState"]["capabilities"]);
+
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.len() > 180);
+    for case in cases {
+        let what = case["name"].as_str().unwrap();
+        let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
+        for user in seed["users"].as_array().unwrap() {
+            sqlx::query(
+                "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
+                 VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
+            )
+            .bind(user["id"].as_str())
+            .bind(user["username"].as_str())
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+        for key in seed["apiKeys"].as_array().unwrap() {
+            let raw = key["rawKey"].as_str().unwrap();
+            sqlx::query(
+                "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
+                 VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
+            )
+            .bind(key["id"].as_str())
+            .bind(key["userId"].as_str())
+            .bind(&raw[..12])
+            .bind(hash_api_key(raw))
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+        for event in seed["events"].as_array().unwrap() {
+            sqlx::query(
+                "INSERT INTO events (id, envelope, created_at, updated_at)
+                 VALUES ($1::uuid, $2::text::jsonb, $3::timestamptz, $4::timestamptz)",
+            )
+            .bind(event["id"].as_str())
+            .bind(event["envelope"].to_string())
+            .bind(event["createdAt"].as_str())
+            .bind(event["updatedAt"].as_str())
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+        for cap in seed["capabilities"].as_array().unwrap() {
+            sqlx::query(
+                "INSERT INTO event_capabilities (event_id, token_hash, level, expires_at, revoked_at)
+                 VALUES ($1::uuid, $2, $3, $4::timestamptz, $5::timestamptz)",
+            )
+            .bind(cap["eventId"].as_str())
+            .bind(mekur_api::events::hash_capability_token(
+                cap["token"].as_str().unwrap(),
+            ))
+            .bind(cap["level"].as_str())
+            .bind(cap["expiresAt"].as_str())
+            .bind(cap["revokedAt"].as_str())
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+        for before in case["before"].as_array().unwrap() {
+            for _ in 0..before["times"].as_u64().unwrap() {
+                t.send(auth_request(&before["request"])).await;
+            }
+        }
+        let mut spec = case["request"].clone();
+        if let Some(body) = spec["body"].as_str() {
+            spec["body"] = Value::String(expand(body));
+        }
+        let reply = t.send(auth_request(&spec)).await;
+        let expected = &case["response"];
+
+        assert_eq!(
+            u64::from(reply.status.as_u16()),
+            expected["status"],
+            "{what}: status"
+        );
+        if let Some(body) = expected["body"].as_str() {
+            if body.contains("Expected property name") {
+                // V8's JSON.parse message can't be reproduced.
+                let actual = reply.json();
+                assert_eq!(actual["statusCode"], 400, "{what}");
+                assert_eq!(actual["error"], "Bad Request", "{what}");
+                assert!(actual["message"].is_string(), "{what}");
+                assert_eq!(reply.header("connection"), Some("close"), "{what}");
+            } else if body.contains("\"details\"") {
+                // Validation issues may list their keys in another order.
+                let expected_body: Value = serde_json::from_str(&expand(body)).unwrap();
+                assert_eq!(reply.json(), expected_body, "{what}: body");
+            } else {
+                assert_eq!(squeeze(reply.text()), body, "{what}: body");
+            }
+        } else {
+            let mut actual = normalise_event_value(&reply.json(), &keep);
+            if case["unordered"] == true
+                && let Some(events) = actual["events"].as_array_mut()
+            {
+                events.sort_by_key(|e| e["id"].as_str().unwrap().to_owned());
+            }
+            assert_eq!(squeeze_value(&actual), expected["bodyJson"], "{what}: body");
+        }
+
+        let mut headers = expected["headers"].as_object().unwrap().clone();
+        if expected["securityHeaders"] == true {
+            headers.extend(security.clone());
+        }
+        for (name, value) in &headers {
+            assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
+        }
+        for name in reply.headers.keys() {
+            assert!(
+                headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
+                "{what}: extra header {name}"
+            );
+        }
+
+        let after = &case["after"];
+        let (events, capabilities) = event_state(&t.db, &keep).await;
+        if after["unchanged"] == true {
+            assert_eq!(events, seed_events, "{what}: events afterwards");
+            assert_eq!(
+                capabilities, seed_capabilities,
+                "{what}: capabilities afterwards"
+            );
+        } else {
+            assert_eq!(
+                events,
+                sorted(&after["events"]),
+                "{what}: events afterwards"
+            );
+            assert_eq!(
+                capabilities,
+                sorted(&after["capabilities"]),
+                "{what}: capabilities afterwards"
+            );
+        }
+        let used: bool = sqlx::query_scalar("SELECT last_used_at IS NOT NULL FROM api_keys")
+            .fetch_one(&t.db)
+            .await
+            .unwrap();
+        assert_eq!(used, after["apiKeyUsed"], "{what}: API key marked used");
+    }
+}
+
+#[test]
+fn squeeze_and_expand_are_inverses() {
+    let long = format!("ab{}c\n{}", "A".repeat(70), "😀".repeat(64));
+    let squeezed = squeeze(&long);
+    assert_eq!(
+        squeezed,
+        "ab\u{27ea}A\u{d7}70\u{27eb}c\n\u{27ea}😀\u{d7}64\u{27eb}"
+    );
+    assert_eq!(expand(&squeezed), long);
+    assert_eq!(squeeze("short"), "short");
 }

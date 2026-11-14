@@ -3,18 +3,20 @@
 //! user; a user only ever sees and revokes their own keys.
 
 use axum::{
-    body::Body,
     extract::{OriginalUri, Request, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use mekur_shared::CreateApiKeyRequest;
+use mekur_shared::{CreateApiKeyRequest, is_zod_uuid};
 use serde::Serialize;
 
 use crate::{
     AppState,
     api_keys::{ApiKeyRecord, generate_api_key, hash_api_key},
-    app::{internal_error, invalid_request, json, json_value, percent_decode},
+    app::{
+        internal_error, invalid_request, json, json_value, no_content, path_param,
+        resource_not_found,
+    },
     auth::{AuthMethod, authenticate},
     body::{BODY_LIMIT, read_body},
 };
@@ -112,58 +114,13 @@ pub async fn revoke(
         Ok(user) => user,
         Err(reply) => return reply,
     };
-    let raw = uri.path().strip_prefix("/api-keys/").unwrap_or_default();
-    // `reject_bad_url` has already refused undecodable paths.
-    let id = percent_decode(raw).unwrap_or_default();
+    let id = path_param(&uri, "/api-keys/", "");
     if !is_zod_uuid(&id) {
-        return not_found();
+        return resource_not_found();
     }
     match state.api_keys.revoke_for_user(&id, &user.user_id).await {
-        Ok(true) => (StatusCode::NO_CONTENT, Body::empty()).into_response(),
-        Ok(false) => not_found(),
+        Ok(true) => no_content(),
+        Ok(false) => resource_not_found(),
         Err(err) => internal_error(&err),
-    }
-}
-
-fn not_found() -> Response {
-    json(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#)
-}
-
-/// Zod 3's `z.string().uuid()`: 8-4-4-4-12 hex digits in either case, any
-/// version or variant. Narrower than `Uuid::parse_str`, which also takes
-/// braces, URNs and the unhyphenated form.
-pub fn is_zod_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.bytes().enumerate().all(|(i, b)| match i {
-            8 | 13 | 18 | 23 => b == b'-',
-            _ => b.is_ascii_hexdigit(),
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn uuids_as_zod_checks_them() {
-        for ok in [
-            "1a000000-0000-4000-8000-00000000000a",
-            "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
-            "00000000-0000-0000-0000-000000000000",
-        ] {
-            assert!(is_zod_uuid(ok), "{ok}");
-        }
-        for bad in [
-            "",
-            "not-a-uuid",
-            "1a00000000004000800000000000000a",
-            "{1a000000-0000-4000-8000-00000000000a}",
-            "urn:uuid:1a000000-0000-4000-8000-00000000000a",
-            "1a000000-0000-4000-8000-00000000000a\n",
-            "1a000000-0000-4000-8000-00000000000g",
-            "1a0000000-000-4000-8000-00000000000a",
-        ] {
-            assert!(!is_zod_uuid(bad), "{bad:?}");
-        }
     }
 }

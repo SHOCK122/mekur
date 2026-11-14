@@ -43,23 +43,23 @@ describe("API keys on the TS server's routes", () => {
     const { userId } = await registerUser(app, "bob");
     const { rawKey } = await mintKey(db, userId);
 
-    const createResp = await app.inject({
-      method: "POST",
-      url: "/events",
+    // (Events are served by the Rust server now, step 3d; its replay of the
+    // TS server's event replies includes API-key requests.)
+    const writeResp = await app.inject({
+      method: "PUT",
+      url: "/keyring",
       headers: { authorization: `Bearer ${rawKey}` },
-      payload: { envelope: ENVELOPE },
+      payload: { envelope: ENVELOPE, expectedVersion: 0 },
     });
-    expect(createResp.statusCode).toBe(201);
-    const { event, viewToken } = createResp.json();
+    expect(writeResp.statusCode).toBe(200);
 
-    // Reading back requires the capability, not the identity -- the API key
-    // authenticates the request, the token authorises the event.
     const readResp = await app.inject({
       method: "GET",
-      url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${rawKey}`, "x-event-capability": viewToken },
+      url: "/keyring",
+      headers: { authorization: `Bearer ${rawKey}` },
     });
     expect(readResp.statusCode).toBe(200);
+    expect(readResp.json().version).toBe(1);
 
     const { rows } = await db.query("SELECT last_used_at FROM api_keys");
     expect(rows[0].last_used_at).not.toBeNull();

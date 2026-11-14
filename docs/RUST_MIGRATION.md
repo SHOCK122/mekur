@@ -399,13 +399,75 @@ routes, repository and tests for that group are deleted.
     second, empty-parameter route and its handler strips its own prefix
     from the raw URI (`/users//salt`, `/api-keys/`). With events and keyring
     adding several `{id}` routes, factor that into one helper first.
-- [ ] **3d. Events & capabilities**: repository + routes incl. batch read
-  (one query per request, max 500). Port `capabilities.test.ts`.
+- [x] **3d. Events & capabilities**: repository + routes (`POST /events`,
+  `POST /events/batch-read`, `GET`/`PUT`/`DELETE /events/{id}`, `POST
+  /events/{id}/capabilities` and `.../revoke`), capability tokens
+  (`api::events`: 32 random bytes base64url, stored as base64(sha256)) and
+  the voting pseudonym (format only; no route uses it until Phase 10).
+  The request bodies are `mekur-shared` types with Zod's issues
+  (`EventEnvelopeRequest`, `BatchReadRequest` with `BATCH_READ_LIMIT`,
+  `MintCapabilityRequest`, `RevokeCapabilityRequest`); Zod's `.uuid()`
+  check moved to `mekur_shared::is_zod_uuid`. Ported the events half of
+  `capabilities.test.ts` and the event tests of `security.test.ts`
+  (payload caps, malformed ids) to `tests/events.rs`, plus: no row links
+  the creating account to the event, only token hashes are stored, expiry
+  (stored to the millisecond), the batch bound, and envelopes round-trip
+  byte for byte. TS `eventRoutes.ts`, `eventRepository.ts` and
+  `lib/capability.ts` deleted; the keyring and inbox tests left in
+  `capabilities.test.ts` became `keyringAndInbox.test.ts`, and the TS
+  API-key test now uses `/keyring`.
+  - **Frozen fixture of the TS replies**:
+    `tests/fixtures/ts_event_responses.json`, 185 replies of the TS routes
+    recorded before deletion (by a throwaway recorder, as in 3c), replayed
+    by `tests/ts_parity.rs` *with the events and capabilities left in the
+    database afterwards* and whether the seeded API key was marked used.
+    Seeded: two accounts, an API key, two events, and live, expired,
+    revoked and future-expiring view/edit capabilities. It covers every
+    route's success and refusal paths, body errors, validation issues
+    (UUIDs, token lengths, the 500 bound with per-entry issues, datetime
+    and enum errors, ciphertext and keyId caps in UTF-16 units), unknown
+    keys stripped, paths and methods around the routes, and the global
+    rate limit. New ids, tokens, hashes and today's timestamps are
+    normalised; runs of 64+ identical characters are written `⟪c×n⟫`.
+    Checked to fail when the envelope formatting or the expiry rule is
+    broken.
+  - **Order of checks** (from the recording): body (400/413/415), then
+    account (401), then target -- a Zod UUID in the path and a non-empty
+    `X-Event-Capability` -- (404), then validation (400), then the
+    capability (404). So a *wrong* token with an invalid body is a 400,
+    a *missing* one a 404; neither says whether the event exists. `GET`
+    reads no body.
+  - **Envelopes are sent byte for byte as before**: read as `jsonb::text`
+    and minified, which is exactly `JSON.stringify(JSON.parse(text))`
+    (jsonb's key order; jsonb and V8 escape the same characters). Stored
+    is Zod's output: unknown keys stripped, `v: 1.0` stored as `1`.
+  - **Ids** are bound as text and cast by Postgres, as node-pg sent them,
+    so an upper-case or percent-encoded id still matches (the reply carries
+    the lowercase id). The capability header is read as Latin-1 with
+    repeated headers joined by `", "`, as Node did.
+  - **Routing**: Fastify's routes are per method, so `GET /events/batch-read`
+    reached `/events/:id` (a 404 after auth); in axum the static path
+    shadows the parameter for every method, so `/events/batch-read` routes
+    `GET`/`PUT`/`DELETE` to the id handlers itself. Empty ids (`/events/`,
+    `/events//capabilities`) are routes, as in Fastify; `/events//` is not.
+    The empty-parameter helpers the 3c review asked for are
+    `app::route_with_empty_param` (registers both forms of every
+    parametric route) and `app::path_param` (reads the parameter from the
+    raw path), now used by every parametric route.
+  - **Privacy unchanged**: no handler passes the account on; the
+    repository takes no user id; the batch read stays one query, at most
+    500 capabilities.
+  - Proxies: nginx sends `/api/events`, `/api/events/batch-read` and
+    `^/api/events/[^/]*(/capabilities(/revoke)?)?$` to Rust; Vite likewise.
+  - Divergences: none observed beyond the ones every route shares (V8's
+    JSON parse message, percent-decoded routing; see 3b).
 - [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict,
-  1.5 MB body limit on `PUT`).
+  1.5 MB body limit on `PUT`). Port the keyring tests of
+  `keyringAndInbox.test.ts` and `security.test.ts`.
 - [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
 - [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
-  every list stays bounded), push subscriptions,
+  every list stays bounded; port the inbox tests of
+  `keyringAndInbox.test.ts`), push subscriptions,
   notification service. Port `pushNotifications.test.ts` and the rest of
   `security.test.ts`. Then delete `apps/api` and the TS server from
   `docker-compose.yml`; the Rust server takes over running migrations.
@@ -602,3 +664,22 @@ tests are ported to Rust (`cargo test` for pure logic,
   but not for API keys, and a body error beat a missing token. The
   fixture's per-case "keys afterwards" also pins that only API-key
   requests touch `last_used_at`.
+- Step 3d (events and capabilities). The event routes moved to the Rust
+  server. Found by recording the TS server before porting: a wrong
+  capability with an invalid body is a 400 but a missing one a 404 (the
+  target check runs before validation, the capability check after);
+  `GET /events/batch-read` was routed to `/events/:id`; an upper-case or
+  percent-encoded event id matched; and the reply's envelope is jsonb's
+  key order, which the Rust server reproduces byte for byte rather than
+  re-serialising. The recording also confirmed revoking an *expired*
+  capability succeeds (only unrevoked is required), kept for parity.
+  Review fixes: `/events/batch-read`'s `GET`/`PUT`/`DELETE` passed the
+  global limiter twice (regression test: every event route counts once);
+  an `expiresAt` that validates but names no instant is now a 500 rather
+  than a capability that never expires; secrets share one
+  `api::secret` (random base64url, base64(sha256)); the create inserts
+  both capabilities in one statement. Found, not changed (parity): the
+  capability check and the write are separate statements, so a token
+  revoked between them can finish one write in flight -- a Phase 11
+  roadmap item. `derive_pseudonym` is kept although unused: its format is
+  on the parity list and its TS source is gone.

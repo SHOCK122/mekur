@@ -6,15 +6,15 @@
 //! instead of a login-derived session token. Only the key's hash is stored,
 //! so a database breach yields nothing that can be replayed.
 
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
+
+use crate::{
+    app::iso_millis,
+    secret::{random_base64url, sha256_base64},
+};
 
 /// Every API key starts with this ("schedule app key"), which is how the
 /// auth check tells one from a session token.
@@ -44,9 +44,7 @@ impl std::fmt::Debug for GeneratedApiKey {
 /// `sak_` and 24 random bytes from the OS, base64url without padding (32
 /// characters), as `randomBytes(24).toString("base64url")` made them.
 pub fn generate_api_key() -> Result<GeneratedApiKey, getrandom::Error> {
-    let mut bytes = [0u8; 24];
-    getrandom::fill(&mut bytes)?;
-    let raw_key = format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes));
+    let raw_key = format!("{PREFIX}{}", random_base64url::<24>()?);
     let key_prefix = raw_key[..KEY_PREFIX_LEN].to_owned();
     Ok(GeneratedApiKey {
         raw_key,
@@ -56,7 +54,7 @@ pub fn generate_api_key() -> Result<GeneratedApiKey, getrandom::Error> {
 
 /// base64(sha256(the key's UTF-8 bytes)) -- the stored form.
 pub fn hash_api_key(raw_key: &str) -> String {
-    STANDARD.encode(Sha256::digest(raw_key.as_bytes()))
+    sha256_base64(raw_key)
 }
 
 /// Whether a bearer token is meant as an API key rather than a session
@@ -88,12 +86,6 @@ struct ApiKeyRow {
     last_used_at: Option<DateTime<Utc>>,
 }
 
-/// node-pg read `timestamptz` into a millisecond `Date`; `toISOString`
-/// printed it.
-fn iso(at: DateTime<Utc>) -> String {
-    at.to_rfc3339_opts(SecondsFormat::Millis, true)
-}
-
 impl From<ApiKeyRow> for ApiKeyRecord {
     fn from(row: ApiKeyRow) -> Self {
         Self {
@@ -101,8 +93,8 @@ impl From<ApiKeyRow> for ApiKeyRecord {
             user_id: row.user_id.to_string(),
             name: row.name,
             key_prefix: row.key_prefix,
-            created_at: iso(row.created_at),
-            last_used_at: row.last_used_at.map(iso),
+            created_at: iso_millis(row.created_at),
+            last_used_at: row.last_used_at.map(iso_millis),
         }
     }
 }

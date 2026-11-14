@@ -14,7 +14,7 @@ use subtle::ConstantTimeEq;
 
 use crate::{
     AppState,
-    app::{internal_error, invalid_request, json_value, percent_decode},
+    app::{internal_error, invalid_request, json_value, path_param},
     body::{BODY_LIMIT, read_body},
     jwt::{issue_token, now},
     node_base64,
@@ -160,13 +160,7 @@ pub async fn login(State(state): State<AppState>, request: Request) -> Response 
 /// Fastify decoded route parameters (`a%2Fb` is the username `a/b`, which
 /// doesn't exist). It may be empty (`/users//salt`), as in Fastify.
 pub async fn salt(State(state): State<AppState>, OriginalUri(uri): OriginalUri) -> Response {
-    let raw = uri
-        .path()
-        .strip_prefix("/users/")
-        .and_then(|rest| rest.strip_suffix("/salt"))
-        .unwrap_or_default();
-    // `reject_bad_url` has already refused undecodable paths.
-    let username = percent_decode(raw).unwrap_or_default();
+    let username = path_param(&uri, "/users/", "/salt");
     match state.users.find_by_username(&username).await {
         Ok(Some(user)) => json_value(
             StatusCode::OK,
