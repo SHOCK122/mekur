@@ -450,8 +450,10 @@ routes, repository and tests for that group are deleted.
     shadows the parameter for every method, so `/events/batch-read` routes
     `GET`/`PUT`/`DELETE` to the id handlers itself. Empty ids (`/events/`,
     `/events//capabilities`) are routes, as in Fastify; `/events//` is not.
-    The empty-parameter helper the 3c review asked for is
-    `app::path_param`, now used by every parametric route.
+    The empty-parameter helpers the 3c review asked for are
+    `app::route_with_empty_param` (registers both forms of every
+    parametric route) and `app::path_param` (reads the parameter from the
+    raw path), now used by every parametric route.
   - **Privacy unchanged**: no handler passes the account on; the
     repository takes no user id; the batch read stays one query, at most
     500 capabilities.
@@ -671,3 +673,13 @@ tests are ported to Rust (`cargo test` for pure logic,
   key order, which the Rust server reproduces byte for byte rather than
   re-serialising. The recording also confirmed revoking an *expired*
   capability succeeds (only unrevoked is required), kept for parity.
+  Review fixes: `/events/batch-read`'s `GET`/`PUT`/`DELETE` passed the
+  global limiter twice (regression test: every event route counts once);
+  an `expiresAt` that validates but names no instant is now a 500 rather
+  than a capability that never expires; secrets share one
+  `api::secret` (random base64url, base64(sha256)); the create inserts
+  both capabilities in one statement. Found, not changed (parity): the
+  capability check and the write are separate statements, so a token
+  revoked between them can finish one write in flight -- a Phase 11
+  roadmap item. `derive_pseudonym` is kept although unused: its format is
+  on the parity list and its TS source is gone.

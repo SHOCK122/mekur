@@ -20,7 +20,7 @@ use axum::{
     body::Body,
     extract::{OriginalUri, Request, State},
     http::{HeaderMap, StatusCode, Uri, request::Parts},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use mekur_shared::{
     BatchReadRequest, EventEnvelopeRequest, MintCapabilityRequest, RevokeCapabilityRequest,
@@ -31,7 +31,9 @@ use serde_json::Value;
 
 use crate::{
     AppState,
-    app::{internal_error, invalid_request, json, json_value, path_param},
+    app::{
+        internal_error, invalid_request, json_value, no_content, path_param, resource_not_found,
+    },
     auth::authenticate,
     body::{BODY_LIMIT, read_body},
     events::EventRecord,
@@ -66,13 +68,11 @@ fn capability_header(headers: &HeaderMap) -> Option<String> {
     Some(values.join(", "))
 }
 
-fn not_found() -> Response {
-    json(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#)
-}
-
-fn no_content() -> Response {
-    (StatusCode::NO_CONTENT, Body::empty()).into_response()
-}
+/// A validated `expiresAt` with no instant (the validator and the
+/// conversion disagree): a bug, reported as a 500.
+#[derive(Debug, thiserror::Error)]
+#[error("validated expiry {0:?} names no instant")]
+struct UnreadableExpiry(String);
 
 /// Reads the body and authenticates, in Fastify's order. Returns the body.
 async fn body_and_account(
@@ -98,45 +98,40 @@ struct One {
 
 /// `POST /events`: store a new event. The reply carries its view and edit
 /// tokens, exactly once.
-pub async fn create(State(state): State<AppState>, request: Request) -> Response {
+pub async fn create(State(state): State<AppState>, request: Request) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        let body = body_and_account(&state, &parts, body).await?;
-        let request = EventEnvelopeRequest::parse_optional(body.as_ref())
-            .map_err(|err| invalid_request(&err))?;
-        match state.events.create(&stored_envelope(&request)).await {
-            Ok(created) => Ok(json_value(StatusCode::CREATED, &created)),
-            Err(err) => Err(internal_error(&err)),
-        }
+    let body = body_and_account(&state, &parts, body).await?;
+    let request =
+        EventEnvelopeRequest::parse_optional(body.as_ref()).map_err(|err| invalid_request(&err))?;
+    match state.events.create(&stored_envelope(&request)).await {
+        Ok(created) => Ok(json_value(StatusCode::CREATED, &created)),
+        Err(err) => Err(internal_error(&err)),
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
 }
 
 /// `POST /events/batch-read`: the events whose capabilities the client
 /// presents -- the server cannot answer "list my events". At most 500, in
 /// one query.
-pub async fn batch_read(State(state): State<AppState>, request: Request) -> Response {
+pub async fn batch_read(
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        let body = body_and_account(&state, &parts, body).await?;
-        let request =
-            BatchReadRequest::parse_optional(body.as_ref()).map_err(|err| invalid_request(&err))?;
-        #[derive(Serialize)]
-        struct Many {
-            events: Vec<EventRecord>,
-        }
-        match state
-            .events
-            .find_many_by_capabilities(&request.events)
-            .await
-        {
-            Ok(events) => Ok(json_value(StatusCode::OK, &Many { events })),
-            Err(err) => Err(internal_error(&err)),
-        }
+    let body = body_and_account(&state, &parts, body).await?;
+    let request =
+        BatchReadRequest::parse_optional(body.as_ref()).map_err(|err| invalid_request(&err))?;
+    #[derive(Serialize)]
+    struct Many {
+        events: Vec<EventRecord>,
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
+    match state
+        .events
+        .find_many_by_capabilities(&request.events)
+        .await
+    {
+        Ok(events) => Ok(json_value(StatusCode::OK, &Many { events })),
+        Err(err) => Err(internal_error(&err)),
+    }
 }
 
 /// `GET /events/{id}`: the event, with a view or edit capability. (Fastify
@@ -150,11 +145,11 @@ pub async fn read(
         return reply;
     }
     let Some(t) = target(&uri, &headers, "") else {
-        return not_found();
+        return resource_not_found();
     };
     match state.events.find_by_capability(&t.event_id, &t.token).await {
         Ok(Some(event)) => json_value(StatusCode::OK, &One { event }),
-        Ok(None) => not_found(),
+        Ok(None) => resource_not_found(),
         Err(err) => internal_error(&err),
     }
 }
@@ -164,25 +159,21 @@ pub async fn update(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
     request: Request,
-) -> Response {
+) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        let body = body_and_account(&state, &parts, body).await?;
-        let t = target(&uri, &parts.headers, "").ok_or_else(not_found)?;
-        let request = EventEnvelopeRequest::parse_optional(body.as_ref())
-            .map_err(|err| invalid_request(&err))?;
-        match state
-            .events
-            .update(&t.event_id, &t.token, &stored_envelope(&request))
-            .await
-        {
-            Ok(Some(event)) => Ok(json_value(StatusCode::OK, &One { event })),
-            Ok(None) => Err(not_found()),
-            Err(err) => Err(internal_error(&err)),
-        }
+    let body = body_and_account(&state, &parts, body).await?;
+    let t = target(&uri, &parts.headers, "").ok_or_else(resource_not_found)?;
+    let request =
+        EventEnvelopeRequest::parse_optional(body.as_ref()).map_err(|err| invalid_request(&err))?;
+    match state
+        .events
+        .update(&t.event_id, &t.token, &stored_envelope(&request))
+        .await
+    {
+        Ok(Some(event)) => Ok(json_value(StatusCode::OK, &One { event })),
+        Ok(None) => Err(resource_not_found()),
+        Err(err) => Err(internal_error(&err)),
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
 }
 
 /// `DELETE /events/{id}`: delete the event, with an edit capability. A body
@@ -191,19 +182,15 @@ pub async fn remove(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
     request: Request,
-) -> Response {
+) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        body_and_account(&state, &parts, body).await?;
-        let t = target(&uri, &parts.headers, "").ok_or_else(not_found)?;
-        match state.events.remove(&t.event_id, &t.token).await {
-            Ok(true) => Ok(no_content()),
-            Ok(false) => Err(not_found()),
-            Err(err) => Err(internal_error(&err)),
-        }
+    body_and_account(&state, &parts, body).await?;
+    let t = target(&uri, &parts.headers, "").ok_or_else(resource_not_found)?;
+    match state.events.remove(&t.event_id, &t.token).await {
+        Ok(true) => Ok(no_content()),
+        Ok(false) => Err(resource_not_found()),
+        Err(err) => Err(internal_error(&err)),
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
 }
 
 /// `POST /events/{id}/capabilities`: mint another capability -- how a
@@ -212,34 +199,35 @@ pub async fn mint(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
     request: Request,
-) -> Response {
+) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        let body = body_and_account(&state, &parts, body).await?;
-        let t = target(&uri, &parts.headers, "/capabilities").ok_or_else(not_found)?;
-        let request = MintCapabilityRequest::parse_optional(body.as_ref())
-            .map_err(|err| invalid_request(&err))?;
-        // `new Date(expiresAt)`: a validated datetime, to the millisecond.
-        let expires_at = request
-            .expires_at
-            .as_deref()
-            .and_then(instant_millis)
-            .and_then(chrono::DateTime::from_timestamp_millis);
-        match state
-            .events
-            .mint_capability(&t.event_id, &t.token, request.level, expires_at)
-            .await
-        {
-            Ok(Some(token)) => Ok(json_value(
-                StatusCode::CREATED,
-                &serde_json::json!({ "token": token }),
-            )),
-            Ok(None) => Err(not_found()),
-            Err(err) => Err(internal_error(&err)),
-        }
+    let body = body_and_account(&state, &parts, body).await?;
+    let t = target(&uri, &parts.headers, "/capabilities").ok_or_else(resource_not_found)?;
+    let request = MintCapabilityRequest::parse_optional(body.as_ref())
+        .map_err(|err| invalid_request(&err))?;
+    // `new Date(expiresAt)`: a validated datetime, to the millisecond. Never
+    // silently dropped: a validated expiry that names no instant is a bug,
+    // answered with a 500, not a capability that never expires.
+    let expires_at = match request.expires_at.as_deref() {
+        None => None,
+        Some(at) => Some(
+            instant_millis(at)
+                .and_then(chrono::DateTime::from_timestamp_millis)
+                .ok_or_else(|| internal_error(&UnreadableExpiry(at.to_owned())))?,
+        ),
+    };
+    match state
+        .events
+        .mint_capability(&t.event_id, &t.token, request.level, expires_at)
+        .await
+    {
+        Ok(Some(token)) => Ok(json_value(
+            StatusCode::CREATED,
+            &serde_json::json!({ "token": token }),
+        )),
+        Ok(None) => Err(resource_not_found()),
+        Err(err) => Err(internal_error(&err)),
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
 }
 
 /// `POST /events/{id}/capabilities/revoke`: revoke one of the event's
@@ -248,25 +236,21 @@ pub async fn revoke(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
     request: Request,
-) -> Response {
+) -> Result<Response, Response> {
     let (parts, body) = request.into_parts();
-    let result = async {
-        let body = body_and_account(&state, &parts, body).await?;
-        let t = target(&uri, &parts.headers, "/capabilities/revoke").ok_or_else(not_found)?;
-        let request = RevokeCapabilityRequest::parse_optional(body.as_ref())
-            .map_err(|err| invalid_request(&err))?;
-        match state
-            .events
-            .revoke_capability(&t.event_id, &t.token, &request.token)
-            .await
-        {
-            Ok(true) => Ok(no_content()),
-            Ok(false) => Err(not_found()),
-            Err(err) => Err(internal_error(&err)),
-        }
+    let body = body_and_account(&state, &parts, body).await?;
+    let t = target(&uri, &parts.headers, "/capabilities/revoke").ok_or_else(resource_not_found)?;
+    let request = RevokeCapabilityRequest::parse_optional(body.as_ref())
+        .map_err(|err| invalid_request(&err))?;
+    match state
+        .events
+        .revoke_capability(&t.event_id, &t.token, &request.token)
+        .await
+    {
+        Ok(true) => Ok(no_content()),
+        Ok(false) => Err(resource_not_found()),
+        Err(err) => Err(internal_error(&err)),
     }
-    .await;
-    result.unwrap_or_else(|reply| reply)
 }
 
 #[cfg(test)]

@@ -7,34 +7,30 @@
 //! database holds no link between an account and the events it can reach
 //! (`docs/ARCHITECTURE.md`).
 
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
 use chrono::{DateTime, Utc};
 use mekur_shared::{BATCH_READ_LIMIT, CapabilityLevel, PresentedCapability};
 use serde::Serialize;
 use serde_json::value::RawValue;
-use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
-use crate::app::{iso_millis, minify_json};
+use crate::{
+    app::{iso_millis, minify_json},
+    secret::{random_base64url, sha256_base64},
+};
 
 /// A new capability token: 32 random bytes from the OS (256 bits),
 /// base64url without padding, as `randomBytes(32).toString("base64url")`
 /// made them. Holding one *is* the authorisation, so they are treated as
 /// sensitive as passwords; only their hash is stored.
 pub fn generate_capability_token() -> Result<String, getrandom::Error> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes)?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
+    random_base64url::<32>()
 }
 
 /// base64(sha256(the token's UTF-8 bytes)) -- the stored form. A database
 /// breach yields values that cannot be replayed.
 pub fn hash_capability_token(token: &str) -> String {
-    STANDARD.encode(Sha256::digest(token.as_bytes()))
+    sha256_base64(token)
 }
 
 /// A voter's per-event pseudonym: base64(sha256(
@@ -44,8 +40,9 @@ pub fn hash_capability_token(token: &str) -> String {
 /// rather than duplicates. Not used by any route yet (group scheduling is
 /// Phase 10); ported with its format so it can't drift.
 pub fn derive_pseudonym(capability_token: &str, event_id: &str) -> String {
-    let input = format!("schedule-app:pseudonym:v1:{event_id}:{capability_token}");
-    STANDARD.encode(Sha256::digest(input.as_bytes()))
+    sha256_base64(&format!(
+        "schedule-app:pseudonym:v1:{event_id}:{capability_token}"
+    ))
 }
 
 /// An event as a capability holder sees it. The envelope is opaque here:
@@ -175,16 +172,15 @@ impl EventRepository {
         .bind(envelope.to_string())
         .fetch_one(&mut *tx)
         .await?;
-        for (token, level) in [(&view_token, "view"), (&edit_token, "edit")] {
-            sqlx::query(
-                "INSERT INTO event_capabilities (event_id, token_hash, level) VALUES ($1, $2, $3)",
-            )
-            .bind(row.id)
-            .bind(hash_capability_token(token))
-            .bind(level)
-            .execute(&mut *tx)
-            .await?;
-        }
+        sqlx::query(
+            "INSERT INTO event_capabilities (event_id, token_hash, level)
+             VALUES ($1, $2, 'view'), ($1, $3, 'edit')",
+        )
+        .bind(row.id)
+        .bind(hash_capability_token(&view_token))
+        .bind(hash_capability_token(&edit_token))
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(CreatedEvent {
             event: row.try_into()?,
@@ -374,9 +370,10 @@ mod tests {
             hash_capability_token("abc"),
             "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0="
         );
+        // ...of the UTF-8 bytes: Node's "utf8" encoding.
         assert_eq!(
             hash_capability_token("é"),
-            STANDARD.encode(Sha256::digest("é".as_bytes()))
+            "SplVfkAzw1Od4utlRyAXytX5VX96BiWgnxw/biumnEw="
         );
     }
 

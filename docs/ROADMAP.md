@@ -719,6 +719,12 @@ re-decrypted.
       checks `exp` when present, and tokens issued before expiry was added
       carry none. Refuse them (and so sign those users out once), in its
       own PR after the TS server is gone.
+- [ ] Event writes check the capability and then write in a second
+      statement (as the TS repository did, kept by the step 3d port for
+      parity), so a token revoked between the two can still complete one
+      `PUT`, `DELETE`, mint or revoke already in flight. Fold the check into
+      the write (`... WHERE id = $1 AND EXISTS (live edit capability)`),
+      which also saves a round trip. Found in review of the Rust port.
 - [ ] `GET /api-keys` returns all of a user's keys unpaged -- the one list
       not capped as ARCHITECTURE.md's "every list is bounded" asks. Keys
       are minted by hand from a session, so it stays small in practice;

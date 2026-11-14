@@ -21,6 +21,7 @@ pub mod jwt;
 pub mod node_base64;
 pub mod rate_limit;
 pub mod routes;
+pub mod secret;
 pub mod users;
 
 pub use app::{AppOptions, AppState, build_app};

@@ -3,10 +3,9 @@
 //! user; a user only ever sees and revokes their own keys.
 
 use axum::{
-    body::Body,
     extract::{OriginalUri, Request, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use mekur_shared::{CreateApiKeyRequest, is_zod_uuid};
 use serde::Serialize;
@@ -14,7 +13,10 @@ use serde::Serialize;
 use crate::{
     AppState,
     api_keys::{ApiKeyRecord, generate_api_key, hash_api_key},
-    app::{internal_error, invalid_request, json, json_value, path_param},
+    app::{
+        internal_error, invalid_request, json, json_value, no_content, path_param,
+        resource_not_found,
+    },
     auth::{AuthMethod, authenticate},
     body::{BODY_LIMIT, read_body},
 };
@@ -114,15 +116,11 @@ pub async fn revoke(
     };
     let id = path_param(&uri, "/api-keys/", "");
     if !is_zod_uuid(&id) {
-        return not_found();
+        return resource_not_found();
     }
     match state.api_keys.revoke_for_user(&id, &user.user_id).await {
-        Ok(true) => (StatusCode::NO_CONTENT, Body::empty()).into_response(),
-        Ok(false) => not_found(),
+        Ok(true) => no_content(),
+        Ok(false) => resource_not_found(),
         Err(err) => internal_error(&err),
     }
-}
-
-fn not_found() -> Response {
-    json(StatusCode::NOT_FOUND, r#"{"error":"Not found"}"#)
 }

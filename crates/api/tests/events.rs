@@ -639,3 +639,45 @@ async fn round_trips_an_envelope_byte_for_byte_as_the_ts_server_wrote_it() {
         "{text}"
     );
 }
+
+#[tokio::test]
+async fn every_event_route_counts_once_against_the_global_limit() {
+    // Regression (review): GET/PUT/DELETE on `/events/batch-read` passed
+    // the global limiter twice, spending two of a client's 300 a minute
+    // while the headers said one.
+    let t = TestApp::with_options(mekur_api::AppOptions::new(common::JWT_SECRET)).await;
+    let alice = register_user(&t, "alice").await;
+    let id = "ce000000-0000-4000-8000-000000000001";
+    let paths = [
+        ("POST", "/events".to_owned()),
+        ("POST", "/events/batch-read".to_owned()),
+        ("GET", "/events/batch-read".to_owned()),
+        ("PUT", "/events/batch-read".to_owned()),
+        ("DELETE", "/events/batch-read".to_owned()),
+        ("GET", format!("/events/{id}")),
+        ("PUT", format!("/events/{id}")),
+        ("DELETE", format!("/events/{id}")),
+        ("GET", "/events/".to_owned()),
+        ("POST", format!("/events/{id}/capabilities")),
+        ("POST", "/events//capabilities".to_owned()),
+        ("POST", format!("/events/{id}/capabilities/revoke")),
+        ("POST", "/events//capabilities/revoke".to_owned()),
+    ];
+    let mut expected = 300;
+    for (method, path) in &paths {
+        let body = (*method != "GET").then(|| json!({}));
+        let reply = send(&t, method, path, &alice.token, Some("t"), body.as_ref()).await;
+        expected -= 1;
+        assert_eq!(
+            reply.header("x-ratelimit-remaining"),
+            Some(expected.to_string().as_str()),
+            "{method} {path}"
+        );
+    }
+    // The next request sees exactly what the headers promised.
+    let reply = send(&t, "GET", "/api-keys", &alice.token, None, None).await;
+    assert_eq!(
+        reply.header("x-ratelimit-remaining"),
+        Some((expected - 1).to_string().as_str())
+    );
+}
