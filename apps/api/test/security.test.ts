@@ -4,7 +4,7 @@ import type { Database } from "../src/db/pool.js";
 import { createPool } from "../src/db/pool.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { buildApp } from "../src/app.js";
-import { truncateAll, registerUser, buildTestApp, ENVELOPE, TEST_DATABASE_URL, TEST_VAPID } from "./testHelpers.js";
+import { truncateAll, buildTestApp, TEST_DATABASE_URL, TEST_VAPID } from "./testHelpers.js";
 
 /** Builds an app with a production-like (low) global rate limit, unlike the
  * shared test helper which raises it to avoid flakes. */
@@ -74,7 +74,7 @@ describe("security hardening", () => {
     });
   });
 
-  describe("headers, tokens, and payload bounds", () => {
+  describe("headers", () => {
     let app: FastifyInstance;
     let db: Database;
 
@@ -95,24 +95,15 @@ describe("security hardening", () => {
 
     it("sends security headers that mitigate clickjacking and content injection", async () => {
       // Any response: /health itself is now served by the Rust server.
-      const response = await app.inject({ method: "GET", url: "/keyring" });
+      const response = await app.inject({ method: "GET", url: "/inbox" });
       expect(response.headers["content-security-policy"]).toBeDefined();
       expect(String(response.headers["content-security-policy"])).toContain("frame-ancestors 'none'");
       expect(response.headers["x-content-type-options"]).toBe("nosniff");
     });
 
     // The event payload caps and the malformed-UUID 404s moved to the Rust
-    // server with the event routes (crates/api/tests/events.rs, step 3d).
-
-    it("accepts a keyring larger than the global body limit, up to its own cap", async () => {
-      const { token } = await registerUser(app, "bigkeyring");
-      const response = await app.inject({
-        method: "PUT",
-        url: "/keyring",
-        headers: { authorization: `Bearer ${token}` },
-        payload: { envelope: { ...ENVELOPE, ciphertext: "A".repeat(400 * 1024) }, expectedVersion: 0 },
-      });
-      expect(response.statusCode).toBe(200);
-    });
+    // server with the event routes (crates/api/tests/events.rs, step 3d),
+    // and the keyring's own, larger body limit with the keyring routes
+    // (crates/api/tests/keyring.rs, step 3e).
   });
 });

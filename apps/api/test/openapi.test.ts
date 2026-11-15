@@ -136,7 +136,8 @@ describe("the proxies' route split", () => {
       expect(pattern.test(`/api${path}/more/more`), path).toBe(false);
     }
     for (const ts of tsRoutePaths) expect(pattern.test(`/api${sample(ts)}`), ts).toBe(false);
-    expect(pattern.test("/api/keyring")).toBe(false);
+    expect(pattern.test("/api/inbox")).toBe(false);
+    expect(pattern.test("/api/keyrings")).toBe(false);
     expect(pattern.test("/api/healthz")).toBe(false);
   });
 });

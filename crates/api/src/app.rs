@@ -19,6 +19,7 @@ use sqlx::PgPool;
 use crate::{
     api_keys::ApiKeyRepository,
     events::EventRepository,
+    keyrings::KeyringRepository,
     rate_limit::{self, RateLimiter},
     routes,
     users::UserRepository,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub users: UserRepository,
     pub api_keys: ApiKeyRepository,
     pub events: EventRepository,
+    pub keyrings: KeyringRepository,
     pub jwt_secret: Arc<str>,
     pub limits: Limits,
 }
@@ -82,6 +84,7 @@ impl AppState {
             users: UserRepository::new(db.clone()),
             api_keys: ApiKeyRepository::new(db.clone()),
             events: EventRepository::new(db.clone()),
+            keyrings: KeyringRepository::new(db.clone()),
             db,
             jwt_secret: options.jwt_secret.into(),
             limits: Limits {
@@ -114,6 +117,8 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("delete", "/events/{id}"),
     ("post", "/events/{id}/capabilities"),
     ("post", "/events/{id}/capabilities/revoke"),
+    ("get", "/keyring"),
+    ("put", "/keyring"),
 ];
 
 pub fn build_app(state: AppState) -> Router {
@@ -158,6 +163,12 @@ pub fn build_app(state: AppState) -> Router {
             "/events/batch-read",
             event()
                 .post(routes::events::batch_read)
+                .route_layer(global()),
+        )
+        .route(
+            "/keyring",
+            get(routes::keyring::read)
+                .put(routes::keyring::replace)
                 .route_layer(global()),
         );
     for (path, handler) in [

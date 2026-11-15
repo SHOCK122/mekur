@@ -3,3 +3,4 @@
 pub mod api_keys;
 pub mod auth;
 pub mod events;
+pub mod keyring;
