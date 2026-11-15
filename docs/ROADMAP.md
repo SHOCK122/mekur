@@ -678,12 +678,6 @@ re-decrypted.
       `updatedAt`; surface conflicts rather than last-write-wins), rebuilt
       from the design in `docs/ARCHITECTURE.md`.
 - [ ] Keyring beyond 500 events: batch reads are capped at 500 per request.
-- [ ] A large keyring can't be saved through the compose stack's nginx:
-      `PUT /keyring` reads up to 1.5 MB (the schema allows 1 MB of
-      ciphertext), but nginx's default `client_max_body_size` is 1 MB, so
-      it answers 413 itself once the request passes that -- a few thousand
-      events. Raise it on the keyring location in `infra/nginx.conf`.
-      Found while porting the route (`docs/RUST_MIGRATION.md`, step 3e).
 - [ ] Keyring backup/export. The keyring is a single point of failure --
       lose it and every event in it is permanently unreachable. An
       encrypted export file is the cheapest real mitigation.
@@ -735,6 +729,13 @@ re-decrypted.
       on the TS server, where Postgres refused the parameter; kept by the
       step 3e port for parity). No stored version can equal it, so it
       should be the 409 every other stale version gets.
+- [ ] Request bodies are read and parsed before the account is checked
+      (Fastify's order, kept by the Rust port so replies match), so a
+      client without an account can make the server buffer and parse
+      256 KB a request -- and 1.5 MB on `PUT /keyring`. Bounded by the
+      rate limit, not by authentication. Once the TS server is gone,
+      authenticate first (changes which error a bad request without
+      credentials gets). Found in review of the step 3e port.
 - [ ] `GET /api-keys` returns all of a user's keys unpaged -- the one list
       not capped as ARCHITECTURE.md's "every list is bounded" asks. Keys
       are minted by hand from a session, so it stays small in practice;

@@ -4,11 +4,9 @@
 //! `crates/api/tests/fixtures/ts_keyring_responses.json`.
 
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::envelope::KeyringEnvelope;
-use crate::issue::ValidationError;
-use crate::zod::{self, Ctx, NumCheck, finish};
+use crate::zod::{self, NumCheck, parsers};
 
 /// `{ envelope, expectedVersion }`: replace the account's keyring, if it is
 /// still at the version the client read.
@@ -24,40 +22,25 @@ pub struct PutKeyringRequest {
     pub expected_version: u64,
 }
 
-impl PutKeyringRequest {
-    /// Validates a JSON value. Unknown keys are ignored.
-    pub fn parse(value: &Value) -> Result<Self, ValidationError> {
-        Self::parse_optional(Some(value))
-    }
-
-    /// As [`parse`](Self::parse), where `None` is a request without a body
-    /// (one "Required" issue).
-    pub fn parse_optional(value: Option<&Value>) -> Result<Self, ValidationError> {
-        let mut ctx = Ctx::new();
-        let out = Self::parse_in(&mut ctx, value);
-        finish(ctx, out)
-    }
-
-    fn parse_in(ctx: &mut Ctx, value: Option<&Value>) -> Option<Self> {
-        let obj = zod::object(ctx, value)?;
-        let envelope = zod::field(ctx, obj, "envelope", KeyringEnvelope::parse_in);
-        let expected_version = zod::field(ctx, obj, "expectedVersion", |ctx, v| {
-            zod::number(ctx, v, &[NumCheck::Int, NumCheck::Min(0, true)])
-        });
-        Some(Self {
-            envelope: envelope?,
-            // A float-to-integer `as` saturates (and -0.0 is 0); fractions
-            // and negatives were reported above.
-            expected_version: expected_version? as u64,
-        })
-    }
-}
+parsers!(PutKeyringRequest, |ctx, value| {
+    let obj = zod::object(ctx, value)?;
+    let envelope = zod::field(ctx, obj, "envelope", KeyringEnvelope::parse_in);
+    let expected_version = zod::field(ctx, obj, "expectedVersion", |ctx, v| {
+        zod::number(ctx, v, &[NumCheck::Int, NumCheck::Min(0, true)])
+    });
+    Some(Self {
+        envelope: envelope?,
+        // A float-to-integer `as` saturates (and -0.0 is 0); fractions
+        // and negatives were reported above.
+        expected_version: expected_version? as u64,
+    })
+});
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MAX_KEYRING_CIPHERTEXT;
-    use serde_json::json;
+    use crate::{MAX_KEYRING_CIPHERTEXT, ValidationError};
+    use serde_json::{Value, json};
 
     fn envelope(ciphertext: &str) -> Value {
         json!({ "v": 1, "algo": "xchacha20poly1305", "keyId": "k", "nonce": "n",

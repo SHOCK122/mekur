@@ -90,9 +90,19 @@ describe("the proxies' route split", () => {
 
   it("nginx sends exactly the Rust server's paths to it", () => {
     const conf = readFileSync(NGINX_CONF_PATH, "utf8");
-    // Fixed paths: `location = /api/X { proxy_pass http://api_rs/X; }`.
-    const exact = [...conf.matchAll(/location = \/api(\/\S+)\s*\{\s*proxy_pass http:\/\/api_rs(\/\S+);/g)];
-    for (const [, from, to] of exact) expect(to).toBe(from);
+    // Fixed paths: `location = /api/X { proxy_pass http://api_rs/X; }`,
+    // optionally with its own request-body limit first.
+    const exact = [
+      ...conf.matchAll(
+        /location = \/api(\/\S+)\s*\{\s*(?:client_max_body_size (\S+);\s*)?proxy_pass http:\/\/api_rs(\/\S+);/g
+      ),
+    ];
+    for (const [, from, , to] of exact) expect(to).toBe(from);
+    // nginx refuses bodies over 1 MB unless told otherwise; the keyring
+    // route alone reads more (1.5 MB), so it alone raises the limit, to
+    // exactly what the API reads.
+    expect(exact.filter((m) => m[2]).map((m) => [m[1], m[2]])).toEqual([["/keyring", "1536k"]]);
+    expect(conf.match(/client_max_body_size/g)?.length).toBe(1);
     // Paths with parameters: a regex location that strips /api.
     const regexes = [
       ...conf.matchAll(

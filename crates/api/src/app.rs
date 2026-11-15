@@ -14,6 +14,7 @@ use axum::{
 };
 use mekur_shared::ValidationError;
 use serde::Serialize;
+use serde_json::value::RawValue;
 use sqlx::PgPool;
 
 use crate::{
@@ -341,6 +342,14 @@ fn route_with_empty_param(
 /// `toISOString` printed it: UTC, milliseconds (truncated), `Z`.
 pub fn iso_millis(at: chrono::DateTime<chrono::Utc>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// A stored `jsonb` value (read as `column::text`) as the TS server sent
+/// it: `JSON.stringify` of node-pg's parse of that text, which is the text
+/// without its whitespace -- jsonb's key order, and jsonb and V8 escape the
+/// same characters. So envelopes go out byte for byte as before.
+pub fn stored_json(jsonb_text: &str) -> Result<Box<RawValue>, sqlx::Error> {
+    RawValue::from_string(minify_json(jsonb_text)).map_err(|err| sqlx::Error::Decode(Box::new(err)))
 }
 
 /// A JSON reply serialized from `value` (struct fields keep their order).

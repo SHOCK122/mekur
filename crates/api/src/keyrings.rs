@@ -11,14 +11,12 @@ use mekur_shared::KeyringEnvelope;
 use serde_json::value::RawValue;
 use sqlx::PgPool;
 
-use crate::app::minify_json;
+use crate::app::stored_json;
 
 /// An account's stored keyring.
 #[derive(Debug)]
 pub struct KeyringRecord {
-    /// The stored JSON as `JSON.stringify(JSON.parse(jsonb text))` wrote it
-    /// (jsonb's key order, no whitespace), so replies are byte-for-byte the
-    /// TS server's.
+    /// The stored JSON as the TS server sent it ([`stored_json`]).
     pub envelope: Box<RawValue>,
     pub version: i32,
 }
@@ -59,9 +57,10 @@ impl KeyringRepository {
                 .fetch_optional(&self.db)
                 .await?;
         row.map(|(envelope, version)| {
-            let envelope = RawValue::from_string(minify_json(&envelope))
-                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
-            Ok(KeyringRecord { envelope, version })
+            Ok(KeyringRecord {
+                envelope: stored_json(&envelope)?,
+                version,
+            })
         })
         .transpose()
     }

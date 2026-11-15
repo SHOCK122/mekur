@@ -15,7 +15,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::{
-    app::{iso_millis, minify_json},
+    app::{iso_millis, stored_json},
     secret::{random_base64url, sha256_base64},
 };
 
@@ -51,9 +51,7 @@ pub fn derive_pseudonym(capability_token: &str, event_id: &str) -> String {
 #[serde(rename_all = "camelCase")]
 pub struct EventRecord {
     pub id: String,
-    /// The stored JSON as `JSON.stringify(JSON.parse(jsonb text))` wrote it
-    /// (jsonb's key order, no whitespace), so replies are byte-for-byte the
-    /// TS server's.
+    /// The stored JSON as the TS server sent it ([`stored_json`]).
     pub envelope: Box<RawValue>,
     /// `Date.prototype.toISOString` form: UTC, milliseconds, `Z`.
     pub created_at: String,
@@ -72,11 +70,9 @@ impl TryFrom<EventRow> for EventRecord {
     type Error = sqlx::Error;
 
     fn try_from(row: EventRow) -> Result<Self, Self::Error> {
-        let envelope = RawValue::from_string(minify_json(&row.envelope))
-            .map_err(|err| sqlx::Error::Decode(Box::new(err)))?;
         Ok(Self {
             id: row.id.to_string(),
-            envelope,
+            envelope: stored_json(&row.envelope)?,
             created_at: iso_millis(row.created_at),
             updated_at: iso_millis(row.updated_at),
         })

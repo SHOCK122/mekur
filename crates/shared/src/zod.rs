@@ -84,6 +84,35 @@ pub(crate) fn finish<T>(ctx: Ctx, value: Option<T>) -> Result<T, ValidationError
     }
 }
 
+/// `parse(&Value)` and `parse_optional(Option<&Value>)` (where `None` is a
+/// request without a body: Zod's `undefined`) for a request type, from one
+/// object parser `|ctx, value| -> Option<Self>`.
+macro_rules! parsers {
+    ($t:ty, $body:expr) => {
+        impl $t {
+            /// Validates a JSON value. Unknown keys are ignored.
+            pub fn parse(
+                value: &::serde_json::Value,
+            ) -> Result<Self, $crate::issue::ValidationError> {
+                Self::parse_optional(Some(value))
+            }
+
+            /// As [`parse`](Self::parse), where `None` is a request
+            /// without a body (one "Required" issue).
+            pub fn parse_optional(
+                value: Option<&::serde_json::Value>,
+            ) -> Result<Self, $crate::issue::ValidationError> {
+                let mut ctx = $crate::zod::Ctx::new();
+                let parse: fn(&mut $crate::zod::Ctx, Option<&::serde_json::Value>) -> Option<Self> =
+                    $body;
+                let out = parse(&mut ctx, value);
+                $crate::zod::finish(ctx, out)
+            }
+        }
+    };
+}
+pub(crate) use parsers;
+
 /// Zod's name for the type of a JSON value (`getParsedType`).
 fn parsed_type(input: Option<&Value>) -> &'static str {
     match input {

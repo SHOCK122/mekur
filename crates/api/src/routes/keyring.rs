@@ -18,8 +18,7 @@ use serde_json::value::RawValue;
 use crate::{
     AppState,
     app::{internal_error, invalid_request, json, json_value},
-    auth::authenticate,
-    body::read_body,
+    auth::{authenticate, body_then_account},
     keyrings::PutKeyringError,
 };
 
@@ -63,12 +62,8 @@ pub async fn read(State(state): State<AppState>, headers: HeaderMap) -> Response
 /// `expectedVersion`.
 pub async fn replace(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let body = match read_body(&parts.headers, body, KEYRING_BODY_LIMIT).await {
-        Ok(body) => body,
-        Err(reply) => return reply,
-    };
-    let user = match authenticate(&state, &parts.headers).await {
-        Ok(user) => user,
+    let (body, user) = match body_then_account(&state, &parts, body, KEYRING_BODY_LIMIT).await {
+        Ok(read) => read,
         Err(reply) => return reply,
     };
     let request = match PutKeyringRequest::parse_optional(body.as_ref()) {

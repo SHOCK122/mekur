@@ -512,7 +512,8 @@ routes, repository and tests for that group are deleted.
     holds the version as a `u64`, saturating past `u64::MAX`.
   - `KEYRING_BODY_LIMIT` is passed to `read_body` by the handler; there is
     no global body-limit layer to override.
-  - Proxies: nginx and Vite send `/api/keyring` to Rust.
+  - Proxies: nginx and Vite send `/api/keyring` to Rust (nginx with its
+    own body limit, below).
   - Divergences, on input no client sends:
     - `"expectedVersion": 1e400`: `JSON.parse` read it as `Infinity`, which
       Zod reported as a float (a 400 with `details`); `serde_json` refuses
@@ -520,10 +521,19 @@ routes, repository and tests for that group are deleted.
     - The ones every route shares: percent-decoded routing (`/%6beyring`
       reached the TS route), V8's JSON parse message, and the 500's body
       (no database error code or message).
-  - Found, not changed (roadmap items): nginx's default
-    `client_max_body_size` (1 MB) is below the route's 1.5 MB, so behind
-    the compose stack's nginx a keyring whose request passes 1 MB is
-    refused by the proxy before either server sees it.
+  - **Fixed on the way: nginx refused large keyrings.** Its default
+    `client_max_body_size` is 1 MB, below what the route reads, so behind
+    the compose stack a keyring write past 1 MB (the schema allows 1 MB
+    of ciphertext alone) got nginx's HTML 413 from the proxy, whichever
+    server was behind it. The keyring location now sets `1536k`, exactly
+    the API's limit; `openapi.test.ts` checks it is the only raised limit.
+  - Review: `auth::body_then_account` is the one place that reads a body
+    and then authenticates (API keys, events and the keyring use it);
+    `app::stored_json` the one place a stored envelope becomes a reply;
+    `parsers!` (now in `zod.rs`) the one `parse`/`parse_optional` pair.
+  - Found, not changed (roadmap items): the 500 above; and bodies are
+    parsed before the account is checked (Fastify's order), which on this
+    route means up to 1.5 MB for a client without credentials.
 - [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
 - [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
   every list stays bounded; port the inbox tests of
@@ -744,3 +754,12 @@ tests are ported to Rust (`cargo test` for pure logic,
   revoked between them can finish one write in flight -- a Phase 11
   roadmap item. `derive_pseudonym` is kept although unused: its format is
   on the parity list and its TS source is gone.
+- Step 3e (keyring). `GET` and `PUT /keyring` moved to the Rust server.
+  Found by recording the TS server first: an `expectedVersion` Postgres
+  can't hold was a 500 rather than a conflict (kept), `1e400` parsed as
+  `Infinity` (a divergence, documented), and the route was reachable as
+  `/%6beyring`. Found by review: the compose stack's nginx capped request
+  bodies at 1 MB, under the keyring's own limit, so a full-size keyring
+  could never be saved through it -- fixed in the keyring location. The
+  replay scaffolding in `ts_parity.rs` is now shared between the event and
+  keyring fixtures.

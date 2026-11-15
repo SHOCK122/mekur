@@ -369,6 +369,62 @@ async fn reproduces_the_ts_servers_api_key_replies() {
     }
 }
 
+// --- Shared by the event and keyring replays -----------------------------------
+
+/// Inserts a fixture's `seed.users` and `seed.apiKeys`.
+async fn seed_accounts(t: &TestApp, seed: &Value) {
+    for user in seed["users"].as_array().unwrap() {
+        sqlx::query(
+            "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
+             VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
+        )
+        .bind(user["id"].as_str())
+        .bind(user["username"].as_str())
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+    for key in seed["apiKeys"].as_array().unwrap() {
+        let raw = key["rawKey"].as_str().unwrap();
+        sqlx::query(
+            "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
+             VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
+        )
+        .bind(key["id"].as_str())
+        .bind(key["userId"].as_str())
+        .bind(&raw[..12])
+        .bind(hash_api_key(raw))
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+}
+
+/// The reply has exactly the recorded headers: the case's own, the
+/// fixture's security headers when the case says so, and nothing else but
+/// the ones that vary per connection.
+fn assert_headers(
+    reply: &common::Reply,
+    expected: &Value,
+    security: &serde_json::Map<String, Value>,
+    uncompared: &[&str],
+    what: &str,
+) {
+    let mut headers = expected["headers"].as_object().unwrap().clone();
+    if expected["securityHeaders"] == true {
+        headers.extend(security.clone());
+    }
+    for (name, value) in &headers {
+        assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
+    }
+    for name in reply.headers.keys() {
+        assert!(
+            headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
+            "{what}: extra header {name}"
+        );
+    }
+}
+
 // --- Events and capabilities (step 3d) -----------------------------------------
 
 /// Runs of 64 or more of one character, written `⟪c×n⟫` in
@@ -556,31 +612,7 @@ async fn reproduces_the_ts_servers_event_replies() {
     for case in cases {
         let what = case["name"].as_str().unwrap();
         let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
-        for user in seed["users"].as_array().unwrap() {
-            sqlx::query(
-                "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
-                 VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
-            )
-            .bind(user["id"].as_str())
-            .bind(user["username"].as_str())
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
-        for key in seed["apiKeys"].as_array().unwrap() {
-            let raw = key["rawKey"].as_str().unwrap();
-            sqlx::query(
-                "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
-                 VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
-            )
-            .bind(key["id"].as_str())
-            .bind(key["userId"].as_str())
-            .bind(&raw[..12])
-            .bind(hash_api_key(raw))
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
+        seed_accounts(&t, seed).await;
         for event in seed["events"].as_array().unwrap() {
             sqlx::query(
                 "INSERT INTO events (id, envelope, created_at, updated_at)
@@ -652,19 +684,7 @@ async fn reproduces_the_ts_servers_event_replies() {
             assert_eq!(squeeze_value(&actual), expected["bodyJson"], "{what}: body");
         }
 
-        let mut headers = expected["headers"].as_object().unwrap().clone();
-        if expected["securityHeaders"] == true {
-            headers.extend(security.clone());
-        }
-        for (name, value) in &headers {
-            assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
-        }
-        for name in reply.headers.keys() {
-            assert!(
-                headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
-                "{what}: extra header {name}"
-            );
-        }
+        assert_headers(&reply, expected, security, &uncompared, what);
 
         let after = &case["after"];
         let (events, capabilities) = event_state(&t.db, &keep).await;
@@ -762,31 +782,7 @@ async fn reproduces_the_ts_servers_keyring_replies() {
     for case in cases {
         let what = case["name"].as_str().unwrap();
         let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
-        for user in seed["users"].as_array().unwrap() {
-            sqlx::query(
-                "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
-                 VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
-            )
-            .bind(user["id"].as_str())
-            .bind(user["username"].as_str())
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
-        for key in seed["apiKeys"].as_array().unwrap() {
-            let raw = key["rawKey"].as_str().unwrap();
-            sqlx::query(
-                "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
-                 VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
-            )
-            .bind(key["id"].as_str())
-            .bind(key["userId"].as_str())
-            .bind(&raw[..12])
-            .bind(hash_api_key(raw))
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
+        seed_accounts(&t, seed).await;
         for keyring in seed["keyrings"].as_array().unwrap() {
             sqlx::query(
                 "INSERT INTO keyrings (user_id, envelope, version, updated_at)
@@ -866,19 +862,7 @@ async fn reproduces_the_ts_servers_keyring_replies() {
             assert_eq!(squeeze(reply.text()), body, "{what}: body");
         }
 
-        let mut headers = expected["headers"].as_object().unwrap().clone();
-        if expected["securityHeaders"] == true {
-            headers.extend(security.clone());
-        }
-        for (name, value) in &headers {
-            assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
-        }
-        for name in reply.headers.keys() {
-            assert!(
-                headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
-                "{what}: extra header {name}"
-            );
-        }
+        assert_headers(&reply, expected, security, &uncompared, what);
 
         let after = &case["after"];
         let keyrings = keyring_state(&t.db).await;
