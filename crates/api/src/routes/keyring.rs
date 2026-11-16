@@ -38,24 +38,18 @@ pub async fn read(State(state): State<AppState>, headers: HeaderMap) -> Response
         keyring: Option<&'a RawValue>,
         version: i32,
     }
-    match state.keyrings.get(&user.user_id).await {
-        Ok(Some(keyring)) => json_value(
-            StatusCode::OK,
-            &Stored {
-                keyring: Some(&keyring.envelope),
-                version: keyring.version,
-            },
-        ),
-        // A missing keyring is normal for a new account, not an error.
-        Ok(None) => json_value(
-            StatusCode::OK,
-            &Stored {
-                keyring: None,
-                version: 0,
-            },
-        ),
-        Err(err) => internal_error(&err),
-    }
+    let stored = match state.keyrings.get(&user.user_id).await {
+        Ok(stored) => stored,
+        Err(err) => return internal_error(&err),
+    };
+    // A missing keyring is normal for a new account, not an error.
+    json_value(
+        StatusCode::OK,
+        &Stored {
+            keyring: stored.as_ref().map(|keyring| &*keyring.envelope),
+            version: stored.as_ref().map_or(0, |keyring| keyring.version),
+        },
+    )
 }
 
 /// `PUT /keyring`: replace the keyring, if it is still at

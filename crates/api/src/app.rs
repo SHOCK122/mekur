@@ -344,10 +344,16 @@ pub fn iso_millis(at: chrono::DateTime<chrono::Utc>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-/// A stored `jsonb` value (read as `column::text`) as the TS server sent
-/// it: `JSON.stringify` of node-pg's parse of that text, which is the text
-/// without its whitespace -- jsonb's key order, and jsonb and V8 escape the
-/// same characters. So envelopes go out byte for byte as before.
+/// A stored envelope (a `jsonb` column read as `column::text`) as the TS
+/// server sent it: `JSON.stringify` of node-pg's parse of that text, which
+/// for an envelope is the text without its whitespace -- jsonb and V8
+/// escape the same characters in strings. So envelopes go out byte for
+/// byte as before.
+///
+/// Only for values like envelopes: string values, the integer `v`, and
+/// keys that aren't integers. For anything else the two differ -- V8
+/// prints `1.0` as `1` and puts integer-like keys first, jsonb does
+/// neither -- so other `jsonb` columns need their own check.
 pub fn stored_json(jsonb_text: &str) -> Result<Box<RawValue>, sqlx::Error> {
     RawValue::from_string(minify_json(jsonb_text)).map_err(|err| sqlx::Error::Decode(Box::new(err)))
 }

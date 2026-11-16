@@ -525,8 +525,15 @@ routes, repository and tests for that group are deleted.
     `client_max_body_size` is 1 MB, below what the route reads, so behind
     the compose stack a keyring write past 1 MB (the schema allows 1 MB
     of ciphertext alone) got nginx's HTML 413 from the proxy, whichever
-    server was behind it. The keyring location now sets `1536k`, exactly
-    the API's limit; `openapi.test.ts` checks it is the only raised limit.
+    server was behind it. The keyring location now sets `2m`, above the
+    API's limit, so an oversized keyring still gets the API's JSON 413
+    through the proxy. `openapi.test.ts` checks it is the only raised
+    limit and that it sits above `KEYRING_BODY_LIMIT`, which it reads from
+    the Rust source.
+  - `app::stored_json` is only right for envelopes (strings and the
+    integer `v`): for other JSON, jsonb's text and `JSON.stringify` differ
+    (`1.0` vs `1`, integer-like keys first in V8). 3f/3g must check before
+    reusing it on another column.
   - Review: `auth::body_then_account` is the one place that reads a body
     and then authenticates (API keys, events and the keyring use it);
     `app::stored_json` the one place a stored envelope becomes a reply;
@@ -536,8 +543,7 @@ routes, repository and tests for that group are deleted.
     route means up to 1.5 MB for a client without credentials.
 - [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
 - [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
-  every list stays bounded; port the inbox tests of
-  `keyringAndInbox.test.ts`), push subscriptions,
+  every list stays bounded; port `inbox.test.ts`), push subscriptions,
   notification service. Port `pushNotifications.test.ts` and the rest of
   `security.test.ts`. Then delete `apps/api` and the TS server from
   `docker-compose.yml`; the Rust server takes over running migrations.
