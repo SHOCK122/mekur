@@ -19,6 +19,13 @@
 //!   production limits and the `seed` accounts, events and capabilities;
 //!   new ids, tokens, hashes and timestamps are normalised away, and runs
 //!   of 64+ identical characters are written `⟪c×n⟫`;
+//! - `fixtures/ts_keyring_responses.json`: the keyring routes' replies
+//!   (step 3e), frozen likewise, with the keyrings left in the database
+//!   afterwards and which API keys were marked used. Each case ran on a
+//!   fresh app with the production limits and the `seed` accounts, API keys
+//!   and keyring (Bob's, at version 3; Ada has none); a keyring written
+//!   during the case has `updatedAt: "<now>"`, and long runs are squeezed
+//!   as above;
 //! - `fixtures/node_base64.json`: what Node's base64 decoder makes of
 //!   tricky strings, which stored auth hashes depend on.
 
@@ -362,6 +369,62 @@ async fn reproduces_the_ts_servers_api_key_replies() {
     }
 }
 
+// --- Shared by the event and keyring replays -----------------------------------
+
+/// Inserts a fixture's `seed.users` and `seed.apiKeys`.
+async fn seed_accounts(t: &TestApp, seed: &Value) {
+    for user in seed["users"].as_array().unwrap() {
+        sqlx::query(
+            "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
+             VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
+        )
+        .bind(user["id"].as_str())
+        .bind(user["username"].as_str())
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+    for key in seed["apiKeys"].as_array().unwrap() {
+        let raw = key["rawKey"].as_str().unwrap();
+        sqlx::query(
+            "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
+             VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
+        )
+        .bind(key["id"].as_str())
+        .bind(key["userId"].as_str())
+        .bind(&raw[..12])
+        .bind(hash_api_key(raw))
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+}
+
+/// The reply has exactly the recorded headers: the case's own, the
+/// fixture's security headers when the case says so, and nothing else but
+/// the ones that vary per connection.
+fn assert_headers(
+    reply: &common::Reply,
+    expected: &Value,
+    security: &serde_json::Map<String, Value>,
+    uncompared: &[&str],
+    what: &str,
+) {
+    let mut headers = expected["headers"].as_object().unwrap().clone();
+    if expected["securityHeaders"] == true {
+        headers.extend(security.clone());
+    }
+    for (name, value) in &headers {
+        assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
+    }
+    for name in reply.headers.keys() {
+        assert!(
+            headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
+            "{what}: extra header {name}"
+        );
+    }
+}
+
 // --- Events and capabilities (step 3d) -----------------------------------------
 
 /// Runs of 64 or more of one character, written `⟪c×n⟫` in
@@ -549,31 +612,7 @@ async fn reproduces_the_ts_servers_event_replies() {
     for case in cases {
         let what = case["name"].as_str().unwrap();
         let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
-        for user in seed["users"].as_array().unwrap() {
-            sqlx::query(
-                "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
-                 VALUES ($1::uuid, $2, $2, 'cGs=', 'c2FsdA==', 'aGFzaA==')",
-            )
-            .bind(user["id"].as_str())
-            .bind(user["username"].as_str())
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
-        for key in seed["apiKeys"].as_array().unwrap() {
-            let raw = key["rawKey"].as_str().unwrap();
-            sqlx::query(
-                "INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash)
-                 VALUES ($1::uuid, $2::uuid, 'k', $3, $4)",
-            )
-            .bind(key["id"].as_str())
-            .bind(key["userId"].as_str())
-            .bind(&raw[..12])
-            .bind(hash_api_key(raw))
-            .execute(&t.db)
-            .await
-            .unwrap();
-        }
+        seed_accounts(&t, seed).await;
         for event in seed["events"].as_array().unwrap() {
             sqlx::query(
                 "INSERT INTO events (id, envelope, created_at, updated_at)
@@ -645,19 +684,7 @@ async fn reproduces_the_ts_servers_event_replies() {
             assert_eq!(squeeze_value(&actual), expected["bodyJson"], "{what}: body");
         }
 
-        let mut headers = expected["headers"].as_object().unwrap().clone();
-        if expected["securityHeaders"] == true {
-            headers.extend(security.clone());
-        }
-        for (name, value) in &headers {
-            assert_eq!(reply.header(name), value.as_str(), "{what}: header {name}");
-        }
-        for name in reply.headers.keys() {
-            assert!(
-                headers.contains_key(name.as_str()) || uncompared.contains(&name.as_str()),
-                "{what}: extra header {name}"
-            );
-        }
+        assert_headers(&reply, expected, security, &uncompared, what);
 
         let after = &case["after"];
         let (events, capabilities) = event_state(&t.db, &keep).await;
@@ -697,4 +724,170 @@ fn squeeze_and_expand_are_inverses() {
     );
     assert_eq!(expand(&squeezed), long);
     assert_eq!(squeeze("short"), "short");
+}
+
+// --- Keyring (step 3e) ---------------------------------------------------------
+
+/// The keyrings in the database, as the recorder listed them: by user id,
+/// long runs squeezed, and a write from the last day as `<now>`.
+async fn keyring_state(db: &sqlx::PgPool) -> Vec<Value> {
+    let rows: Vec<(String, String, i32, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT user_id::text, envelope::text, version, updated_at FROM keyrings ORDER BY user_id",
+    )
+    .fetch_all(db)
+    .await
+    .unwrap();
+    rows.into_iter()
+        .map(|(user_id, envelope, version, updated_at)| {
+            let recent = (chrono::Utc::now() - updated_at).num_seconds().abs() < 86_400;
+            let updated_at = if recent {
+                "<now>".to_owned()
+            } else {
+                mekur_api::app::iso_millis(updated_at)
+            };
+            let envelope: Value = serde_json::from_str(&envelope).unwrap();
+            squeeze_value(&serde_json::json!({
+                "userId": user_id,
+                "envelope": envelope,
+                "version": version,
+                "updatedAt": updated_at,
+            }))
+        })
+        .collect()
+}
+
+/// The 500 this server sends: Fastify's shape without the database's error
+/// code and message, which the TS server echoed (see step 3b's divergences).
+const INTERNAL_ERROR: &str =
+    r#"{"statusCode":500,"error":"Internal Server Error","message":"Internal Server Error"}"#;
+
+#[tokio::test]
+async fn reproduces_the_ts_servers_keyring_replies() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/ts_keyring_responses.json"))
+        .expect("fixture parses");
+    assert_eq!(fixture["secret"], common::JWT_SECRET);
+    let uncompared: Vec<&str> = fixture["uncomparedHeaders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h.as_str().unwrap())
+        .collect();
+    let security = fixture["securityHeaders"].as_object().unwrap();
+    let seed = &fixture["seed"];
+    let seed_keyrings = fixture["seedState"]["keyrings"].as_array().unwrap();
+
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.len() > 110);
+    let (mut internal_errors, mut diverging) = (0, 0);
+    for case in cases {
+        let what = case["name"].as_str().unwrap();
+        let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
+        seed_accounts(&t, seed).await;
+        for keyring in seed["keyrings"].as_array().unwrap() {
+            sqlx::query(
+                "INSERT INTO keyrings (user_id, envelope, version, updated_at)
+                 VALUES ($1::uuid, $2::text::jsonb, $3, $4::timestamptz)",
+            )
+            .bind(keyring["userId"].as_str())
+            .bind(keyring["envelope"].to_string())
+            .bind(i32::try_from(keyring["version"].as_i64().unwrap()).unwrap())
+            .bind(keyring["updatedAt"].as_str())
+            .execute(&t.db)
+            .await
+            .unwrap();
+        }
+        assert_eq!(&keyring_state(&t.db).await, seed_keyrings, "{what}: seed");
+
+        let expanded = |spec: &Value| {
+            let mut spec = spec.clone();
+            if let Some(body) = spec["body"].as_str() {
+                spec["body"] = Value::String(expand(body));
+            }
+            spec
+        };
+        for before in case["before"].as_array().unwrap() {
+            for _ in 0..before["times"].as_u64().unwrap() {
+                t.send(auth_request(&expanded(&before["request"]))).await;
+            }
+        }
+        let reply = t.send(auth_request(&expanded(&case["request"]))).await;
+        let expected = &case["response"];
+        let body = expected["body"].as_str().unwrap();
+
+        // The two replies that knowingly differ (docs/RUST_MIGRATION.md):
+        // both servers refuse or ignore the request, in different words.
+        let divergence = match what {
+            // `JSON.parse` reads 1e400 as Infinity, which Zod then calls a
+            // float; `serde_json` refuses the number, so the body is
+            // malformed JSON. A 400 either way.
+            "put: expectedVersion 1e400" => Some(400),
+            // Fastify routed on the percent-decoded path; axum routes on the
+            // raw one (step 3b), so this is an unknown path.
+            "route: GET /%6beyring" => Some(404),
+            _ => None,
+        };
+        if let Some(status) = divergence {
+            diverging += 1;
+            assert_eq!(reply.status.as_u16(), status, "{what}: status");
+            let actual = reply.json();
+            assert_eq!(actual["statusCode"], status, "{what}: {actual}");
+            assert!(actual.get("details").is_none(), "{what}: {actual}");
+            assert_eq!(&keyring_state(&t.db).await, seed_keyrings, "{what}");
+            continue;
+        }
+
+        assert_eq!(
+            u64::from(reply.status.as_u16()),
+            expected["status"],
+            "{what}: status"
+        );
+        if case["request"]["method"] == "HEAD" {
+            assert!(reply.body.is_empty(), "{what}: body");
+        } else if expected["status"] == 500 {
+            internal_errors += 1;
+            assert_eq!(reply.text(), INTERNAL_ERROR, "{what}: body");
+        } else if body.contains("Expected property name") {
+            // V8's JSON.parse message can't be reproduced.
+            let actual = reply.json();
+            assert_eq!(actual["statusCode"], 400, "{what}");
+            assert_eq!(actual["error"], "Bad Request", "{what}");
+            assert!(actual["message"].is_string(), "{what}");
+            assert_eq!(reply.header("connection"), Some("close"), "{what}");
+        } else if body.contains("\"details\"") {
+            // Validation issues may list their keys in another order.
+            let expected_body: Value = serde_json::from_str(&expand(body)).unwrap();
+            assert_eq!(reply.json(), expected_body, "{what}: body");
+        } else {
+            // Byte for byte: nothing in a keyring reply varies between runs.
+            assert_eq!(squeeze(reply.text()), body, "{what}: body");
+        }
+
+        assert_headers(&reply, expected, security, &uncompared, what);
+
+        let after = &case["after"];
+        let keyrings = keyring_state(&t.db).await;
+        if after["unchanged"] == true {
+            assert_eq!(&keyrings, seed_keyrings, "{what}: keyrings afterwards");
+        } else {
+            assert_eq!(
+                &keyrings,
+                after["keyrings"].as_array().unwrap(),
+                "{what}: keyrings afterwards"
+            );
+        }
+        let used: Vec<String> = sqlx::query_scalar(
+            "SELECT id::text FROM api_keys WHERE last_used_at IS NOT NULL ORDER BY id",
+        )
+        .fetch_all(&t.db)
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::json!(used),
+            after["apiKeysUsed"],
+            "{what}: API keys marked used"
+        );
+    }
+    // The fixture really exercised the special cases above.
+    assert_eq!(diverging, 2);
+    assert!(internal_errors >= 6, "{internal_errors}");
 }

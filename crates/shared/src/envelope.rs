@@ -192,8 +192,12 @@ impl KeyringEnvelope {
     /// Validates a JSON value. Unknown keys are ignored.
     pub fn parse(value: &Value) -> Result<Self, ValidationError> {
         let mut ctx = Ctx::new();
-        let out = plain(&mut ctx, Some(value), MAX_KEYRING_CIPHERTEXT);
-        finish(ctx, out).map(|(key_id, nonce, ciphertext)| Self {
+        let out = Self::parse_in(&mut ctx, Some(value));
+        finish(ctx, out)
+    }
+
+    pub(crate) fn parse_in(ctx: &mut Ctx, input: Option<&Value>) -> Option<Self> {
+        plain(ctx, input, MAX_KEYRING_CIPHERTEXT).map(|(key_id, nonce, ciphertext)| Self {
             key_id,
             nonce,
             ciphertext,

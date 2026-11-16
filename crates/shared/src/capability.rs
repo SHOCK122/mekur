@@ -9,8 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::envelope::EncryptedEnvelope;
-use crate::issue::ValidationError;
-use crate::zod::{self, Ctx, StrChecks, finish};
+use crate::zod::{self, StrChecks, parsers};
 
 /// Most capabilities one batch read may present.
 pub const BATCH_READ_LIMIT: usize = 500;
@@ -74,28 +73,6 @@ pub struct RevokeCapabilityRequest {
     pub token: String,
 }
 
-/// `parse(&Value)` and `parse_optional(Option<&Value>)` (where `None` is a
-/// request without a body: Zod's `undefined`) from one object parser.
-macro_rules! parsers {
-    ($t:ty, $body:expr) => {
-        impl $t {
-            /// Validates a JSON value. Unknown keys are ignored.
-            pub fn parse(value: &Value) -> Result<Self, ValidationError> {
-                Self::parse_optional(Some(value))
-            }
-
-            /// As [`parse`](Self::parse), where `None` is a request
-            /// without a body (one "Required" issue).
-            pub fn parse_optional(value: Option<&Value>) -> Result<Self, ValidationError> {
-                let mut ctx = Ctx::new();
-                let parse: fn(&mut Ctx, Option<&Value>) -> Option<Self> = $body;
-                let out = parse(&mut ctx, value);
-                finish(ctx, out)
-            }
-        }
-    };
-}
-
 parsers!(EventEnvelopeRequest, |ctx, value| {
     let obj = zod::object(ctx, value)?;
     let envelope = zod::field(ctx, obj, "envelope", EncryptedEnvelope::parse_in);
@@ -153,6 +130,7 @@ parsers!(RevokeCapabilityRequest, |ctx, value| {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ValidationError;
     use serde_json::json;
 
     fn codes(err: &ValidationError) -> Vec<(&'static str, String)> {

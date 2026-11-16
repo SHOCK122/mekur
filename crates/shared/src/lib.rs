@@ -22,6 +22,7 @@ pub mod datetime;
 mod envelope;
 mod event;
 pub mod issue;
+mod keyring;
 mod recurrence;
 mod time_zone;
 mod uuid;
@@ -38,6 +39,7 @@ pub use envelope::{
 };
 pub use event::{EventContent, MAX_OCCURRENCE_OVERRIDES, OccurrenceOverride};
 pub use issue::{Issue, IssueKind, PathSegment, ValidationError};
+pub use keyring::PutKeyringRequest;
 pub use recurrence::{RecurrenceFrequency, RecurrenceRule, Weekday};
 pub use time_zone::is_valid_time_zone;
 pub use uuid::is_zod_uuid;

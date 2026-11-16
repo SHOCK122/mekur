@@ -5,21 +5,23 @@
 //! API key (`sak_...`). There is no session store: a JWT is verified, an API
 //! key is a hash lookup.
 //!
-//! Handlers call [`authenticate`] themselves, after reading the body,
-//! rather than taking an extractor: Fastify parsed the body before its
+//! Handlers call [`authenticate`] themselves (or [`body_then_account`],
+//! when they read a body) rather than taking an extractor: Fastify parsed the body before its
 //! `preHandler` hooks ran, so a malformed body is a 400 (or 415) even
 //! without credentials, and the replies must keep that order.
 
 use axum::{
-    http::{HeaderMap, StatusCode, header},
+    body::Body,
+    http::{HeaderMap, StatusCode, header, request::Parts},
     response::Response,
 };
+use serde_json::Value;
 
 use crate::{
     AppState,
     api_keys::{hash_api_key, looks_like_api_key},
     app::{internal_error, json},
-    body::is_js_whitespace,
+    body::{is_js_whitespace, read_body},
     jwt,
 };
 
@@ -86,6 +88,21 @@ pub async fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<AuthU
         }),
         None => Err(unauthorized()),
     }
+}
+
+/// A request's body, then its user, in Fastify's order: the body was parsed
+/// before the `preHandler` hook that authenticates, so a body error (400,
+/// 413, 415) is answered even without credentials. Every route that reads a
+/// body goes through here, so none checks the two the other way round.
+pub async fn body_then_account(
+    state: &AppState,
+    parts: &Parts,
+    body: Body,
+    limit: usize,
+) -> Result<(Option<Value>, AuthUser), Response> {
+    let body = read_body(&parts.headers, body, limit).await?;
+    let user = authenticate(state, &parts.headers).await?;
+    Ok((body, user))
 }
 
 /// The token `@fastify/jwt` read from the header: it must match

@@ -17,20 +17,16 @@ use crate::{
         internal_error, invalid_request, json, json_value, no_content, path_param,
         resource_not_found,
     },
-    auth::{AuthMethod, authenticate},
-    body::{BODY_LIMIT, read_body},
+    auth::{AuthMethod, authenticate, body_then_account},
+    body::BODY_LIMIT,
 };
 
 /// `POST /api-keys`: mint a key. The raw key is in this reply and nowhere
 /// else, ever: only its hash is stored.
 pub async fn create(State(state): State<AppState>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let body = match read_body(&parts.headers, body, BODY_LIMIT).await {
-        Ok(body) => body,
-        Err(reply) => return reply,
-    };
-    let user = match authenticate(&state, &parts.headers).await {
-        Ok(user) => user,
+    let (body, user) = match body_then_account(&state, &parts, body, BODY_LIMIT).await {
+        Ok(read) => read,
         Err(reply) => return reply,
     };
     // An API key must not be able to mint further keys: one leaked key would
@@ -107,11 +103,9 @@ pub async fn revoke(
     request: Request,
 ) -> Response {
     let (parts, body) = request.into_parts();
-    if let Err(reply) = read_body(&parts.headers, body, BODY_LIMIT).await {
-        return reply;
-    }
-    let user = match authenticate(&state, &parts.headers).await {
-        Ok(user) => user,
+    // A body is read (and must be well-formed) but ignored.
+    let user = match body_then_account(&state, &parts, body, BODY_LIMIT).await {
+        Ok((_, user)) => user,
         Err(reply) => return reply,
     };
     let id = path_param(&uri, "/api-keys/", "");

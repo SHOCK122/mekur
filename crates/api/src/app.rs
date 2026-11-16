@@ -14,11 +14,13 @@ use axum::{
 };
 use mekur_shared::ValidationError;
 use serde::Serialize;
+use serde_json::value::RawValue;
 use sqlx::PgPool;
 
 use crate::{
     api_keys::ApiKeyRepository,
     events::EventRepository,
+    keyrings::KeyringRepository,
     rate_limit::{self, RateLimiter},
     routes,
     users::UserRepository,
@@ -32,6 +34,7 @@ pub struct AppState {
     pub users: UserRepository,
     pub api_keys: ApiKeyRepository,
     pub events: EventRepository,
+    pub keyrings: KeyringRepository,
     pub jwt_secret: Arc<str>,
     pub limits: Limits,
 }
@@ -82,6 +85,7 @@ impl AppState {
             users: UserRepository::new(db.clone()),
             api_keys: ApiKeyRepository::new(db.clone()),
             events: EventRepository::new(db.clone()),
+            keyrings: KeyringRepository::new(db.clone()),
             db,
             jwt_secret: options.jwt_secret.into(),
             limits: Limits {
@@ -114,6 +118,8 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("delete", "/events/{id}"),
     ("post", "/events/{id}/capabilities"),
     ("post", "/events/{id}/capabilities/revoke"),
+    ("get", "/keyring"),
+    ("put", "/keyring"),
 ];
 
 pub fn build_app(state: AppState) -> Router {
@@ -158,6 +164,12 @@ pub fn build_app(state: AppState) -> Router {
             "/events/batch-read",
             event()
                 .post(routes::events::batch_read)
+                .route_layer(global()),
+        )
+        .route(
+            "/keyring",
+            get(routes::keyring::read)
+                .put(routes::keyring::replace)
                 .route_layer(global()),
         );
     for (path, handler) in [
@@ -330,6 +342,20 @@ fn route_with_empty_param(
 /// `toISOString` printed it: UTC, milliseconds (truncated), `Z`.
 pub fn iso_millis(at: chrono::DateTime<chrono::Utc>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// A stored envelope (a `jsonb` column read as `column::text`) as the TS
+/// server sent it: `JSON.stringify` of node-pg's parse of that text, which
+/// for an envelope is the text without its whitespace -- jsonb and V8
+/// escape the same characters in strings. So envelopes go out byte for
+/// byte as before.
+///
+/// Only for values like envelopes: string values, the integer `v`, and
+/// keys that aren't integers. For anything else the two differ -- V8
+/// prints `1.0` as `1` and puts integer-like keys first, jsonb does
+/// neither -- so other `jsonb` columns need their own check.
+pub fn stored_json(jsonb_text: &str) -> Result<Box<RawValue>, sqlx::Error> {
+    RawValue::from_string(minify_json(jsonb_text)).map_err(|err| sqlx::Error::Decode(Box::new(err)))
 }
 
 /// A JSON reply serialized from `value` (struct fields keep their order).

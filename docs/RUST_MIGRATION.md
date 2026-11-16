@@ -461,13 +461,89 @@ routes, repository and tests for that group are deleted.
     `^/api/events/[^/]*(/capabilities(/revoke)?)?$` to Rust; Vite likewise.
   - Divergences: none observed beyond the ones every route shares (V8's
     JSON parse message, percent-decoded routing; see 3b).
-- [ ] **3e. Keyring**: repository + routes (versioned, 409 on conflict,
-  1.5 MB body limit on `PUT`). Port the keyring tests of
-  `keyringAndInbox.test.ts` and `security.test.ts`.
+- [x] **3e. Keyring**: repository + routes (`GET`/`PUT /keyring`:
+  versioned, 409 on conflict, its own 1.5 MB body limit on `PUT`).
+  `PutKeyringRequest` is a `mekur-shared` type with Zod's issues, over the
+  existing `KeyringEnvelope`. Ported the keyring tests of
+  `keyringAndInbox.test.ts`, `security.test.ts` (the larger body limit) and
+  `apiKeys.test.ts` (a key reads and writes the keyring) to
+  `tests/keyring.rs`, plus: what a refused write leaves behind, two
+  devices racing with one version (exactly one wins), what the row holds,
+  both size caps to the byte, and that the larger limit is the keyring's
+  alone. TS `keyringRoutes.ts` and `keyringRepository.ts` deleted;
+  `keyringAndInbox.test.ts` is now `inbox.test.ts`, and the TS tests that
+  used `/keyring` as "any signed-in route" (API-key auth, security
+  headers) use `/inbox`.
+  - **Frozen fixture of the TS replies**:
+    `tests/fixtures/ts_keyring_responses.json`, 117 replies of the TS
+    routes recorded before deletion (by a throwaway recorder, as in 3c and
+    3d), replayed by `tests/ts_parity.rs` *with the keyrings left in the
+    database afterwards* and which API keys were marked used. Seeded: two
+    accounts with an API key each, and a keyring for one of them at
+    version 3. It covers reads (none yet, existing, after writes, at the
+    cap, `HEAD`), writes and every conflict, versions spelled `3.0`, `3e0`
+    and `-0`, versions Postgres can't take, every validation issue, the
+    256 KB / 1 MB / 1.5 MB boundaries, body errors, every refusal of
+    credentials, tokens for unknown or malformed user ids, paths and
+    methods around the route, and the global rate limit. Nothing in a
+    keyring reply varies between runs, so bodies are compared byte for
+    byte. Checked to fail when the version step, the body limit or
+    `updated_at` is broken.
+  - **Order of checks** (from the recording): `PUT` reads its body up to
+    1.5 MB (400/413/415), then the account (401), then validation (400),
+    then the write (200/409). So an oversized body is a 413 without
+    credentials, and a 300 KB one a 401. `GET` reads no body.
+  - **One statement per write**, as before: `INSERT ... ON CONFLICT DO
+    NOTHING` for `expectedVersion` 0, `UPDATE ... WHERE version = $3`
+    otherwise; no row back is the 409. Of two racing writers exactly one
+    wins (now tested). `-0` and `0.0` are 0, as `=== 0` had it.
+  - **Envelopes are sent byte for byte as before** (`jsonb::text`,
+    minified, as in 3d); stored is Zod's output, unknown keys stripped.
+    The repository takes a `KeyringEnvelope`, not JSON, so only a
+    validated keyring can be stored.
+  - **User ids** from tokens are bound as text and cast by Postgres, as
+    before: an upper-case id matches; an id that is no UUID is a 500; a
+    well-formed id of no account reads as "no keyring" and its first
+    write is a 500 (the foreign key), a later one a 409.
+  - **Kept: an `expectedVersion` past `i32::MAX` is a 500.** node-pg sent
+    it as text and Postgres refused it; the Rust repository refuses it
+    itself (`VersionOutOfRange`). A 409 would be the better answer, but
+    that is a behaviour change (roadmap, Phase 11). `PutKeyringRequest`
+    holds the version as a `u64`, saturating past `u64::MAX`.
+  - `KEYRING_BODY_LIMIT` is passed to `read_body` by the handler; there is
+    no global body-limit layer to override.
+  - Proxies: nginx and Vite send `/api/keyring` to Rust (nginx with its
+    own body limit, below).
+  - Divergences, on input no client sends:
+    - `"expectedVersion": 1e400`: `JSON.parse` read it as `Infinity`, which
+      Zod reported as a float (a 400 with `details`); `serde_json` refuses
+      the number, so it is the malformed-JSON 400.
+    - The ones every route shares: percent-decoded routing (`/%6beyring`
+      reached the TS route), V8's JSON parse message, and the 500's body
+      (no database error code or message).
+  - **Fixed on the way: nginx refused large keyrings.** Its default
+    `client_max_body_size` is 1 MB, below what the route reads, so behind
+    the compose stack a keyring write past 1 MB (the schema allows 1 MB
+    of ciphertext alone) got nginx's HTML 413 from the proxy, whichever
+    server was behind it. The keyring location now sets `2m`, above the
+    API's limit, so an oversized keyring still gets the API's JSON 413
+    through the proxy. `openapi.test.ts` checks it is the only raised
+    limit and that it sits above `KEYRING_BODY_LIMIT`, which it reads from
+    the Rust source.
+  - `app::stored_json` is only right for envelopes (strings and the
+    integer `v`): for other JSON, jsonb's text and `JSON.stringify` differ
+    (`1.0` vs `1`, integer-like keys first in V8). 3f/3g must check before
+    reusing it on another column.
+  - Review: `auth::body_then_account` is the one place that reads a body
+    and then authenticates (API keys, events and the keyring use it);
+    `app::stored_json` the one place a stored envelope becomes a reply;
+    `parsers!` (now in `zod.rs`) the one `parse`/`parse_optional` pair.
+  - Found, not changed (roadmap items): the 500 above; and bodies are
+    parsed before the account is checked (Fastify's order), which on this
+    route means up to 1.5 MB for a client without credentials.
 - [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
 - [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
-  every list stays bounded; port the inbox tests of
-  `keyringAndInbox.test.ts`), push subscriptions,
+  every list stays bounded; port `inbox.test.ts`), push subscriptions,
   notification service. Port `pushNotifications.test.ts` and the rest of
   `security.test.ts`. Then delete `apps/api` and the TS server from
   `docker-compose.yml`; the Rust server takes over running migrations.
@@ -566,9 +642,10 @@ tests are ported to Rust (`cargo test` for pure logic,
   the Rust test harness migrates its own database with it. Do **not** use
   `sqlx::migrate!`: its `_sqlx_migrations` table would re-run every
   migration on an existing database.
-- Body limits: 256 KB globally, but `PUT /keyring` raises its own to
-  1.5 MB (`1536 * 1024`). A global `RequestBodyLimitLayer` must be
-  overridden on that route.
+- Body limits: 256 KB everywhere (`body::BODY_LIMIT`), except `PUT
+  /keyring`, which reads up to 1.5 MB (`routes::keyring::KEYRING_BODY_LIMIT`,
+  `1536 * 1024`). Each handler passes its limit to `read_body`; there is no
+  global layer.
 - Fastify's 404 is `{"message":"Route METHOD:URL not found","error":"Not
   Found","statusCode":404}` with the raw request target (query string
   included), for unknown paths *and* wrong methods (never 405). Paths are
@@ -683,3 +760,12 @@ tests are ported to Rust (`cargo test` for pure logic,
   revoked between them can finish one write in flight -- a Phase 11
   roadmap item. `derive_pseudonym` is kept although unused: its format is
   on the parity list and its TS source is gone.
+- Step 3e (keyring). `GET` and `PUT /keyring` moved to the Rust server.
+  Found by recording the TS server first: an `expectedVersion` Postgres
+  can't hold was a 500 rather than a conflict (kept), `1e400` parsed as
+  `Infinity` (a divergence, documented), and the route was reachable as
+  `/%6beyring`. Found by review: the compose stack's nginx capped request
+  bodies at 1 MB, under the keyring's own limit, so a full-size keyring
+  could never be saved through it -- fixed in the keyring location. The
+  replay scaffolding in `ts_parity.rs` is now shared between the event and
+  keyring fixtures.

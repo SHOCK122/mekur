@@ -725,6 +725,17 @@ re-decrypted.
       `PUT`, `DELETE`, mint or revoke already in flight. Fold the check into
       the write (`... WHERE id = $1 AND EXISTS (live edit capability)`),
       which also saves a round trip. Found in review of the Rust port.
+- [ ] `PUT /keyring` with an `expectedVersion` past 2^31 - 1 is a 500 (as
+      on the TS server, where Postgres refused the parameter; kept by the
+      step 3e port for parity). No stored version can equal it, so it
+      should be the 409 every other stale version gets.
+- [ ] Request bodies are read and parsed before the account is checked
+      (Fastify's order, kept by the Rust port so replies match), so a
+      client without an account can make the server buffer and parse
+      256 KB a request -- and 1.5 MB on `PUT /keyring`. Bounded by the
+      rate limit, not by authentication. Once the TS server is gone,
+      authenticate first (changes which error a bad request without
+      credentials gets). Found in review of the step 3e port.
 - [ ] `GET /api-keys` returns all of a user's keys unpaged -- the one list
       not capped as ARCHITECTURE.md's "every list is bounded" asks. Keys
       are minted by hand from a session, so it stays small in practice;

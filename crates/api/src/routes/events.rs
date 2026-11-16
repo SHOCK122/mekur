@@ -34,8 +34,8 @@ use crate::{
     app::{
         internal_error, invalid_request, json_value, no_content, path_param, resource_not_found,
     },
-    auth::authenticate,
-    body::{BODY_LIMIT, read_body},
+    auth::{authenticate, body_then_account},
+    body::BODY_LIMIT,
     events::EventRecord,
 };
 
@@ -74,14 +74,14 @@ fn capability_header(headers: &HeaderMap) -> Option<String> {
 #[error("validated expiry {0:?} names no instant")]
 struct UnreadableExpiry(String);
 
-/// Reads the body and authenticates, in Fastify's order. Returns the body.
+/// Reads the body and authenticates, in Fastify's order. Returns the body
+/// alone: which account it is must not matter to anything here.
 async fn body_and_account(
     state: &AppState,
     parts: &Parts,
     body: Body,
 ) -> Result<Option<Value>, Response> {
-    let body = read_body(&parts.headers, body, BODY_LIMIT).await?;
-    authenticate(state, &parts.headers).await?;
+    let (body, _) = body_then_account(state, parts, body, BODY_LIMIT).await?;
     Ok(body)
 }
 

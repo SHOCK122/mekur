@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../src/db/pool.js";
-import { setupTestApp, truncateAll, registerUser, ENVELOPE } from "./testHelpers.js";
+import { setupTestApp, truncateAll, registerUser, SEALED_ENVELOPE } from "./testHelpers.js";
 
 // The API-key routes (mint, list, revoke) are served by the Rust server now
 // -- crates/api/tests/api_keys.rs ported their tests, step 3c of
@@ -43,23 +43,24 @@ describe("API keys on the TS server's routes", () => {
     const { userId } = await registerUser(app, "bob");
     const { rawKey } = await mintKey(db, userId);
 
-    // (Events are served by the Rust server now, step 3d; its replay of the
-    // TS server's event replies includes API-key requests.)
+    // (Events and the keyring are served by the Rust server now, steps 3d
+    // and 3e; its replays of the TS server's replies on those routes
+    // include API-key requests.)
     const writeResp = await app.inject({
-      method: "PUT",
-      url: "/keyring",
+      method: "POST",
+      url: "/inbox/deliver",
       headers: { authorization: `Bearer ${rawKey}` },
-      payload: { envelope: ENVELOPE, expectedVersion: 0 },
+      payload: { recipientId: userId, envelope: SEALED_ENVELOPE },
     });
-    expect(writeResp.statusCode).toBe(200);
+    expect(writeResp.statusCode).toBe(204);
 
     const readResp = await app.inject({
       method: "GET",
-      url: "/keyring",
+      url: "/inbox",
       headers: { authorization: `Bearer ${rawKey}` },
     });
     expect(readResp.statusCode).toBe(200);
-    expect(readResp.json().version).toBe(1);
+    expect(readResp.json().messages).toHaveLength(1);
 
     const { rows } = await db.query("SELECT last_used_at FROM api_keys");
     expect(rows[0].last_used_at).not.toBeNull();
@@ -68,7 +69,7 @@ describe("API keys on the TS server's routes", () => {
   it("rejects an unknown or malformed API key", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/keyring",
+      url: "/inbox",
       headers: { authorization: "Bearer sak_not_a_real_key" },
     });
     expect(response.statusCode).toBe(401);
@@ -77,12 +78,12 @@ describe("API keys on the TS server's routes", () => {
   it("stops working immediately after revocation", async () => {
     const { userId } = await registerUser(app, "carol");
     const { rawKey, id } = await mintKey(db, userId);
-    const keyring = () =>
-      app.inject({ method: "GET", url: "/keyring", headers: { authorization: `Bearer ${rawKey}` } });
+    const inbox = () =>
+      app.inject({ method: "GET", url: "/inbox", headers: { authorization: `Bearer ${rawKey}` } });
 
-    expect((await keyring()).statusCode).toBe(200);
+    expect((await inbox()).statusCode).toBe(200);
     // What the Rust server's DELETE /api-keys/:id does.
     await db.query("DELETE FROM api_keys WHERE id = $1", [id]);
-    expect((await keyring()).statusCode).toBe(401);
+    expect((await inbox()).statusCode).toBe(401);
   });
 });
