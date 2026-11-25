@@ -1,0 +1,42 @@
+# Dev-only stack: the workspace container plus a throwaway PostgreSQL 16 that
+# matches CI. Nothing is published on the host; VS Code forwards the dev
+# ports to your own machine instead.
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    # Share the database's network so `localhost:5432` works exactly as the
+    # README, CI and the API's dev defaults expect.
+    network_mode: service:db
+    volumes:
+      - ..:/workspaces/mekur:cached
+      # Keeps the Claude Code login and history across container rebuilds.
+      - claude-config:/home/vscode/.claude
+    environment:
+      CLAUDE_CONFIG_DIR: /home/vscode/.claude
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/scheduleapp_test
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # The API's development default database.
+      POSTGRES_DB: scheduleapp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  claude-config:
+  pgdata:
