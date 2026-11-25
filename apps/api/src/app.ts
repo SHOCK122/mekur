@@ -4,12 +4,21 @@ import helmet from "@fastify/helmet";
 import type { Database } from "./db/pool.js";
 import { authPlugin } from "./plugins/auth.js";
 import { createUserRepository } from "./repositories/userRepository.js";
+import { createEventRepository } from "./repositories/eventRepository.js";
 import { createApiKeyRepository } from "./repositories/apiKeyRepository.js";
 import { createPushSubscriptionRepository } from "./repositories/pushSubscriptionRepository.js";
+import { createFriendCodeRepository } from "./repositories/friendCodeRepository.js";
+import { createKeyringRepository } from "./repositories/keyringRepository.js";
 import { createInboxRepository } from "./repositories/inboxRepository.js";
 import { createNotificationService } from "./services/notificationService.js";
+import { registerAuthRoutes } from "./routes/authRoutes.js";
+import { registerEventRoutes } from "./routes/eventRoutes.js";
+import { registerApiKeyRoutes } from "./routes/apiKeyRoutes.js";
 import { registerPushRoutes } from "./routes/pushRoutes.js";
+import { registerSocialRoutes } from "./routes/socialRoutes.js";
+import { registerKeyringRoutes } from "./routes/keyringRoutes.js";
 import { registerInboxRoutes } from "./routes/inboxRoutes.js";
+import { openApiSpec } from "./openapi.js";
 
 export interface BuildAppOptions {
   db: Database;
@@ -20,6 +29,8 @@ export interface BuildAppOptions {
   /** Overridable so tests can raise it -- the default would otherwise
    * throttle a fast-running suite and cause confusing flakes. */
   rateLimitMax?: number;
+  /** Tighter limit for auth endpoints (login/registration). */
+  authRateLimitMax?: number;
   /** Reverse-proxy hops to trust when deriving the client IP (see config). */
   trustProxy?: number;
 }
@@ -72,16 +83,19 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   });
 
   // Global rate limit as a backstop against abuse and runaway agent
-  // clients. (Login and registration, with their tighter limit, are served
-  // by the Rust server -- docs/RUST_MIGRATION.md, step 3b.)
+  // clients. Auth endpoints get a much tighter limit registered below --
+  // an unthrottled login endpoint is brute-forceable.
   app.register(rateLimit, {
     max: opts.rateLimitMax ?? 300,
     timeWindow: "1 minute",
   });
 
   const users = createUserRepository(opts.db);
+  const events = createEventRepository(opts.db);
   const apiKeys = createApiKeyRepository(opts.db);
   const pushSubscriptions = createPushSubscriptionRepository(opts.db);
+  const friendCodes = createFriendCodeRepository(opts.db);
+  const keyrings = createKeyringRepository(opts.db);
   const inbox = createInboxRepository(opts.db);
   const notifications = createNotificationService(pushSubscriptions, {
     vapidPublicKey: opts.vapidPublicKey,
@@ -91,18 +105,16 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
 
   app.register(authPlugin, { secret: opts.jwtSecret, apiKeys });
 
-  // GET /health, GET /openapi.json (step 3a), POST /users, POST
-  // /sessions, GET /users/:username/salt (step 3b), POST/GET /api-keys,
-  // DELETE /api-keys/:id (step 3c), the event routes -- /events,
-  // /events/batch-read, /events/:id and its capabilities (step 3d),
-  // GET/PUT /keyring (step 3e), and GET /friend-code, POST
-  // /friend-code/rotate, POST /tags/resolve (step 3f) are served by the
-  // Rust server (crates/api) -- see docs/RUST_MIGRATION.md. The auth
-  // plugin stays until the last TS route goes: it still authenticates API
-  // keys for them.
+  app.get("/health", async () => ({ status: "ok" }));
+  app.get("/openapi.json", async () => openApiSpec);
 
   app.register(async (instance) => {
+    registerAuthRoutes(instance, users, opts.authRateLimitMax ?? 10);
+    registerEventRoutes(instance, events);
+    registerApiKeyRoutes(instance, apiKeys);
     registerPushRoutes(instance, pushSubscriptions, opts.vapidPublicKey);
+    registerSocialRoutes(instance, users, friendCodes);
+    registerKeyringRoutes(instance, keyrings);
     registerInboxRoutes(instance, inbox, users, notifications);
   });
 

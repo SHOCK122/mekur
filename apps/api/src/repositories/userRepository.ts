@@ -78,10 +78,15 @@ export function createUserRepository(db: Database) {
       return row ? toUserRecord(row) : null;
     },
 
-    // No updatePublicKey: replacing a public key redirects every future
-    // invitation, so only login -- now served by the Rust server
-    // (crates/api/src/routes/auth.rs) -- may do it, after proving the
-    // password.
+    /** Replaces a user's stored public key. Only ever called from login,
+     * after the password has been proven -- see authRoutes. */
+    async updatePublicKey(id: string, publicKey: string): Promise<boolean> {
+      const result = await db.query(`UPDATE users SET public_key = $2 WHERE id = $1`, [
+        id,
+        publicKey,
+      ]);
+      return (result.rowCount ?? 0) > 0;
+    },
 
     async findById(id: string): Promise<UserRecord | null> {
       const result = await db.query<UserRow>(

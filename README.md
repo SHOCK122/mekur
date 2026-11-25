@@ -85,24 +85,8 @@ npm install
 npm run test        # every package's test suite
 npm run typecheck   # typecheck every package
 
-cd apps/api && npm run dev    # TS API on :3000
-PORT=3001 cargo run -p mekur-api   # Rust API on :3001 (routes ported so far)
-cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to both
-```
-
-The API is mid-migration to Rust: the Rust server answers the routes
-already ported and the TS server the rest -- see the port-order checklist
-in `docs/RUST_MIGRATION.md` for exactly which, and `ROUTES` in
-`crates/api/src/app.rs` for the authoritative list. The browser client
-(`apps/web`) stays TypeScript/React; only the API is moving.
-nginx (Docker) and the Vite dev proxy split `/api` between them.
-
-Rust crates (the toolchain is pinned in `rust-toolchain.toml`):
-
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cd apps/api && npm run dev    # API on :3000
+cd apps/web && npm run dev    # PWA (Vite prints the URL), proxies /api to :3000
 ```
 
 API tests run against a real PostgreSQL instance, not mocks (test files
@@ -111,15 +95,12 @@ run one at a time, since they share the database):
 ```bash
 createdb scheduleapp_test
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/scheduleapp_test npm run test
-# The Rust tests use their own database (created if missing), so both
-# suites can run at once:
-RUST_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/scheduleapp_rust_test cargo test
 ```
 
 Load testing against a running instance:
 
 ```bash
-cd apps/api && BASE_URL=http://localhost:3000 RUST_BASE_URL=http://localhost:3001 npm run loadtest
+cd apps/api && BASE_URL=http://localhost:3000 npm run loadtest
 ```
 
 ## Project structure
@@ -132,12 +113,10 @@ packages/
   shared/   Shared types and validation schemas (Zod)
   crypto/   Client-side encryption (X25519, XChaCha20-Poly1305, scrypt, HKDF)
 infra/
-  Dockerfile.api, Dockerfile.api-rs, Dockerfile.web, nginx.conf
-crates/     Rust workspace replacing apps/api, route group by route group
+  Dockerfile.api, Dockerfile.web, nginx.conf
 docs/
   ARCHITECTURE.md   threat model, keys, capability model, invitations, scaling
   ROADMAP.md        phase-by-phase status, decisions, known gaps
-  RUST_MIGRATION.md TypeScript -> Rust plan, port order, parity rules
 ```
 
 ## Security notes

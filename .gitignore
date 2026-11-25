@@ -6,6 +6,3 @@ dist/
 *.log
 .DS_Store
 coverage/
-
-# Rust build output
-/target/
