@@ -89,9 +89,51 @@ create it runs `npm ci` and creates the `scheduleapp_test` database, so
    folder, and run **Dev Containers: Reopen in Container**.
 3. **In the container's terminal:** run `claude` and log in. The login
    lives in a named volume, so it survives rebuilds. Run `gh auth login`
-   so Claude can open and watch PRs.
+   with a fine-grained token scoped to `SHOCK122/mekur` only, so Claude
+   can open and watch PRs.
 4. **Check it:** `npm run typecheck && npm run test && npm run build`
    should match the counts above.
+5. **On your PC, in VS Code's settings:** set
+   `remote.SSH.enableAgentForwarding` to `false` and stop Dev Containers
+   sharing your Git credentials
+   (`dev.containers.gitCredentialHelperConfigLocation`: `none`). Otherwise
+   your PC's SSH agent reaches into the container, and with it a way to
+   log in to the server itself. After rebuilding, `echo $SSH_AUTH_SOCK`
+   in the container should print nothing.
+
+**Running Claude unattended.** Start it with `claude-unattended` instead
+of `claude`. That skips the per-command permission prompts, but only after
+checking that the container's outbound firewall is up and that the dev
+user can't use sudo to switch it off; otherwise it refuses to start.
+
+- The firewall (`.devcontainer/init-firewall.sh`) runs on every container
+  start. It refuses all outbound traffic except DNS, loopback (where
+  PostgreSQL lives) and: npm's registry, GitHub, Anthropic's API and
+  sign-in, and VS Code's extension and update servers. The LAN, the
+  Docker host and the server's other services are unreachable. It was
+  tested in isolated network namespaces, not yet in a real container.
+- The dev user's sudo allows that script and nothing else, so Claude
+  can't install system packages. If something needs another host or
+  package, change `.devcontainer/` yourself and rebuild.
+- Hosts are resolved to IP addresses once, at start. If npm or GitHub
+  stops working after a while (a CDN moved), run
+  `sudo /usr/local/bin/init-firewall.sh` again.
+- If signing in to Claude fails behind the firewall, the sign-in may use
+  a host the allowlist is missing. Check which one is refused and add it
+  to `ALLOWED_DOMAINS`.
+- What it can't prevent: Claude can still send data to the allowed hosts
+  (for example, push to GitHub) and over DNS. Keep the GitHub token
+  limited to this repository, and protect `main` in GitHub's settings
+  (require a PR and passing CI), so nothing lands there without review.
+
+**Rebuilding.** Day to day, no rebuild is needed: code changes, `npm`
+installs and restarts don't require one. Rebuild (**Dev Containers:
+Rebuild Container**) for Ubuntu security patches and changes to
+`.devcontainer/`, roughly monthly or when a Dependabot PR touches
+`.devcontainer/`. A rebuild also installs the latest Claude Code; check
+`claude --version` now and then in case it isn't updating itself in place. Review any diff to
+`.devcontainer/` before rebuilding: a rebuild applies whatever it says,
+including permissions.
 
 The dev servers (`npm run dev` in `apps/api` and `apps/web`) are
 forwarded to your machine by VS Code: open the forwarded 5173.

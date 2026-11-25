@@ -73,6 +73,13 @@ runs at `localhost:5432` (user/password `postgres`), the `scheduleapp` and
 `scheduleapp_test` databases exist, and `TEST_DATABASE_URL` is set, so
 `npm run test` works as-is.
 
+The dev container has an outbound firewall (`.devcontainer/init-firewall.sh`):
+only npm's registry, GitHub, Anthropic and VS Code's servers are reachable,
+and sudo is limited to re-running that script. If a task needs another host
+or a system package, say so and stop: you can't change the firewall or
+install packages, and you mustn't edit `.devcontainer/` to grant yourself
+access. The owner reviews and rebuilds.
+
 **Before calling a change done**, run `npm run typecheck`, `npm run test`
 and `npm run build` — every roadmap phase must leave all tests passing and
 both production builds working.

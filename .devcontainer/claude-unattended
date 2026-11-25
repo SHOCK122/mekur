@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Starts Claude Code without per-command permission prompts, but only once
+# the outbound firewall is verifiably up. Without the firewall, skipping
+# prompts would give Claude the whole network: the LAN, the Docker host and
+# the server's other services.
+set -euo pipefail
+
+# If the dev user can run anything else as root, the firewall is only a
+# suggestion: Claude could switch it off.
+if sudo -n true 2>/dev/null; then
+  echo "Refusing to start: this user has unrestricted sudo, so the firewall can't hold." >&2
+  exit 1
+fi
+
+# The rules themselves can only be read as root, so check their effect:
+# any HTTP response from an arbitrary site means the firewall is down.
+if curl -sS --max-time 5 -o /dev/null https://example.com 2>/dev/null; then
+  echo "Refusing to start: the firewall is not active (example.com is reachable)." >&2
+  echo "Run: sudo /usr/local/bin/init-firewall.sh" >&2
+  exit 1
+fi
+
+exec claude --dangerously-skip-permissions "$@"
