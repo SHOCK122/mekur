@@ -26,6 +26,18 @@
 //!   and keyring (Bob's, at version 3; Ada has none); a keyring written
 //!   during the case has `updatedAt: "<now>"`, and long runs are squeezed
 //!   as above;
+//! - `fixtures/ts_social_responses.json`: the friend-code and tag routes'
+//!   replies (step 3f), recorded before those routes were deleted. Each
+//!   case ran on a fresh app with the production limits and a database
+//!   holding the `seed` accounts, their API keys, and Ada's friend code at
+//!   a fixed value (`AAAAAAAA`, created `2020-02-02T02:02:02.222Z`); the
+//!   recorder already replaced what varies between runs (a new friend
+//!   code, `now`) with the same placeholders [`normalise`] uses, so the
+//!   fixture's bodies compare directly against a normalised reply -- no
+//!   database introspection afterwards, unlike the fixtures above: what a
+//!   code or rotation leaves behind is covered by `tests/social.rs`
+//!   instead, including the one thing recording from a single run can't
+//!   show -- that of two redeemers racing for one code, exactly one wins;
 //! - `fixtures/node_base64.json`: what Node's base64 decoder makes of
 //!   tricky strings, which stored auth hashes depend on.
 
@@ -227,6 +239,7 @@ fn normalise(value: &Value, seeded: &[&str]) -> Value {
                 && chrono::DateTime::parse_from_rfc3339(s).is_ok()
                 && s.as_bytes()[19] == b'.';
             let uuid = mekur_shared::is_zod_uuid(s) && s.to_lowercase() == *s;
+            let friend_code = mekur_api::friend_codes::is_friend_code(s);
             Value::String(
                 if tail(32) {
                     "<rawKey>"
@@ -236,6 +249,8 @@ fn normalise(value: &Value, seeded: &[&str]) -> Value {
                     "<now>"
                 } else if uuid {
                     "<uuid>"
+                } else if friend_code {
+                    "<code>"
                 } else {
                     s
                 }
@@ -890,4 +905,119 @@ async fn reproduces_the_ts_servers_keyring_replies() {
     // The fixture really exercised the special cases above.
     assert_eq!(diverging, 2);
     assert!(internal_errors >= 6, "{internal_errors}");
+}
+
+// --- Social: friend codes and tag resolution (step 3f) --------------------------
+
+/// Inserts the social fixture's seeded users, API keys, and Ada's friend
+/// code.
+async fn seed_social(t: &TestApp, seed: &Value) {
+    for user in seed["users"].as_array().unwrap() {
+        sqlx::query(
+            "INSERT INTO users (id, username, display_name, public_key, auth_salt, auth_hash)
+             VALUES ($1::uuid, $2, $3, $4, 'c2FsdA==', 'aGFzaA==')",
+        )
+        .bind(user["id"].as_str())
+        .bind(user["username"].as_str())
+        .bind(user["displayName"].as_str())
+        .bind(user["publicKey"].as_str())
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+    for key in seed["apiKeys"].as_array().unwrap() {
+        let raw = key["rawKey"].as_str().unwrap();
+        sqlx::query(
+            "INSERT INTO api_keys (user_id, name, key_prefix, key_hash)
+             VALUES ($1::uuid, 'k', $2, $3)",
+        )
+        .bind(key["userId"].as_str())
+        .bind(&raw[..12])
+        .bind(hash_api_key(raw))
+        .execute(&t.db)
+        .await
+        .unwrap();
+    }
+    let code = &seed["friendCode"];
+    sqlx::query(
+        "INSERT INTO friend_codes (user_id, code, created_at)
+         VALUES ($1::uuid, $2, $3::timestamptz)",
+    )
+    .bind(code["userId"].as_str())
+    .bind(code["code"].as_str())
+    .bind(code["createdAt"].as_str())
+    .execute(&t.db)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn reproduces_the_ts_servers_social_replies() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/ts_social_responses.json"))
+        .expect("fixture parses");
+    assert_eq!(fixture["secret"], common::JWT_SECRET);
+    let security = fixture["securityHeaders"].as_object().unwrap();
+    let seed = &fixture["seed"];
+
+    let mut seeded: Vec<&str> = seed["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["id"].as_str().unwrap())
+        .collect();
+    seeded.push(seed["friendCode"]["code"].as_str().unwrap());
+    seeded.push(seed["friendCode"]["createdAt"].as_str().unwrap());
+
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.len() > 15);
+    for case in cases {
+        let what = case["name"].as_str().unwrap();
+        let t = TestApp::with_options(AppOptions::new(common::JWT_SECRET)).await;
+        seed_social(&t, seed).await;
+
+        for before in case["before"].as_array().unwrap() {
+            for _ in 0..before["times"].as_u64().unwrap() {
+                t.send(auth_request(&before["request"])).await;
+            }
+        }
+        let reply = t.send(auth_request(&case["request"])).await;
+        let expected = &case["response"];
+
+        assert_eq!(
+            u64::from(reply.status.as_u16()),
+            expected["status"],
+            "{what}: status"
+        );
+        let body = expected["body"].as_str().unwrap();
+        let expected_body: Value = serde_json::from_str(body).unwrap();
+        if expected_body["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("Expected property name"))
+        {
+            // V8's JSON.parse message can't be reproduced (see
+            // docs/RUST_MIGRATION.md): same shape, serde_json's text.
+            let actual = reply.json();
+            assert_eq!(actual["statusCode"], 400, "{what}");
+            assert_eq!(actual["error"], "Bad Request", "{what}");
+            assert!(actual["message"].is_string(), "{what}");
+            assert_eq!(reply.header("connection"), Some("close"), "{what}");
+        } else {
+            assert_eq!(
+                normalise(&reply.json(), &seeded),
+                expected_body,
+                "{what}: body"
+            );
+        }
+
+        // The recorder dropped these (they vary per connection, not per
+        // server); `closing()` sets `connection` explicitly on a body error,
+        // so it can appear on the Rust side even though it isn't expected.
+        assert_headers(
+            &reply,
+            expected,
+            security,
+            &["connection", "date", "content-length"],
+            what,
+        );
+    }
 }

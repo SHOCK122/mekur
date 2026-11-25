@@ -553,7 +553,44 @@ routes, repository and tests for that group are deleted.
   - Found, not changed (roadmap items): the 500 above; and bodies are
     parsed before the account is checked (Fastify's order), which on this
     route means up to 1.5 MB for a client without credentials.
-- [ ] **3f. Social**: friend codes, tag resolution. Port `social.test.ts`.
+- [x] **3f. Social**: friend-code repository + routes (`GET /friend-code`,
+  `POST /friend-code/rotate`, `POST /tags/resolve`). `ResolveTagRequest`
+  (was the inline `ResolveTagRequestSchema` in
+  `apps/api/src/routes/socialRoutes.ts`) is a `mekur-shared` type with
+  Zod's issues. Ported `social.test.ts` to `tests/social.rs`, plus: of two
+  people racing to redeem the same code, exactly one succeeds, and a tag
+  surrounded by JavaScript's `trim`-removed whitespace still resolves. TS
+  `socialRoutes.ts` and `friendCodeRepository.ts` deleted.
+  - **Frozen fixture of the TS replies**:
+    `tests/fixtures/ts_social_responses.json`, 22 replies recorded before
+    deletion (by a throwaway recorder, as in 3c-3e). Unlike those steps'
+    fixtures, it needed no database introspection afterwards: there is no
+    version/conflict state to leave behind, and the one thing a single
+    recorded run can't show -- two redeemers racing for one code -- is
+    covered directly by `tests/social.rs` instead. Seeded: two accounts
+    (API keys only, no JWTs: nothing here needed a session to also work,
+    and an API key never expires, so the fixture can't go stale) and one
+    account's friend code at a fixed value and timestamp. The recorder
+    normalises what varies between runs (a new code, `now`) to the same
+    placeholders the Rust replay uses, so fixture bodies compare directly
+    -- extended `normalise` in `ts_parity.rs` (shared with the API-key
+    fixture) with one more case rather than writing a second copy.
+  - **Order of checks**, as established by 3b-3e and unchanged here: a
+    body is read (400/413/415) before the account is checked (401), then
+    validation (400), then the capability/resolution step (404). `POST
+    /friend-code/rotate` reads a body it never uses, so a malformed one is
+    still a 400 without credentials -- found by recording the TS server,
+    not assumed.
+  - **Trimming.** `tag.trim()` is JavaScript's `trim`, not Rust's: reused
+    `body::is_js_whitespace` (already public, from the content-type and
+    rate-limit header parsing) rather than add a second notion of
+    whitespace. Unreachable with real input: usernames are
+    `[a-z0-9_.-]`-only, so a username lookup's case-folding can only ever
+    differ from JavaScript's on characters no valid username contains.
+  - Proxies: nginx and Vite send `/friend-code`, `/friend-code/rotate` and
+    `/tags/resolve` to Rust.
+  - No divergences found beyond the ones every route shares (percent-decoded
+    routing, V8's JSON parse message; see 3b).
 - [ ] **3g. Inbox + push**: inbox repository/routes (newest 200 only --
   every list stays bounded; port `inbox.test.ts`), push subscriptions,
   notification service. Port `pushNotifications.test.ts` and the rest of
@@ -792,3 +829,15 @@ Dropped with step 4, for the same reason: see the scope decision above.
   built for). `mekur-shared` and `mekur-crypto` keep existing exactly as
   before -- they still serve `mekur-api`'s tests -- but will never be
   linked into a wasm build.
+- Step 3f (social). Friend codes and tag resolution moved to the Rust
+  server. The smallest slice yet, and the first with no version/conflict
+  state or large ciphertexts to track, so its fixture carries no "seed
+  state afterwards" section at all -- that coverage lives in
+  `tests/social.rs`'s own race test instead of a recorded one, since a
+  single recording can only ever show one side of a race. Found by
+  recording the TS server before porting: `POST /friend-code/rotate`
+  parses a body it never reads, so a malformed one is still a 400 without
+  credentials (the general body-then-account order from 3b, confirmed
+  rather than assumed for a route that ignores its body); and resolving a
+  tag runs it through `trim()` before matching, which only reused code
+  (`body::is_js_whitespace`) needed to reproduce correctly.

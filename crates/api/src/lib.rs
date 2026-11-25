@@ -8,7 +8,8 @@
 //! `docs/RUST_MIGRATION.md`); registration, login, the salt lookup, rate
 //! limiting and request bodies (step 3b); API keys and the auth check every
 //! signed-in route uses (step 3c); events and their capabilities
-//! (step 3d); the keyring (step 3e).
+//! (step 3d); the keyring (step 3e); friend codes and tag resolution
+//! (step 3f).
 
 pub mod api_keys;
 pub mod app;
@@ -17,6 +18,7 @@ pub mod body;
 pub mod config;
 pub mod db;
 pub mod events;
+pub mod friend_codes;
 pub mod jwt;
 pub mod keyrings;
 pub mod node_base64;

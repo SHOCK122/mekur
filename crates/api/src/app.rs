@@ -20,6 +20,7 @@ use sqlx::PgPool;
 use crate::{
     api_keys::ApiKeyRepository,
     events::EventRepository,
+    friend_codes::FriendCodeRepository,
     keyrings::KeyringRepository,
     rate_limit::{self, RateLimiter},
     routes,
@@ -35,6 +36,7 @@ pub struct AppState {
     pub api_keys: ApiKeyRepository,
     pub events: EventRepository,
     pub keyrings: KeyringRepository,
+    pub friend_codes: FriendCodeRepository,
     pub jwt_secret: Arc<str>,
     pub limits: Limits,
 }
@@ -86,6 +88,7 @@ impl AppState {
             api_keys: ApiKeyRepository::new(db.clone()),
             events: EventRepository::new(db.clone()),
             keyrings: KeyringRepository::new(db.clone()),
+            friend_codes: FriendCodeRepository::new(db.clone()),
             db,
             jwt_secret: options.jwt_secret.into(),
             limits: Limits {
@@ -120,6 +123,9 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("post", "/events/{id}/capabilities/revoke"),
     ("get", "/keyring"),
     ("put", "/keyring"),
+    ("get", "/friend-code"),
+    ("post", "/friend-code/rotate"),
+    ("post", "/tags/resolve"),
 ];
 
 pub fn build_app(state: AppState) -> Router {
@@ -171,6 +177,18 @@ pub fn build_app(state: AppState) -> Router {
             get(routes::keyring::read)
                 .put(routes::keyring::replace)
                 .route_layer(global()),
+        )
+        .route(
+            "/friend-code",
+            get(routes::social::friend_code).route_layer(global()),
+        )
+        .route(
+            "/friend-code/rotate",
+            post(routes::social::rotate_friend_code).route_layer(global()),
+        )
+        .route(
+            "/tags/resolve",
+            post(routes::social::resolve_tag).route_layer(global()),
         );
     for (path, handler) in [
         ("/users/{username}/salt", get(routes::auth::salt)),

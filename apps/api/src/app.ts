@@ -6,11 +6,9 @@ import { authPlugin } from "./plugins/auth.js";
 import { createUserRepository } from "./repositories/userRepository.js";
 import { createApiKeyRepository } from "./repositories/apiKeyRepository.js";
 import { createPushSubscriptionRepository } from "./repositories/pushSubscriptionRepository.js";
-import { createFriendCodeRepository } from "./repositories/friendCodeRepository.js";
 import { createInboxRepository } from "./repositories/inboxRepository.js";
 import { createNotificationService } from "./services/notificationService.js";
 import { registerPushRoutes } from "./routes/pushRoutes.js";
-import { registerSocialRoutes } from "./routes/socialRoutes.js";
 import { registerInboxRoutes } from "./routes/inboxRoutes.js";
 
 export interface BuildAppOptions {
@@ -84,7 +82,6 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   const users = createUserRepository(opts.db);
   const apiKeys = createApiKeyRepository(opts.db);
   const pushSubscriptions = createPushSubscriptionRepository(opts.db);
-  const friendCodes = createFriendCodeRepository(opts.db);
   const inbox = createInboxRepository(opts.db);
   const notifications = createNotificationService(pushSubscriptions, {
     vapidPublicKey: opts.vapidPublicKey,
@@ -97,14 +94,15 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
   // GET /health, GET /openapi.json (step 3a), POST /users, POST
   // /sessions, GET /users/:username/salt (step 3b), POST/GET /api-keys,
   // DELETE /api-keys/:id (step 3c), the event routes -- /events,
-  // /events/batch-read, /events/:id and its capabilities (step 3d) -- and
-  // GET/PUT /keyring (step 3e) are served by the Rust server
-  // (crates/api) -- see docs/RUST_MIGRATION.md. The auth plugin stays until
-  // the last TS route goes: it still authenticates API keys for them.
+  // /events/batch-read, /events/:id and its capabilities (step 3d),
+  // GET/PUT /keyring (step 3e), and GET /friend-code, POST
+  // /friend-code/rotate, POST /tags/resolve (step 3f) are served by the
+  // Rust server (crates/api) -- see docs/RUST_MIGRATION.md. The auth
+  // plugin stays until the last TS route goes: it still authenticates API
+  // keys for them.
 
   app.register(async (instance) => {
     registerPushRoutes(instance, pushSubscriptions, opts.vapidPublicKey);
-    registerSocialRoutes(instance, users, friendCodes);
     registerInboxRoutes(instance, inbox, users, notifications);
   });
 
