@@ -6,7 +6,7 @@
   "shutdownAction": "stopCompose",
   "remoteUser": "vscode",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/node:2": { "version": "22" },
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
   },
