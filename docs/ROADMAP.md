@@ -29,6 +29,9 @@ integer priorities, a directory lookup, the list view -- has been removed
 rather than left lying around, and several features that were broken by
 the switch (invitations, sharing from the timeline) have been repaired.
 
+A port of the API to Rust was started after Phase 8 and fully reverted
+(PRs #13-#21); the stack stays TypeScript. See `docs/HANDOFF.md`.
+
 Group scheduling (candidate slots + voting) is **not** currently
 available. It was part of the ACL model, and its capability-model
 replacement is Phase 10. The schema scaffolding for it was removed in
@@ -655,6 +658,9 @@ worth of dead code and fixes what the model switch broke.
         since"; the screen shows the old times then too.
 - [ ] How should a **view-only** event look on the timeline? Today it is
       indistinguishable apart from missing handles.
+- [ ] Confirm before deleting. "Delete" on a one-off event deletes it for
+      everyone it's shared with, with no confirmation. Found in the
+      Phase 7 review and left out of that PR.
 
 ## Phase 9 -- Sync efficiency & offline writes
 
