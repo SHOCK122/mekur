@@ -7,6 +7,12 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sleep infinity
+    # Lets the start-up script (run as root) set up the outbound firewall.
+    # The dev user can't use these: it has no capabilities, and sudo only
+    # allows that one script.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     # Share the database's network so `localhost:5432` works exactly as the
     # README, CI and the API's dev defaults expect.
     network_mode: service:db
