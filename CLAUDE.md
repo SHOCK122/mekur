@@ -35,6 +35,11 @@ handle this automatically at the repo root, but if you're iterating inside a
 single package after changing a dependency package, rebuild it first:
 `npm run build:libs`.
 
+To change dependencies, use npm 11 (`npx npm@11 update`,
+`npx npm@11 install <pkg>`): npm 10, bundled with Node 22, crashes
+resolving `vitest`'s optional peer dependencies. `npm ci` with npm 10 is
+fine, and is what CI and the Docker images run.
+
 ```bash
 npm ci
 npm run test                          # every package, from repo root
@@ -193,9 +198,11 @@ user/session), it breaks horizontal scaling and the proof above — think
 twice and prefer Postgres.
 
 Every list endpoint stays bounded (batch read 500, inbox 200). Rate limits
-key on the client IP, so `TRUST_PROXY` must equal the number of reverse
-proxies in front of the API (1 behind the bundled nginx) — otherwise every
-user shares one rate-limit bucket.
+key on the client IP, so `TRUST_PROXY` must list the addresses or ranges of
+the reverse proxies in front of the API (`uniquelocal`, the private ranges,
+behind the bundled nginx) — otherwise every user shares one rate-limit
+bucket. Hop counts are rejected at startup: Fastify 5.12+ treats a numeric
+`trustProxy` as trusting nothing.
 
 ### Migrations
 

@@ -5,13 +5,14 @@ import { createPool } from "../src/db/pool.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { buildApp } from "../src/app.js";
 import { truncateAll, registerUser, ENVELOPE } from "./testHelpers.js";
+import { parseTrustProxy } from "../src/config.js";
 
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/scheduleapp_test";
 
 /** Builds an app with production-like (low) rate limits, unlike the shared
  * test helper which raises them to avoid flakes. */
-async function setupStrictApp(authRateLimitMax: number, trustProxy = 0) {
+async function setupStrictApp(authRateLimitMax: number, trustProxy: string[] | false = false) {
   const db = createPool(TEST_DATABASE_URL);
   await runMigrations(db);
   const app = buildApp({
@@ -26,6 +27,26 @@ async function setupStrictApp(authRateLimitMax: number, trustProxy = 0) {
   });
   return { app, db };
 }
+
+describe("TRUST_PROXY parsing", () => {
+  it("trusts nothing when unset or empty", () => {
+    expect(parseTrustProxy(undefined)).toBe(false);
+    expect(parseTrustProxy(" ")).toBe(false);
+  });
+
+  it("accepts addresses, ranges and named groups", () => {
+    expect(parseTrustProxy("uniquelocal, 10.0.0.1,172.16.0.0/12")).toEqual([
+      "uniquelocal",
+      "10.0.0.1",
+      "172.16.0.0/12",
+    ]);
+  });
+
+  it("rejects a hop count, which Fastify now treats as trusting nothing", () => {
+    // Regression: TRUST_PROXY=1 silently stopped working with Fastify 5.12.
+    expect(() => parseTrustProxy("1")).toThrow(/no longer takes a hop count/);
+  });
+});
 
 describe("security hardening", () => {
   describe("rate limiting on auth endpoints", () => {
@@ -72,7 +93,8 @@ describe("security hardening", () => {
     let db: Database;
 
     beforeAll(async () => {
-      ({ app, db } = await setupStrictApp(2, 1));
+      // Injected requests arrive from 127.0.0.1, standing in for nginx.
+      ({ app, db } = await setupStrictApp(2, ["loopback"]));
     });
 
     afterAll(async () => {
@@ -93,6 +115,34 @@ describe("security hardening", () => {
       for (let i = 0; i < 5; i++) await attempt("203.0.113.1");
       expect((await attempt("203.0.113.1")).statusCode).toBe(429);
       expect((await attempt("203.0.113.2")).statusCode).toBe(401);
+    });
+  });
+
+  describe("forwarded IPs from an untrusted peer", () => {
+    let app: FastifyInstance;
+    let db: Database;
+
+    beforeAll(async () => {
+      // Only private ranges are trusted, so a request from 127.0.0.1 is a
+      // direct client, not the proxy.
+      ({ app, db } = await setupStrictApp(2, ["uniquelocal"]));
+    });
+
+    afterAll(async () => {
+      await app.close();
+      await db.end();
+    });
+
+    it("ignores X-Forwarded-For, so a client can't dodge the limit by faking it", async () => {
+      const attempt = (client: string) =>
+        app.inject({
+          method: "POST",
+          url: "/sessions",
+          headers: { "x-forwarded-for": client },
+          payload: { username: "victim", authKey: "d3JvbmctZ3Vlc3M=" },
+        });
+      for (let i = 0; i < 5; i++) await attempt("203.0.113.1");
+      expect((await attempt("203.0.113.99")).statusCode).toBe(429);
     });
   });
 

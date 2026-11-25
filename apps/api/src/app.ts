@@ -31,8 +31,8 @@ export interface BuildAppOptions {
   rateLimitMax?: number;
   /** Tighter limit for auth endpoints (login/registration). */
   authRateLimitMax?: number;
-  /** Reverse-proxy hops to trust when deriving the client IP (see config). */
-  trustProxy?: number;
+  /** Proxy addresses/ranges trusted to report the client IP (see config). */
+  trustProxy?: string[] | false;
 }
 
 export function buildApp(opts: BuildAppOptions): FastifyInstance {
@@ -44,7 +44,7 @@ export function buildApp(opts: BuildAppOptions): FastifyInstance {
     bodyLimit: 256 * 1024,
     // Rate limits key on request.ip, which is only the real client when
     // the proxy in front is trusted.
-    trustProxy: opts.trustProxy ?? 0,
+    trustProxy: opts.trustProxy ?? false,
   });
 
   // Treat an empty JSON body as {} rather than rejecting the request.

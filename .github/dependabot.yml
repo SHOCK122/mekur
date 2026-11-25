@@ -1,0 +1,45 @@
+# Keeps dependencies current. Security fixes also arrive as their own PRs
+# once Dependabot security updates are enabled in the repository settings.
+# Every PR runs CI; merge only when it is green.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    # Patch and minor releases arrive as one PR a week; majors stay separate
+    # because each can need code changes.
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories: [/infra, /.devcontainer]
+    schedule:
+      interval: weekly
+    ignore:
+      # Node and PostgreSQL majors are migrations, not bumps: Node must match
+      # CI and the dev container, and Postgres data needs an upgrade path.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: docker-compose
+    directories: [/, /.devcontainer]
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly

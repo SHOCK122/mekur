@@ -1,3 +1,29 @@
+/**
+ * Parses TRUST_PROXY: which reverse proxies may set the client IP via
+ * X-Forwarded-For. A comma-separated list of addresses, CIDR ranges, or the
+ * named groups `loopback`, `linklocal` and `uniquelocal` (private ranges).
+ * Unset or empty trusts no proxy.
+ *
+ * A bare hop count ("1") is rejected rather than accepted: since Fastify
+ * 5.12 a numeric trustProxy trusts *nothing* (a hop count can't tell the
+ * real proxy from a client faking the header), so a leftover "1" would
+ * silently put every user behind nginx in one rate-limit bucket.
+ */
+export function parseTrustProxy(value: string | undefined): string[] | false {
+  const entries = (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length === 0) return false;
+  if (entries.some((entry) => /^\d+$/.test(entry))) {
+    throw new Error(
+      `TRUST_PROXY no longer takes a hop count (got "${value}"). List the proxy's address or ` +
+        `range instead, e.g. "uniquelocal" behind the bundled nginx.`
+    );
+  }
+  return entries;
+}
+
 function required(name: string, fallback?: string): string {
   const value = process.env[name] ?? fallback;
   if (value === undefined) {
@@ -19,11 +45,11 @@ export const config = {
   // if it ever leaks into a real deployment.
   jwtSecret: process.env.JWT_SECRET ?? "dev-only-insecure-secret-do-not-use-in-production",
   nodeEnv: process.env.NODE_ENV ?? "development",
-  // Number of reverse-proxy hops to trust for the client IP. Behind nginx
-  // (docker-compose) this must be 1, or every request appears to come from
-  // nginx and all users share one rate-limit bucket -- ten failed logins
-  // anywhere would lock everyone out for a minute.
-  trustProxy: Number(process.env.TRUST_PROXY ?? 0),
+  // Proxies trusted to report the client IP (see parseTrustProxy). Behind
+  // nginx this must include nginx's address, or every request appears to
+  // come from nginx and all users share one rate-limit bucket -- ten failed
+  // logins anywhere would lock everyone out for a minute.
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   // Same dev-only-fallback pattern as jwtSecret: a real, valid VAPID
   // keypair so local development works out of the box, but guarded
   // against production use below since it's public in this repo's
@@ -49,11 +75,5 @@ if (
     "VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY must be set to a real, privately-generated keypair in " +
       "production (NODE_ENV=production) -- the built-in fallback is public in this repo's history. " +
       "Generate one with: npx web-push generate-vapid-keys"
-  );
-}
-
-if (!Number.isInteger(config.trustProxy) || config.trustProxy < 0) {
-  throw new Error(
-    `TRUST_PROXY must be a whole number of proxy hops (e.g. 1 behind nginx), got "${process.env.TRUST_PROXY}"`
   );
 }
