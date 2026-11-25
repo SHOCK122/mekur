@@ -1,8 +1,15 @@
 # Rust migration
 
-mekur is moving from TypeScript to Rust. This file is the plan, the
-progress tracker and the record of parity decisions. All new code is
-written in Rust; existing TypeScript is replaced one module at a time.
+mekur's API is moving from TypeScript to Rust. This file is the plan, the
+progress tracker and the record of parity decisions. All new API code is
+written in Rust; the TypeScript API is replaced one route group at a time.
+
+**Scope decision (2026-11-25): the browser client stays TypeScript/React.**
+Steps 4 (`mekur-client`, a wasm port of `apps/web/src/lib`) and 5 (a Leptos
+UI) below were considered and dropped before any code was written for them
+-- see the Log. The migration's scope is the API (steps 0-3g) only. The
+rest of this document still describes 4 and 5 for the record, struck
+through, since the port-order numbering elsewhere refers to them.
 
 ## Rules
 
@@ -61,15 +68,16 @@ crates/
   shared/   mekur-shared   types + validation      <- packages/shared
   crypto/   mekur-crypto   client cryptography     <- packages/crypto
   api/      mekur-api      axum HTTP server         <- apps/api
-  client/   mekur-client   browser logic -> wasm    <- apps/web/src/lib (then UI)
 ```
 
-Dependency direction: `shared` <- `crypto` <- `client`; `shared` <- `api`.
-`api` must never depend on `crypto`'s decryption: the server needs only
-hashing (`sha2`) and never holds a key that opens user content. The one
-crypto call the API makes today (`sha256Base64` of the auth key) became a
-direct `sha2` call over Node's base64 decoding of the key (step 3b);
-`mekur-crypto` is only a dev-dependency of the API's tests.
+Dependency direction: `shared` <- `crypto`; `shared` <- `api`. `api` must
+never depend on `crypto`'s decryption: the server needs only hashing
+(`sha2`) and never holds a key that opens user content. The one crypto call
+the API makes today (`sha256Base64` of the auth key) became a direct `sha2`
+call over Node's base64 decoding of the key (step 3b); `mekur-crypto` is
+only a dev-dependency of the API's tests -- `packages/shared` and
+`packages/crypto` keep serving the browser client directly (see the scope
+decision above), so neither crate is built for wasm.
 
 `crates/` sits beside `apps/` and `packages/` rather than inside them so
 the two toolchains never share a directory during the transition. When a
@@ -86,7 +94,7 @@ TS package is fully gone, its directory is deleted, not left empty.
 | X25519 | `x25519-dalek` | Check `SharedSecret::was_contributory()`: noble rejects an all-zero shared secret, so the port must too. |
 | KDF | `scrypt`, `hkdf`, `sha2`, `hmac` | RustCrypto. |
 | Constant time | `subtle` | Sender-proof comparison. |
-| Randomness | `rand_core` `OsRng` / `getrandom` | `getrandom`'s wasm backend (`wasm_js`) in the client. |
+| Randomness | `rand_core` `OsRng` / `getrandom` | Native only: `mekur-crypto` is never compiled for wasm (see the scope decision above). |
 | Secrets in memory | `zeroize` | |
 | Password normalisation | `unicode-normalization` | Passwords are NFKC-normalised before scrypt. |
 | Base64 | `base64` | See parity: Node's decoder is lenient. |
@@ -96,8 +104,6 @@ TS package is fully gone, its directory is deleted, not left empty.
 | Rate limiting | hand-written fixed window (`api::rate_limit`) + `lru` | `@fastify/rate-limit`'s algorithm and headers; `tower_governor`'s GCRA can't reproduce `x-ratelimit-*` or the 429 body. Not cryptography. |
 | Web Push | `web-push` crate (VAPID) | Evaluate maintenance when the push slice is ported; fall back to `web-push-native`. |
 | Errors, logs | `thiserror`, `tracing` | `anyhow` only in the binary. |
-| WebAssembly | `wasm-bindgen`, `serde-wasm-bindgen`, `wasm-bindgen-test`, `wasm-pack` | `mekur-client` is `cdylib` + `rlib`. |
-| UI (later) | Leptos (CSR) -- *recommendation, not yet decided* | Decided in its own PR once `lib/` is ported; see step 5. |
 
 ## Port order (leaves first)
 
@@ -106,10 +112,12 @@ with a line on anything simplified or discovered.
 
 ### 0. Plan, workspace skeleton, CI
 - [x] This document; `Cargo.toml` workspace with empty `mekur-shared`,
-  `mekur-crypto`, `mekur-api`, `mekur-client`; pinned toolchain;
-  `unsafe_code = "forbid"`; CI job running fmt, clippy (native and
-  wasm32), tests and a wasm32 build. (Postgres is added to that job in
+  `mekur-crypto`, `mekur-api`; pinned toolchain; `unsafe_code = "forbid"`;
+  CI job running fmt, clippy and tests. (Postgres is added to that job in
   3a, with its first consumer.)
+  - Originally scaffolded a fourth crate, `mekur-client`, and a wasm32
+    target and CI job for it, toward steps 4-5 below. Removed once the
+    scope decision above dropped those steps -- see the Log.
 
 ### 1. `mekur-shared` <- `packages/shared`
 - [x] Types and validation for every schema, `MAX_OCCURRENCE_OVERRIDES`,
@@ -151,8 +159,10 @@ with a line on anything simplified or discovered.
       differ.
     - Integers past `u64::MAX` in `interval`/`count` (Zod accepts any JS
       integer) get a `custom` "too large" issue.
-- The TS package keeps serving its TS consumers until step 4 / step 3
-  remove them; it is deleted when its last importer is gone.
+- The TS package keeps serving the web client and, until step 3 removes
+  them, the remaining TS API routes. It is permanent now that the client
+  stays TypeScript (see the scope decision above): there is no step left
+  that would delete it.
 
 ### 2. `mekur-crypto` <- `packages/crypto`
 - [x] `derive_auth_and_encryption_keys`, `encrypt_envelope` /
@@ -196,15 +206,17 @@ with a line on anything simplified or discovered.
     (`"\ud800"`) and nesting deeper than 128; `JSON.parse` accepts both.
     `JSON.stringify` writes a lone surrogate as such an escape, so a title
     holding one (only possible by pasting malformed text) decrypts in TS
-    but is `PlaintextNotJson` in Rust. Step 4e must show such an event as
-    unreadable rather than fail the whole list.
+    but is `PlaintextNotJson` in Rust. Moot now that the browser keeps
+    using `packages/crypto` (see the scope decision above) -- recorded for
+    the cross-language test vectors only, not a product requirement.
   - A sealed body whose `body` is not a string is an error;
     `JSON.parse(non-string)` coerced it.
   - Payload JSON is written by `serde_json`: numbers can be spelled
     differently (`1e21` vs `1e+21`, a float `1.0` vs `1`), so the
     plaintext bytes (and ciphertext length) can differ by a character or
     two, never the parsed value.
-- TS package deleted at step 4 (its last importer is the web client).
+- Permanent, like `packages/shared`: the web client is its only importer
+  and stays TypeScript (see the scope decision above).
 
 ### 3. `mekur-api` <- `apps/api`, route group by route group
 Side-by-side ("strangler") deployment: nginx sends each ported route
@@ -548,30 +560,22 @@ routes, repository and tests for that group are deleted.
   `security.test.ts`. Then delete `apps/api` and the TS server from
   `docker-compose.yml`; the Rust server takes over running migrations.
 
-### 4. `mekur-client` <- `apps/web/src/lib`, leaves first
-Each module is exposed to the React app via wasm-bindgen (built with
-`wasm-pack --target bundler` and imported like any package), and its TS
-tests are ported to Rust (`cargo test` for pure logic,
-`wasm-bindgen-test` where the browser matters).
+### 4. `mekur-client` <- `apps/web/src/lib` -- decided against
+**Decided (2026-11-25): not pursued.** The plan was to expose each module
+of `apps/web/src/lib` to the React app via wasm-bindgen, porting
+`fractionalRank`; `zonedTime`/`datetime`; `recurrence` (the largest and
+riskiest port, replacing the `rrule` npm package); `timeline` and
+`timelineInteraction`; and last the crypto call sites (`events`, `keyring`,
+`social`, `session`, `api`, `http`, `eventCache`, `push`). None of it was
+started -- `mekur-client` was an empty skeleton crate from step 0, now
+removed along with the wasm32 toolchain target and CI job that existed only
+for it. See the scope decision at the top of this document and the Log.
 
-- [ ] 4a. `fractionalRank`
-- [ ] 4b. `zonedTime`, `datetime`
-- [ ] 4c. `recurrence` -- the largest and riskiest port (replaces the
-  `rrule` npm package). Compare against the Rust `rrule` crate, but only
-  adopt it if all 1,200 lines of `recurrence.test.ts` pass unchanged in
-  meaning; otherwise port the expansion directly.
-- [ ] 4d. `timeline`, `timelineInteraction`
-- [ ] 4e. `events`, `keyring`, `social`, `session`, `api`, `http`,
-  `eventCache`, `push` -- the crypto call sites. Key derivation runs in a
-  short-lived Web Worker (see step 2). After this nothing
-  imports `packages/crypto` or `packages/shared`: delete both.
-
-### 5. UI
-- [ ] Decide the UI approach in a short ADR here (recommendation: Leptos,
-  client-side rendered). Must keep every accessibility guarantee the
-  current component tests assert; port those tests first.
-- [ ] Port components (Timeline last), hooks, service worker. Then delete
-  `apps/web`'s TypeScript and the Node toolchain from CI.
+### 5. UI -- decided against
+**Decided (2026-11-25): not pursued.** The plan was a from-scratch UI
+rewrite (recommendation: Leptos, client-side rendered) once step 4 landed,
+keeping every accessibility guarantee the current component tests assert.
+Dropped with step 4, for the same reason: see the scope decision above.
 
 ## Parity hazards (check every port against these)
 
@@ -769,3 +773,22 @@ tests are ported to Rust (`cargo test` for pure logic,
   could never be saved through it -- fixed in the keyring location. The
   replay scaffolding in `ts_parity.rs` is now shared between the event and
   keyring fixtures.
+- **Scope decision.** Steps 4 (`mekur-client`) and 5 (UI) are decided
+  against: the browser client stays TypeScript/React, so the migration's
+  scope is the API (steps 0-3g) only. Rationale: the API and crypto are
+  where Rust's safety argument (no `unsafe`, audited crates, memory
+  safety) actually matters, and that part was already most of the way
+  done with a proven, low-risk TDD pattern (two slices left: 3f, 3g). The
+  remaining steps were the opposite -- a from-scratch port of a 1,200-line
+  recurrence engine and a 1,400-line, accessibility-critical `Timeline`
+  component to an undecided UI framework (Leptos), rewriting code that
+  already works and already has full test coverage, for a layer where
+  Rust's advantages don't apply (a calendar UI isn't CPU- or memory-bound).
+  Root-cause cleanup, since nothing will ever consume it: removed the
+  `mekur-client` skeleton crate (`crates/client`, workspace member since
+  step 0), the wasm32 target from `rust-toolchain.toml`, the wasm clippy
+  and build steps from CI, and `mekur-crypto`'s wasm32-only `getrandom`
+  dependency (it was conditional on a target that crate will now never be
+  built for). `mekur-shared` and `mekur-crypto` keep existing exactly as
+  before -- they still serve `mekur-api`'s tests -- but will never be
+  linked into a wasm build.

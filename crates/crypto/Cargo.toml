@@ -1,6 +1,6 @@
 [package]
 name = "mekur-crypto"
-description = "Client-side cryptography: key derivation, envelopes, sealed invitations (replaces packages/crypto)"
+description = "Cryptography ported from packages/crypto, for the Rust API's tests. The browser client keeps using packages/crypto directly: it is not compiled for wasm."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -27,7 +27,3 @@ thiserror = "2"
 unicode-normalization = "0.1.26"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 zeroize = "1.9.1"
-
-[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-# Browser randomness (crypto.getRandomValues).
-getrandom = { version = "0.4.3", features = ["wasm_js"] }

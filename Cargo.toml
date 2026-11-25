@@ -2,7 +2,7 @@
 # Plan, port order and parity rules: docs/RUST_MIGRATION.md.
 [workspace]
 resolver = "3"
-members = ["crates/shared", "crates/crypto", "crates/api", "crates/client"]
+members = ["crates/shared", "crates/crypto", "crates/api"]
 
 [workspace.package]
 version = "0.1.0"

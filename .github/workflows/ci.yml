@@ -72,8 +72,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Installs exactly the toolchain, components and wasm target pinned
-      # in rust-toolchain.toml.
+      # Installs exactly the toolchain and components pinned in
+      # rust-toolchain.toml.
       - name: Install Rust toolchain
         run: rustup toolchain install
 
@@ -85,16 +85,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # mekur-shared and mekur-crypto are also compiled into the browser
-      # client.
-      - name: Clippy (client, shared and crypto, wasm32)
-        run: cargo clippy -p mekur-client -p mekur-shared -p mekur-crypto --target wasm32-unknown-unknown --locked -- -D warnings
-
       - name: Test
         run: cargo test --workspace --locked
-
-      - name: Build client for the browser (wasm32)
-        run: cargo build -p mekur-client -p mekur-crypto --target wasm32-unknown-unknown --locked
 
   build-docker-images:
     runs-on: ubuntu-latest
