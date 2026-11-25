@@ -156,7 +156,9 @@ worth of dead code and fixes what the model switch broke.
 - [x] **Rate limits were shared by every user** in the Docker deployment:
       the API didn't trust nginx's `X-Forwarded-For`, so all requests
       came from one IP and ten failed logins anywhere locked everyone out.
-      `TRUST_PROXY` is now configurable and set to 1 in docker-compose.
+      `TRUST_PROXY` is now configurable. (Originally a hop count; since
+      the 2026-11 dependency updates it lists trusted proxy addresses --
+      see Maintenance.)
 
 ### Removals
 - [x] Group-event schemas (`GroupEvent*`, `Slot*`, votes), the API's
@@ -715,6 +717,34 @@ re-decrypted.
 - [ ] Real end-to-end push delivery in a browser against a real push
       service (backend, service worker and UI are tested; the last mile
       is not).
+
+## Maintenance
+
+- [x] **Dependency security updates (2026-11).** `npm audit` reported 17
+      vulnerabilities, 5 of them in production dependencies, including a
+      critical one in `fast-jwt` (under `@fastify/jwt`) and high ones in
+      `fastify` and `fast-uri`. Every dependency was updated within its
+      allowed range, which clears all but two groups (below).
+      - npm 10 (bundled with Node 22) crashes resolving `vitest`'s optional
+        peer dependencies, even for a fresh install; `npm ci` from the
+        lockfile is unaffected. The update was done with npm 11
+        (`npx npm@11 update`); npm 10 still installs from the result.
+      - Found by the typecheck: Fastify 5.12 treats a numeric
+        `trustProxy` as trusting nothing (a hop count can't tell the proxy
+        from a client faking `X-Forwarded-For`). `TRUST_PROXY=1` would have
+        silently put every user behind nginx in one rate-limit bucket
+        again. `TRUST_PROXY` now lists trusted addresses (`uniquelocal`
+        in docker-compose), and a hop count is rejected at startup.
+- [x] Dependabot opens weekly PRs for npm (minor and patch grouped),
+      Docker images, docker-compose, GitHub Actions and dev container
+      features. Node and PostgreSQL majors are excluded: they are
+      migrations, not bumps.
+- [ ] `zod` 3 -> 4 (high: memory exhaustion validating oversized
+      collections). Request bodies are capped at 256KB (keyring 1.5MB),
+      which limits the practical exposure until then. Major upgrade.
+- [ ] `vite-plugin-pwa` 1 -> 2 (moderate, in its `workbox-build` /
+      `glob` / `minimatch` dependencies). Build-time only; nothing from it
+      ships to users. Major upgrade.
 
 ## Backlog (optional, deliberately deferred)
 

@@ -9,8 +9,8 @@ roadmap is the long-lived record.
 
 ## Where things stand
 
-- `main` at `078ab0d` is green: 499 tests pass (crypto 22, shared 29,
-  api 58, web 390), typecheck is clean, and both production builds work.
+- `main` is green: 503 tests pass (crypto 22, shared 29, api 62,
+  web 390), typecheck is clean, and both production builds work.
   Verified on Node 22.22 with PostgreSQL 16.
 - **Working end to end:** registration and login; encrypted events on a
   timeline (minutes-to-years zoom, four orientations, drag and keyboard
@@ -68,7 +68,10 @@ content is on `main`. They can be deleted.
    confirmation. Found in the #2 review, never picked up.
 3. **Phase 8's last item:** decide how a view-only event looks on the
    timeline (today it differs only by lacking resize handles).
-4. Then Phase 9 (sync efficiency and offline writes) per the roadmap.
+4. The two remaining major upgrades under Maintenance in the roadmap
+   (`zod` 4, then `vite-plugin-pwa` 2), and Dependabot's PRs as they
+   arrive.
+5. Then Phase 9 (sync efficiency and offline writes) per the roadmap.
 
 ## Setting up the server
 
@@ -111,9 +114,13 @@ docker compose up --build          # http://<server>:3080
 ```
 
 - The API container isn't published; nginx serves the web build and
-  proxies `/api/*` to it. `TRUST_PROXY=1` is set in docker-compose for
-  that one hop. If you put another reverse proxy (TLS) in front, raise it
-  to 2, or every user shares one rate-limit bucket.
+  proxies `/api/*` to it. docker-compose sets `TRUST_PROXY=uniquelocal`,
+  so the API believes `X-Forwarded-For` only from private addresses. That
+  still works with another reverse proxy in front, provided it reaches
+  nginx from a private address. Behind Cloudflare, have the outer proxy
+  restore the real client IP (nginx's `real_ip` module with
+  `CF-Connecting-IP`), or every user appears as one of a few Cloudflare
+  addresses and they share rate limits.
 - Port 3080 is published on the server itself. Close it in the firewall
   or put TLS in front before anyone else can reach it.
 - Migrations run automatically when the API starts.

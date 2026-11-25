@@ -172,9 +172,12 @@ problem.
   inline. Nothing is slow enough to justify one yet.
 - **Every list is bounded.** Batch reads take at most 500 capabilities;
   the inbox returns the newest 200.
-- **Behind a proxy**, `TRUST_PROXY` must be set (docker-compose sets it to
-  1), or every request appears to come from nginx and all users share a
-  single rate-limit bucket.
+- **Behind a proxy**, `TRUST_PROXY` must list the proxy's address or range
+  (docker-compose sets `uniquelocal`, the private ranges), or every request
+  appears to come from nginx and all users share a single rate-limit
+  bucket. Hop counts aren't accepted: since Fastify 5.12 a numeric value
+  trusts nothing, because a count can't tell the proxy from a client
+  faking the header.
 
 **Measured** with `apps/api/scripts/loadtest.ts` (dependency-free; see the
 file for why autocannon was dropped): one API instance, Postgres and the
