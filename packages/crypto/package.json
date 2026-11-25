@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@noble/ciphers": "^1.0.0",
+    "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^1.6.0",
     "@noble/hashes": "^1.5.0",
     "@schedule-app/shared": "*"
